@@ -14,6 +14,7 @@ param(
     [string]$Backend = "auto",
     [string]$Log = (Join-Path $env:TEMP "VoxprintMovieDubber-setup.log")
 )
+$env:PSModulePath = "$env:ProgramFiles\WindowsPowerShell\Modules;$env:SystemRoot\system32\WindowsPowerShell\v1.0\Modules"   # a parent PowerShell 7 session can leave a path that hides the built-in modules
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -48,10 +49,13 @@ try {
         $sumText = (Invoke-WebRequest -UseBasicParsing -Uri "$url.sha256").Content
         if ($sumText -is [byte[]]) { $sumText = [Text.Encoding]::ASCII.GetString($sumText) }
         $want = ($sumText.Trim() -split '\s+')[0].ToLower()
-        $have = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+        $sha = [Security.Cryptography.SHA256]::Create()
+        $stream = [IO.File]::OpenRead($zip)
+        try { $have = ([BitConverter]::ToString($sha.ComputeHash($stream)) -replace '-', '').ToLower() } finally { $stream.Dispose() }
         if ($want -ne $have) { throw "uv download is corrupt (SHA-256 mismatch)" }
-        Expand-Archive -Force -Path $zip -DestinationPath $uvDir
-        Remove-Item $zip -Force
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        [IO.Compression.ZipFile]::ExtractToDirectory($zip, $uvDir)
+        Remove-Item -LiteralPath $zip -Force
         if (-not (Test-Path $uv)) { throw "uv.exe was not found in the downloaded archive" }
     }
 
