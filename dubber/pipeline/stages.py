@@ -1,7 +1,7 @@
 """Pipeline stages of the dubber, in processing order (research note 06 section 1).
 
 Each stage is a small object with ``key``, ``title_key`` (i18n), ``implemented`` and ``run(ctx)``.  The heavy model stages are
-*workers* (``dubber/workers/w_*.py``, one process per model); here they are registered as stubs for the product pipeline - the
+*workers* (``dubber/workers/w_*.py``, one process per model); here they are listed as "coming soon" in the product pipeline - the
 diagnostic runner (``dubber.diag.runner``) already drives the same workers on the bundled test clip, so the code paths that matter
 for speed are real.  Implemented in-process: ``extract`` (ffmpeg), ``fit`` (plan only, no stretching yet), ``mix``, ``mux``.
 """
@@ -43,8 +43,8 @@ class Stage:
 
     def run(self, ctx: StageContext) -> StageResult:
         t = time.time()
-        ctx.log(f"[{self.key}] stub - not implemented in the skeleton")
-        return StageResult(self.key, True, "stub (not implemented yet)", time.time() - t, implemented=False)
+        ctx.log(f"[{self.key}] not available yet (in development)")
+        return StageResult(self.key, True, "coming soon", time.time() - t, implemented=False)
 
 
 class ExtractStage(Stage):
@@ -96,15 +96,15 @@ class MuxStage(Stage):
         return StageResult(self.key, True, f"{out.name}: {n_a} audio tracks (new track #{idx}), video copied", time.time() - t)
 
 
-def _stub(key: str, title_key: str) -> Stage:
+def _planned(key: str, title_key: str) -> Stage:
     s = Stage()
     s.key, s.title_key = key, title_key
     return s
 
 
-STAGES: List[Stage] = [ExtractStage(), _stub("vad", "stage.vad"), _stub("separation", "stage.separation"), _stub("asr", "stage.asr"),
-                       _stub("diarization", "stage.diarization"), _stub("translation", "stage.translation"),
-                       _stub("tts", "stage.tts"), FitStage(), MixStage(), MuxStage()]
+STAGES: List[Stage] = [ExtractStage(), _planned("vad", "stage.vad"), _planned("separation", "stage.separation"), _planned("asr", "stage.asr"),
+                       _planned("diarization", "stage.diarization"), _planned("translation", "stage.translation"),
+                       _planned("tts", "stage.tts"), FitStage(), MixStage(), MuxStage()]
 
 
 def run_all(ctx: StageContext, on_stage: Optional[Callable[[Stage, StageResult], None]] = None) -> List[StageResult]:
@@ -144,7 +144,7 @@ def fit_plan(slots: List[Dict[str, float]], lines: List[Dict[str, Any]]) -> Dict
 def mix_track(original_wav: str, slots: List[Dict[str, float]], lines: List[Dict[str, Any]], out_wav: Path, duck_db: float = -14.0) -> Dict[str, Any]:
     """Overlay the dubbed lines on the original soundtrack; the original is ducked by ``duck_db`` under each line (50 ms ramps).
 
-    The skeleton keeps the original under the dub (the real product will use the separated background stem instead).
+    This version keeps the original under the dub (a later version will use the separated background stem instead).
     Lines longer than their slot are placed at the slot start and may run into the next pause (fit/stretch comes later).
     """
     import numpy as np

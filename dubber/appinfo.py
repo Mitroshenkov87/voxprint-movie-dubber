@@ -9,12 +9,12 @@ from typing import Any, Dict
 
 APP_NAME = "VoxprintMovieDubber"            # technical name: folders, exe, logs - never localised
 APP_DISPLAY_NAME = "Voxprint AI Movie Dubber"
-APP_VERSION = "0.1.0-skeleton"
+APP_VERSION = "0.1.0-pre"
 AUTHOR = "Aleksandr Mitroshenkov"
 
 
 def resource_dir() -> Path:
-    """Folder with bundled resources: the PyInstaller unpack dir when frozen, else the repository root."""
+    """Folder with bundled resources: the repository or installation folder."""
     base = getattr(sys, "_MEIPASS", None)
     return Path(base) if base else Path(__file__).resolve().parent.parent
 
@@ -29,7 +29,7 @@ def build_info() -> Dict[str, Any]:
 
 
 def version_line() -> str:
-    """One line for the report header, e.g. ``0.1.0-skeleton (commit abc1234, built 2026-10-04, frozen)``."""
+    """One line for the report header, e.g. ``0.1.0-pre (commit abc1234, built 2026-10-04, frozen)``."""
     bi = build_info()
     parts = []
     if bi.get("commit"):

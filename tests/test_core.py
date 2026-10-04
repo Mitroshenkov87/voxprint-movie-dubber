@@ -98,7 +98,7 @@ def test_mix_track_survives_line_outside_audio(tmp_path):
     assert info["lines"] == 0
 
 
-def test_stub_stages_are_marked_not_implemented(tmp_path):
+def test_unavailable_stages_are_marked(tmp_path):
     ctx = stages.StageContext(tmp_path / "x.mkv", "ru", tmp_path)
     res = stages.Stage().run(ctx)
     assert res.implemented is False and res.ok
@@ -178,21 +178,23 @@ def test_tiger_vendored_model_constructs():
 
 
 # ------------------------------------------------------------------ packaging
-def test_portable_zip_contents(tmp_path):
-    sys.path.insert(0, str(ROOT / "tools"))
-    import make_portable_zip as mp
-    z = mp.build(tmp_path)
-    with zipfile.ZipFile(z) as zf:
-        names = zf.namelist()
-    assert any(n.endswith("/main.py") for n in names)
-    assert any(n.endswith("/setup.bat") for n in names) and any(n.endswith("/diagnose.bat") for n in names)
-    assert any(n.endswith("voxprint-test-clip.mkv") for n in names)
-    assert not any(".venv" in n or "__pycache__" in n or ".git/" in n for n in names)
+def test_installer_files_are_consistent():
+    iss = (ROOT / "installer" / "VoxprintMovieDubber.iss").read_text(encoding="utf-8")
+    assert "install-runtime.ps1" in iss and "UninstallDisplayName" in iss
+    assert (ROOT / "installer" / "install-runtime.ps1").is_file()
+    assert (ROOT / "assets" / "voxprint-dubber.ico").is_file()
+    reqs = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+    assert "faster-qwen3-tts" in reqs and "torch" not in [ln.split(">")[0].strip() for ln in reqs.splitlines()]
 
 
-def test_bat_files_use_crlf_in_checkout_policy():
+def test_script_files_use_crlf_in_checkout_policy():
     attrs = (ROOT / ".gitattributes").read_text()
-    assert "*.bat text eol=crlf" in attrs
+    assert "*.iss text eol=crlf" in attrs and "*.ps1 text eol=crlf" in attrs
+
+
+def test_fetch_models_cli_rejects_unknown_key():
+    r = subprocess.run([sys.executable, str(ROOT / "main.py"), "--fetch-models", "--models", "nope"], capture_output=True, text=True, timeout=60)
+    assert r.returncode == 2 and "nope" in r.stdout + r.stderr
 
 
 def test_cli_version_prints_a_version():

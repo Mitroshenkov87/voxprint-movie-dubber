@@ -1,7 +1,7 @@
 """Worker ``mt``: offline machine translation with Opus-MT (Marian) - the default translator when no subtitles exist.
 
 Input (args): ``source``, ``target`` (en/ru/de), ``sentences`` (list of str), ``out_json``, ``allow_download``, ``device``.
-Only direct pairs exist (en<->ru, en<->de); other pairs are SKIP in this skeleton (the audiobook program pivots through English).
+Only direct pairs exist (en<->ru, en<->de); other pairs are SKIP in this pre-release (the audiobook program pivots through English).
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
         return {"status": "SKIP", "summary": f"source and target language are the same ({src}); nothing to translate"}
     spec = models.mt_spec(src, tgt)
     if spec is None:
-        return {"status": "SKIP", "summary": f"no direct Opus-MT model for {src}->{tgt} in this skeleton (pivot through English is not built yet)"}
+        return {"status": "SKIP", "summary": f"no direct Opus-MT model for {src}->{tgt} in this pre-release (pivot through English is not built yet)"}
     ctx.log(f"translation {src}->{tgt}: locating the model")
     folder, info = models.ensure(spec.repo, args.get("allow_download", True), log=ctx.log)
     t = time.time()

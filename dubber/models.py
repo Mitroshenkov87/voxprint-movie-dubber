@@ -50,6 +50,10 @@ SPECS: Dict[str, ModelSpec] = {s.key: s for s in (
 )}
 
 
+#: Models fetched by the installer (the gated diarization model needs a Hugging Face token and is left out).
+INSTALL_MODELS = ("tts_1_7b", "asr", "sep", "mt_en_ru", "mt_ru_en", "mt_en_de", "mt_de_en")
+
+
 def mt_spec(source: str, target: str) -> Optional[ModelSpec]:
     """Opus-MT model for a direct pair among en/ru/de (None when there is no direct model)."""
     return SPECS.get(f"mt_{source}_{target}")

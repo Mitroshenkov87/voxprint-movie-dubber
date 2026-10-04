@@ -43,7 +43,7 @@ QLabel#ok {{{{ color: {green}; background: transparent; }}}}
 QLabel#footer {{{{ color: {faint}; font-size: 12px; }}}}
 QLabel#chip {{{{ color: {faint}; padding: 3px 8px; border-radius: 10px; font-size: 12px; background: #2a2a35; }}}}
 QLabel#chip[state="ready"] {{{{ color: {on_accent}; background: {soft}; font-weight: 600; }}}}
-QLabel#chip[state="stub"] {{{{ color: {faint}; background: #2a2a35; }}}}
+QLabel#chip[state="soon"] {{{{ color: {faint}; background: #2a2a35; }}}}
 QPushButton {{{{ background: {control}; border: 1px solid {border}; border-radius: 8px; padding: 8px 16px; }}}}
 QPushButton:hover {{{{ background: {hover}; }}}}
 QPushButton:pressed {{{{ background: #23232d; }}}}

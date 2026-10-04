@@ -1,4 +1,4 @@
-"""The main window: file picker, target language, stub pipeline steps and the diagnostics card.
+"""The main window: file picker, target language, pipeline steps and the diagnostics card.
 
 Same shell as the Voxprint Audiobook Builder windows: translucent root + scroll area (content may be taller than a small screen),
 Acrylic backdrop on Windows 11, cards with rounded corners, an accent-bordered primary card, a gear menu for the UI language.
@@ -12,12 +12,12 @@ from pathlib import Path
 from typing import List, Optional
 
 from PySide6.QtCore import QThread, QTimer, Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QGuiApplication
+from PySide6.QtGui import QDesktopServices, QGuiApplication, QIcon
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
                                QMenu, QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QVBoxLayout, QWidget)
 
 from dubber import i18n, models, paths, platform_win
-from dubber.appinfo import APP_DISPLAY_NAME, APP_VERSION
+from dubber.appinfo import APP_DISPLAY_NAME, APP_VERSION, resource_dir
 from dubber.diag.constants import LANG_NAMES
 from dubber.diag.report import Status
 from dubber.diag.runner import DiagnosticRunner, DiagOptions
@@ -56,7 +56,7 @@ class DiagThread(QThread):
 
 
 class DubThread(QThread):
-    """Runs the (mostly stub) dubbing stages on the chosen movie."""
+    """Runs the dubbing stages (several are still in development) on the chosen movie."""
     stage_done = Signal(str, bool, str, bool)      # key, ok, message, implemented
     finished_ok = Signal()
 
@@ -67,7 +67,7 @@ class DubThread(QThread):
     def run(self) -> None:
         work = paths.new_work_dir("vmd-dub-")
         try:
-            ctx = pst.StageContext(self.source, self.target, work, out=self.source.with_name(self.source.stem + ".dub-skeleton.mkv"))
+            ctx = pst.StageContext(self.source, self.target, work, out=self.source.with_name(self.source.stem + ".dub-preview.mkv"))
             pst.run_all(ctx, lambda st, res: self.stage_done.emit(st.key, res.ok, res.message, res.implemented))
         finally:
             import shutil
@@ -181,7 +181,7 @@ class MainWindow(QWidget):
         lay.addWidget(self.lbl_source)
         body.addWidget(c)
 
-        # --- 3. steps (stubs)
+        # --- 3. steps
         c = self._card()
         lay = QVBoxLayout(c)
         lay.setContentsMargins(18, 14, 18, 14)
@@ -288,8 +288,11 @@ class MainWindow(QWidget):
     # ------------------------------------------------------------------ texts
     def retranslate(self) -> None:
         self.setWindowTitle(APP_DISPLAY_NAME)
+        icon = resource_dir() / "assets" / "voxprint-dubber.ico"
+        if icon.is_file():
+            self.setWindowIcon(QIcon(str(icon)))
         self.lbl_tagline.setText(tr("ui.tagline"))
-        self.lbl_note.setText(tr("ui.skeleton_note") + f"  [{APP_VERSION}]")
+        self.lbl_note.setText(tr("ui.preview_note") + f"  [{APP_VERSION}]")
         self.lbl_movie.setText(tr("card.movie"))
         self.btn_file.setText(tr("ui.choose_file"))
         self.lbl_file.setText(str(self.source) if self.source else tr("ui.no_file"))
@@ -301,8 +304,8 @@ class MainWindow(QWidget):
         self.lbl_steps.setText(tr("card.steps"))
         for st in pst.STAGES:
             chip = self._chips[st.key]
-            chip.setText(f"{tr(st.title_key)} · {tr('ui.chip_ready') if st.implemented else tr('ui.chip_stub')}")
-            chip.setProperty("state", "ready" if st.implemented else "stub")
+            chip.setText(f"{tr(st.title_key)} · {tr('ui.chip_ready') if st.implemented else tr('ui.chip_soon')}")
+            chip.setProperty("state", "ready" if st.implemented else "soon")
             chip.style().unpolish(chip)
             chip.style().polish(chip)
         self.btn_start.setText(tr("ui.btn_start"))

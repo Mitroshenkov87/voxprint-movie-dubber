@@ -1,26 +1,31 @@
-# Сборка и установщик (Voxprint AI Movie Dubber)
+# Building
 
-Всё ниже подготовлено на Linux и **не проверено на Windows** (кроме `tools/make_portable_zip.py` и тестов).
+## Run from source
+Python 3.11 is required; Windows x64 for the installer.
+```
+python -m venv .venv && .venv\Scripts\activate          (Linux: source .venv/bin/activate)
+pip install uv
+uv pip install torch torchaudio --torch-backend=auto
+uv pip install -r tools/requirements-dev.txt
+python -m pytest tests                                   (no GPU needed)
+python main.py
+```
+Never run `uv run` without `--no-sync`: it can replace the CUDA build of PyTorch with the CPU one.
 
-## Вариант A — portable zip (рекомендуется для первой диагностики)
-`python tools/make_portable_zip.py` (на любой ОС) → `dist/Voxprint-MovieDubber-<ver>-portable.zip` (~1.5 МБ: исходники + bat-файлы + тестовый клип).
-Пользователь распаковывает и запускает `setup.bat` (uv → Python 3.11 → torch CUDA → пакеты), затем `diagnose.bat`.
-Плюсы: нет заморозки PyTorch/CUDA в exe (самое хрупкое место), модели и torch ставятся под драйвер пользователя. Установка ничего не меняет в системе.
+## Online installer
+`installer/VoxprintMovieDubber.iss` (Inno Setup 6) compiles into `installer\Output\VoxprintMovieDubber-Setup.exe` (about 2 MB):
+```
+ISCC installer\VoxprintMovieDubber.iss
+```
+The installer contains the program's own files only. During setup `installer/install-runtime.ps1` downloads `uv`, a private Python 3.11,
+PyTorch (the build matching the NVIDIA driver) and the dependencies from `requirements.txt` into `<install folder>\runtime`, and an optional
+final step downloads the AI models (`main.py --fetch-models`). Nothing is installed system-wide.
 
-## Вариант B — установщик (как у Audiobook Builder: PyInstaller --onedir + Inno Setup)
-Требуется Windows x64, Python 3.11, при желании Inno Setup 6.
-`build.bat exe` → тесты → `dist\VoxprintMovieDubber\` → `installer\Output\VoxprintMovieDubber-Setup.exe`
-(`installer/VoxprintMovieDubber.iss`: установка на пользователя без админ-прав, ярлык «Диагностика», модели не включены).
-Рабочие процессы запускаются как `VoxprintMovieDubber.exe --worker NAME args.json` — один exe в двух ролях; это нужно проверить на Windows.
-Ожидаемые риски: размер (PyTorch+CUDA ≈ 3–5 ГБ — как у Audiobook Builder нужен «тонкий»/онлайн-вариант, см. его `installer/build_thin.bat`), скрытые импорты faster-qwen3-tts/transformers 5.
+Setup switches: `/TORCH=auto|cpu|cu128` (PyTorch build), `/TASKS=""` (skip the model download), `/VERYSILENT /SUPPRESSMSGBOXES /DIR=<folder>`.
+The setup adds a Start menu folder (program and "Run diagnostics"), an Apps & features entry and a full uninstaller; the uninstaller
+asks whether to delete the downloaded models and logs in `%LOCALAPPDATA%\VoxprintMovieDubber`.
 
-## Вариант C — GitHub Actions
-`.github/workflows/build-windows.yml` (черновик, **не опубликован**): windows-latest, тесты на CPU-torch, диагностика на CPU (отчёт в artifacts),
-portable zip, по флагу — PyInstaller + Inno Setup. GPU на раннерах нет, поэтому GPU-замеры возможны только на ноутбуке.
-Чтобы использовать: создать приватный репозиторий (решение владельца), положить код, запустить workflow вручную.
-
-## Открытые решения
-1. Репозиторий: создать ли приватный репозиторий (имя, например `voxprint-movie-dubber`)? Пока всё только локально.
-2. Где собирать установщик: на ноутбуке (`build.bat`) или в Actions приватного репозитория (бесплатный лимит минут).
-3. Лицензия проекта (у Audiobook Builder — Apache-2.0; здесь не выбрана) и подписание exe.
-4. FlashAttention на Windows: официальных колёс `flash-attn` нет; диагностика покажет SKIP, если пакет не установлен.
+## GitHub Actions
+`.github/workflows/build-installer.yml` (manual run or a `v*` tag) builds the installer on a free `windows-latest` runner, installs it
+silently with the CPU build of PyTorch, runs the installed program and the tests, uninstalls it and uploads the installer as an artifact.
+A `v*` tag also attaches it to a pre-release.

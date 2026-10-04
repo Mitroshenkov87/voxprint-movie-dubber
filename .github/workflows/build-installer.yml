@@ -1,0 +1,157 @@
+# Builds the small online installer of Voxprint AI Movie Dubber on a free GitHub-hosted Windows runner (no secrets are used),
+# installs it silently, checks the installed program, uninstalls it and publishes the installer as a workflow artifact.
+# A pushed tag "v*" additionally attaches the installer to a pre-release of this (private) repository.
+# Runners have no GPU: the installer is tested with the CPU build of PyTorch (/TORCH=cpu).
+name: Build online installer
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  installer:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      PYTHONUTF8: "1"
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Compile the installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { $iscc = "$env:ProgramFiles\Inno Setup 6\ISCC.exe" }
+          & $iscc installer\VoxprintMovieDubber.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed ($LASTEXITCODE)" }
+          $setup = Get-Item installer\Output\VoxprintMovieDubber-Setup.exe
+          "installer size: {0:N2} MB" -f ($setup.Length / 1MB)
+          if ($setup.Length -gt 50MB) { throw "the online installer must stay small" }
+          $h = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
+          "$h  VoxprintMovieDubber-Setup.exe" | Out-File -Encoding ascii installer\Output\VoxprintMovieDubber-Setup.exe.sha256
+
+      - name: Silent install (downloads Python, PyTorch CPU build and dependencies)
+        shell: pwsh
+        run: |
+          $setup = (Resolve-Path installer\Output\VoxprintMovieDubber-Setup.exe).Path
+          $p = Start-Process $setup -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/DIR=C:\vmd","/TORCH=cpu",'/TASKS=""',"/LOG=C:\vmd-install.log" -Wait -PassThru
+          "install exit code: $($p.ExitCode)"
+          if ($p.ExitCode -ne 0) {
+            if (Test-Path C:\vmd-install.log) { Get-Content C:\vmd-install.log -Tail 80 }
+            if (Test-Path "$env:TEMP\VoxprintMovieDubber-setup.log") { Get-Content "$env:TEMP\VoxprintMovieDubber-setup.log" -Tail 120 }
+            throw "install failed"
+          }
+
+      - name: Check the installation (files, Start menu, Apps and features)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          foreach ($f in "main.py", "runtime\Scripts\pythonw.exe", "runtime\Scripts\python.exe", "unins000.exe", "assets\voxprint-dubber.ico", "dubber\appinfo.py") {
+            if (-not (Test-Path "C:\vmd\$f")) { throw "missing after install: $f" }
+          }
+          $menu = Get-ChildItem "$env:ProgramData\Microsoft\Windows\Start Menu\Programs" -Recurse -Filter "*.lnk" | Where-Object { $_.FullName -like "*Voxprint AI Movie Dubber*" }
+          $menu | ForEach-Object { "start menu: " + $_.FullName }
+          if (-not ($menu | Where-Object { $_.Name -like "Voxprint AI Movie Dubber.lnk" })) { throw "no Start menu shortcut" }
+          if (-not ($menu | Where-Object { $_.Name -like "Run diagnostics.lnk" })) { throw "no diagnostics shortcut" }
+          $sh = New-Object -ComObject WScript.Shell
+          $lnk = $sh.CreateShortcut(($menu | Where-Object { $_.Name -eq "Voxprint AI Movie Dubber.lnk" }).FullName)
+          "shortcut target: $($lnk.TargetPath) $($lnk.Arguments)"
+          if (-not (Test-Path $lnk.TargetPath)) { throw "shortcut target does not exist" }
+          $reg = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*","HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like "Voxprint AI Movie Dubber*" }
+          if (-not $reg) { throw "no Apps and features entry" }
+          "apps and features: $($reg.DisplayName) $($reg.DisplayVersion)"
+          "installed size: {0:N0} MB" -f ((Get-ChildItem C:\vmd -Recurse -File | Measure-Object Length -Sum).Sum / 1MB)
+
+      - name: Run the installed program (version, window self-test, test suite)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $env:VOXPRINT_DUBBER_HOME = "C:\vmd-data"
+          $env:VOXPRINT_DESKTOP = "C:\vmd-desktop"
+          New-Item -ItemType Directory -Force C:\vmd-desktop | Out-Null
+          $py = "C:\vmd\runtime\Scripts\python.exe"
+          & $py C:\vmd\main.py --version; if ($LASTEXITCODE -ne 0) { throw "--version failed" }
+          & $py C:\vmd\main.py --selftest; if ($LASTEXITCODE -ne 0) { throw "window self-test failed" }
+          & C:\vmd\tools\uv\uv.exe pip install --python $py pytest; if ($LASTEXITCODE -ne 0) { throw "pytest install failed" }
+          & $py -m pytest tests -p no:cacheprovider; if ($LASTEXITCODE -ne 0) { throw "tests failed" }
+
+      - name: Download a small model with the installer's own command
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $env:VOXPRINT_DUBBER_HOME = "C:\vmd-data"
+          & C:\vmd\runtime\Scripts\python.exe C:\vmd\main.py --fetch-models --models sep
+          if ($LASTEXITCODE -ne 0) { throw "model download failed" }
+
+      - name: Diagnostics on the runner (CPU, short run); the report is kept as an artifact
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force ci-report | Out-Null
+          $env:VOXPRINT_DESKTOP = "$PWD\ci-report"
+          $env:VOXPRINT_DUBBER_HOME = "C:\vmd-data"
+          & C:\vmd\runtime\Scripts\python.exe C:\vmd\main.py --diagnose-cli --quick --asr-repo Systran/faster-whisper-tiny
+
+      - name: Uninstall (silent) and check that nothing is left
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          # no -Wait: the uninstaller starts a temporary copy of itself and Start-Process would wait for the whole tree
+          Start-Process C:\vmd\unins000.exe -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/LOG=C:\vmd-uninstall.log" | Out-Null
+          for ($i = 0; $i -lt 90 -and (Test-Path C:\vmd); $i++) { Start-Sleep 2 }
+          if (Test-Path C:\vmd) {
+            if (Test-Path C:\vmd-uninstall.log) { Get-Content C:\vmd-uninstall.log -Tail 40 }
+            Get-ChildItem C:\vmd | Select-Object -First 20 | Format-Table Name
+            throw "the installation folder is still there after the uninstall"
+          }
+          $menu = Get-ChildItem "$env:ProgramData\Microsoft\Windows\Start Menu\Programs" -Recurse -Filter "*.lnk" -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*Voxprint AI Movie Dubber*" }
+          if ($menu) { throw "Start menu shortcuts are still there" }
+          $reg = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*","HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like "Voxprint AI Movie Dubber*" }
+          if ($reg) { throw "the Apps and features entry is still there" }
+          "uninstall OK"
+
+      - name: Setup logs
+        if: always()
+        shell: pwsh
+        run: |
+          foreach ($l in "C:\vmd-install.log", "$env:TEMP\VoxprintMovieDubber-setup.log", "C:\vmd-uninstall.log") {
+            if (Test-Path $l) { "== $l"; Get-Content $l -Tail 60 }
+          }
+          New-Item -ItemType Directory -Force ci-logs | Out-Null
+          foreach ($l in "C:\vmd-install.log", "$env:TEMP\VoxprintMovieDubber-setup.log", "C:\vmd-uninstall.log") { if (Test-Path $l) { Copy-Item $l ci-logs } }
+
+      - name: Upload the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoxprintMovieDubber-Setup
+          path: |
+            installer/Output/VoxprintMovieDubber-Setup.exe
+            installer/Output/VoxprintMovieDubber-Setup.exe.sha256
+          compression-level: 0
+          retention-days: 30
+
+      - name: Upload the diagnostics report and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-report-and-logs
+          path: |
+            ci-report/*.txt
+            ci-logs/*
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Publish a pre-release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $notes = "Early pre-release of Voxprint AI Movie Dubber. Small online installer: it downloads Python, PyTorch and the other dependencies during the setup. Windows 10/11 x64; an NVIDIA GPU is needed for useful speed."
+          gh release create "${{ github.ref_name }}" --prerelease --title "Voxprint AI Movie Dubber ${{ github.ref_name }} (pre-release)" --notes "$notes" installer/Output/VoxprintMovieDubber-Setup.exe installer/Output/VoxprintMovieDubber-Setup.exe.sha256

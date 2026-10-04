@@ -4,6 +4,7 @@
     main.py --diagnose            start the window and run the diagnostics at once (the report goes to the Desktop)
     main.py --diagnose-cli        run the diagnostics without a window (console output), same report
     main.py --worker NAME ARGS    internal: one heavy step in its own process (used by the diagnostics and the pipeline)
+    main.py --fetch-models        download the AI models (used by the installer); --models KEY,KEY limits the set
     main.py --selftest            create the window, process events briefly, exit 0 (smoke test)
     main.py --version
 
@@ -76,6 +77,8 @@ def main(argv=None) -> int:
         print(version_line())
         return 0
     _setup_logging()
+    if "--fetch-models" in argv:
+        return _fetch_models(argv)
     if "--diagnose-cli" in argv:
         from dubber.diag.runner import DiagnosticRunner
 
@@ -100,6 +103,31 @@ def main(argv=None) -> int:
     if "--selftest" in argv:
         QTimer.singleShot(400, app.quit)
     return app.exec()
+
+
+def _fetch_models(argv) -> int:
+    """Download the models into the app's models folder (resumable: finished models are skipped).  Exit 0 = all present."""
+    from dubber import models
+
+    spec = _arg(argv, "--models", "")
+    keys = [k for k in spec.split(",") if k] or list(models.INSTALL_MODELS)
+    unknown = [k for k in keys if k not in models.SPECS]
+    if unknown:
+        print(f"Unknown model key(s): {', '.join(unknown)}.  Known: {', '.join(models.SPECS)}", flush=True)
+        return 2
+    print(f"Downloading AI models (about {models.total_download_gb(keys)} GB, finished ones are skipped) to {models.paths.models_dir()}", flush=True)
+    failed = []
+    for key in keys:
+        s = models.SPECS[key]
+        print(f"- {s.title} [{s.repo}] ...", flush=True)
+        try:
+            models.ensure(s.repo, True, log=lambda m: print("    " + str(m), flush=True))
+            print("  done", flush=True)
+        except Exception as exc:  # noqa: BLE001 - report and continue with the next model
+            failed.append(key)
+            print(f"  FAILED: {' '.join(str(exc).split())[:300]}", flush=True)
+    print("All models are ready." if not failed else f"Not downloaded: {', '.join(failed)}.  Run this step again or start the diagnostics later.", flush=True)
+    return 1 if failed else 0
 
 
 def _apply_cli(opt, argv) -> None:

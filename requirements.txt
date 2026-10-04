@@ -1,7 +1,7 @@
 # Voxprint AI Movie Dubber - runtime dependencies (everything except torch).
-# torch/torchaudio are installed separately so the right CUDA build is picked:
+# torch and torchaudio are installed separately so that the matching CUDA build is picked:
 #     uv pip install torch torchaudio --torch-backend=auto
-# (setup.bat / build.bat do that for you).  Python 3.11 (same as the Audiobook Builder).
+
 PySide6>=6.7
 psutil>=5.9
 numpy>=1.26

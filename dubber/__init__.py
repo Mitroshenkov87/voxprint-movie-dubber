@@ -1,1 +1,1 @@
-"""Voxprint AI Movie Dubber - skeleton with a built-in diagnostic / benchmark."""
+"""Voxprint AI Movie Dubber - early pre-release with a built-in diagnostic / benchmark."""
