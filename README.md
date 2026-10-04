@@ -37,4 +37,4 @@ build.bat                   # тесты + portable zip (dist\);   build.bat exe
 ## Статус
 Проверено на Linux без GPU (CPU): весь конвейер диагностики, отчёт, GUI-smoke, 59 тестов, реальный запуск Qwen3-TTS 0.6B на CPU.
 **Не проверено:** любые GPU-пути (CUDA Graphs, FlashAttention, VRAM-метрики), Windows-скрипты `*.bat`, PyInstaller/Inno Setup, Acrylic.
-Лицензия проекта не выбрана. Стороннее — `THIRD_PARTY_NOTICES.md`.
+Лицензия: «все права защищены» (временно, см. `LICENSE`); открытая лицензия не выбрана. Стороннее — `THIRD_PARTY_NOTICES.md`.

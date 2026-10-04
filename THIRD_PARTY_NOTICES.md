@@ -15,4 +15,4 @@
 | ffmpeg (from PATH or imageio-ffmpeg) | audio extraction and muxing, called as a separate program | LGPL/GPL, depending on the build |
 | espeak-ng (only to generate the synthetic test clip, `tools/make_test_clip.py`) | not shipped | GPL-3.0 (the generated audio is synthetic) |
 
-Licenses of the project itself: not decided yet (see `docs/BUILDING.md`, "Open decisions").
+Project licence: "all rights reserved" for now (see `LICENSE`); no open-source licence chosen yet.
