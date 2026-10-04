@@ -1,0 +1,7 @@
+*.bat text eol=crlf
+*.iss text eol=crlf
+*.ps1 text eol=crlf
+*.sh text eol=lf
+*.mkv binary
+*.wav binary
+*.ico binary
