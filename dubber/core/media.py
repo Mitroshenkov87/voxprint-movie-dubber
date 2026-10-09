@@ -82,6 +82,23 @@ def embedded_for(info: MediaInfo, lang: str) -> Optional[Track]:
     return cands[0] if cands else None
 
 
+def pick_original_track(info: Optional[MediaInfo], target_lang: str = "") -> int:
+    """Audio track to dub from, chosen automatically: the original-language track.  A track already in the dub language, a
+    commentary or an audio-description track is skipped; a title saying "original" wins; otherwise the first track left."""
+    if info is None or not info.audio:
+        return 0
+
+    def bad(t: Track) -> bool:
+        title = t.title.lower()
+        return any(w in title for w in ("comment", "коммент", "description", "описани", "director"))
+
+    def rank(t: Track):
+        title = t.title.lower()
+        return (bad(t), bool(target_lang) and t.lang2 == target_lang, not ("original" in title or "оригинал" in title), t.index)
+
+    return min(info.audio, key=rank).index
+
+
 def extract_audio(path: Path, out: Path, sr: int, channels: int, track: int = 0, start: Optional[float] = None,
                   length: Optional[float] = None) -> None:
     args: List = []
@@ -94,18 +111,41 @@ def extract_audio(path: Path, out: Path, sr: int, channels: int, track: int = 0,
     ffmpeg.run(args)
 
 
+#: audio codecs an MP4 file can hold as they are (others are converted to AAC on an MP4 export; the video is never re-encoded)
+MP4_AUDIO = {"aac", "ac3", "eac3", "mp3", "alac"}
+MP4_TEXT_SUBS = {"subrip", "srt", "ass", "ssa", "mov_text", "webvtt", "text"}
+
+
 def mux_dub(src: Path, dub_wav: Path, out: Path, lang: str, title: str) -> int:
-    """Same file + the dub as a new audio track (video and the original tracks are stream-copied).  mp4 gets AAC, mkv too
-    (plays on TVs); the dub becomes the default audio track, the original stays selectable."""
+    """Same file + the dub as a new audio track (video stream-copied, never re-encoded).  The dub is AAC (plays on TVs) and becomes
+    the default audio track, the original stays selectable.
+
+    MKV (default): every stream of the film is copied.  MP4 (remux only): video + audio + text subtitles (as mov_text); an original
+    audio track whose codec MP4 cannot hold (TrueHD, DTS, FLAC, PCM, Vorbis, ...) is converted to AAC - only that audio; picture-based
+    subtitles and attachments (fonts) are left out because MP4 cannot carry them."""
     lang3 = {"ru": "rus", "en": "eng", "de": "deu"}.get(lang, lang)
-    n_audio = len(probe(src).audio)
-    args = ["-i", src, "-i", dub_wav, "-map", "0", "-map", "1:a:0", "-c", "copy", f"-c:a:{n_audio}", "aac", f"-b:a:{n_audio}", "224k",
-            f"-metadata:s:a:{n_audio}", f"language={lang3}", f"-metadata:s:a:{n_audio}", f"title={title}"]
+    info = probe(src)
+    n_audio = len(info.audio)
+    mp4 = Path(out).suffix.lower() == ".mp4"
+    if mp4:
+        args = ["-i", src, "-i", dub_wav, "-map", "0:v?", "-map", "0:a?"]
+        args += [x for t in info.subtitles if t.codec.lower() in MP4_TEXT_SUBS for x in ("-map", f"0:s:{t.index}")]
+        args += ["-map", "1:a:0", "-c", "copy"]
+        for t in info.audio:
+            if t.codec.lower() not in MP4_AUDIO:
+                ch = int(t.channels or 2)
+                args += [f"-c:a:{t.index}", "aac", f"-b:a:{t.index}", f"{min(640, 96 * max(2, ch))}k"]
+    else:
+        args = ["-i", src, "-i", dub_wav, "-map", "0", "-map", "1:a:0", "-c", "copy"]
+    args += [f"-c:a:{n_audio}", "aac", f"-b:a:{n_audio}", "224k",
+             f"-metadata:s:a:{n_audio}", f"language={lang3}", f"-metadata:s:a:{n_audio}", f"title={title}"]
     for i in range(n_audio):
         args += [f"-disposition:a:{i}", "0"]
     args += [f"-disposition:a:{n_audio}", "default"]
-    if Path(out).suffix.lower() == ".mp4":
+    if mp4:
         args += ["-c:s", "mov_text", "-movflags", "+faststart"]
+        if info.video_codec.lower() in ("hevc", "h265"):
+            args += ["-tag:v", "hvc1"]                       # HEVC in MP4 plays on Apple devices / TVs only with this tag
     args.append(out)
     ffmpeg.run(args, timeout=4 * 3600)
     return n_audio

@@ -551,3 +551,33 @@ def test_key_characters_and_subtitle_speaker_tags(tmp_path, film):
     q = Project(q.folder)
     assert "subtitle speaker tags" in q.stages["diarization"]["summary"]
     assert [ln.speaker for ln in q.lines] == ["S1", "S2", "S1", "S1"] and {s.name for s in q.speakers} == {"Anna", "Bob"}
+
+
+def test_original_track_is_picked_automatically():
+    from pathlib import Path
+    from dubber.core.media import MediaInfo, Track, pick_original_track
+    info = MediaInfo(Path("x.mkv"), 10.0, "h264", [Track(0, 1, "ac3", "rus", "Dub"), Track(1, 2, "eac3", "eng", "Commentary"),
+                                                     Track(2, 3, "dts", "eng", "Original")])
+    assert pick_original_track(info, "ru") == 2
+    info.audio[2].title = ""
+    assert pick_original_track(info, "ru") == 2                      # not the Russian dub, not the commentary
+    assert pick_original_track(None, "ru") == 0
+
+
+def test_mp4_export_remuxes_video_and_converts_only_unsupported_audio(tmp_path, clip, monkeypatch):
+    from dubber import ffmpeg
+    from dubber.core import media
+    calls = []
+    info = media.MediaInfo(clip, 18.0, "hevc", [media.Track(0, 1, "truehd", "eng", "", 8), media.Track(1, 2, "ac3", "eng")],
+                           [media.Track(0, 3, "hdmv_pgs_subtitle", "eng"), media.Track(1, 4, "subrip", "rus")])
+    monkeypatch.setattr(media, "probe", lambda p: info)
+    monkeypatch.setattr(ffmpeg, "run", lambda args, timeout=0: calls.append([str(a) for a in args]))
+    media.mux_dub(clip, tmp_path / "d.wav", tmp_path / "out.mp4", "ru", "AI dub")
+    a = calls[-1]
+    assert "-c:v" not in a and a[a.index("-c") + 1] == "copy"           # the video is copied, never re-encoded
+    assert a[a.index("-c:a:0") + 1] == "aac" and "-c:a:1" not in a      # TrueHD converted, AC-3 kept
+    assert "0:s:1" in a and "0:s:0" not in a                            # text subtitles kept, PGS left out
+    assert a[a.index("-tag:v") + 1] == "hvc1"
+    media.mux_dub(clip, tmp_path / "d.wav", tmp_path / "out.mkv", "ru", "AI dub")
+    b = calls[-1]
+    assert b[b.index("-map") + 1] == "0" and "-c:a:0" not in b          # MKV: every stream copied as it is

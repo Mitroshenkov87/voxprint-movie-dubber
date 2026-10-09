@@ -86,6 +86,14 @@ def list_library(root: Optional[Path] = None) -> List[LibraryVoice]:
     return out
 
 
+def default_single_voice(target_lang: str, root: Optional[Path] = None) -> Optional[LibraryVoice]:
+    """The library voice used when one voice reads the whole film and the user chose none: a voice in the dub language with a
+    reference clip (first by name; one recorded for this language beats a multilingual one).  None -> clone the film's voice."""
+    usable = [v for v in list_library(root) if v.ref_audio is not None]
+    same = [v for v in usable if (v.language or "").lower()[:2] == (target_lang or "").lower()[:2]]
+    return same[0] if same else None
+
+
 def get_library_voice(voice_id: str, root: Optional[Path] = None) -> Optional[LibraryVoice]:
     return next((v for v in list_library(root) if v.id == voice_id), None)
 

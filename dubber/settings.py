@@ -15,8 +15,14 @@ DEFAULTS: Dict[str, Any] = {
     "subdl_key": "", "opensubtitles_key": "", "opensubtitles_user": "", "opensubtitles_password": "", "hf_token": "",
     "separation": "tiger", "asr": "whisper", "diarization": "pyannote", "translation": "opus", "tts": "qwen",
     "tts_model": "tts_1_7b", "tts_backend": "auto", "device": "auto", "allow_download": True,
-    "output_format": "same", "projects_dir": "",
+    "output_format": "mkv", "projects_dir": "",
+    # the Film screen's Options, remembered for the next film (a film's own project keeps what was used for it)
+    "dub_target_lang": "", "dub_subtitles": "auto", "dub_profanity": "keep", "dub_multi_voice": False, "dub_original_volume": 0.15,
+    "options_open": False,
 }
+#: keys of the Film screen's Options -> project setting they preset
+DUB_DEFAULTS = {"dub_target_lang": "target_lang", "dub_subtitles": "subtitle_choice", "dub_profanity": "profanity",
+                "dub_multi_voice": "multi_voice", "dub_original_volume": "original_volume", "output_format": "output_format"}
 ENGINE_KEYS = ("separation", "asr", "diarization", "translation", "tts", "tts_model", "tts_backend", "device", "allow_download",
                "subdl_key", "opensubtitles_key", "opensubtitles_user", "opensubtitles_password", "hf_token")
 
@@ -34,6 +40,12 @@ def save(values: Dict[str, Any]) -> None:
     cur = load()
     cur.update({k: v for k, v in values.items() if k in DEFAULTS})
     write_json(_file(), cur)
+
+
+def output_format() -> str:
+    """mkv (default) | mp4; the old "same as the film" choice reads as MKV (the video is only ever remuxed)."""
+    v = str(load().get("output_format") or "mkv")
+    return v if v in ("mkv", "mp4") else "mkv"
 
 
 def engine_cfg() -> Dict[str, Any]:

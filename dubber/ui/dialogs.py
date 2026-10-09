@@ -65,7 +65,6 @@ class SettingsDialog(QDialog):
         self.cmb_backend = _combo([("auto", tr("settings.auto")), ("standard/flash_attention_2", "FlashAttention 2"),
                                    ("graphs/sdpa", "CUDA Graphs"), ("standard/sdpa", "SDPA")], s["tts_backend"])
         self.cmb_device = _combo([("auto", tr("settings.auto")), ("cuda", "CUDA"), ("cpu", "CPU")], s["device"])
-        self.cmb_format = _combo([("same", tr("settings.format_same")), ("mkv", "MKV"), ("mp4", "MP4")], s["output_format"])
         self.chk_download = QCheckBox(tr("settings.allow_download"))
         self.chk_download.setChecked(bool(s["allow_download"]))
         for label, w in (("settings.subdl", self.edt_subdl), ("settings.os_key", self.edt_os_key), ("settings.os_user", self.edt_os_user),
@@ -73,7 +72,7 @@ class SettingsDialog(QDialog):
             form.addRow(tr(label), w)
         form.addRow(tr("settings.models_dir"), row)
         for label, w in (("settings.separation", self.cmb_sep), ("settings.diarization", self.cmb_diar), ("settings.tts", self.cmb_tts),
-                         ("settings.backend", self.cmb_backend), ("settings.device", self.cmb_device), ("settings.format", self.cmb_format)):
+                         ("settings.backend", self.cmb_backend), ("settings.device", self.cmb_device)):
             form.addRow(tr(label), w)
         form.addRow("", self.chk_download)
         lay.addLayout(form)
@@ -99,7 +98,7 @@ class SettingsDialog(QDialog):
                 "hf_token": self.edt_hf.text().strip(), "separation": self.cmb_sep.currentData(),
                 "diarization": self.cmb_diar.currentData(), "tts_model": self.cmb_tts.currentData(),
                 "tts_backend": self.cmb_backend.currentData(), "device": self.cmb_device.currentData(),
-                "output_format": self.cmb_format.currentData(), "allow_download": self.chk_download.isChecked()}
+                "allow_download": self.chk_download.isChecked()}
 
     def accept(self) -> None:
         settings.save(self.values())

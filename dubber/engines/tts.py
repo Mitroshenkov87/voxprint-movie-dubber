@@ -2,8 +2,10 @@
 
 Backend order on an NVIDIA GPU (research note 03/06): FlashAttention-2 (if the ``flash_attn`` package exists) -> CUDA Graphs via
 ``faster-qwen3-tts`` (MIT) -> standard SDPA.  On the CPU: SDPA.  Every step falls back to the next one if loading fails.
-Batching: up to ``MAX_BATCH`` (12) lines per generate call, sized by free VRAM; lines of similar length are batched together
-(sorted inside a small look-ahead window so the output stays close to film order for Watch mode); out-of-memory halves the batch.
+Batching: up to ``MAX_BATCH`` (12) lines per generate call, sized by the suite VRAM policy (``dubber.infra.resources``: at most 75 % of
+the VRAM that was free when the stage started, minus what the model took); lines of similar length are batched together (sorted inside
+a small look-ahead window so the output stays close to film order for Watch mode); out-of-memory halves the batch.  Library voices
+(LoRA adapters) stay loaded side by side while the budget allows, else they are swapped one after another.
 The CUDA-Graphs backend synthesises one line at a time (static shapes).
 
 Voices: ``clone`` = reference clip + its text (ICL; without a text the x-vector-only mode is used); ``library`` = a LoRA adapter
@@ -26,8 +28,6 @@ FRAMES_PER_SECOND = 12.5
 MAX_SECONDS_PER_CHAR = 0.19
 MIN_TOKENS, MAX_TOKENS = 48, 2048
 MAX_BATCH = 12
-VRAM_PER_ITEM_GB = 0.9
-VRAM_RESERVE_GB = 2.0
 SORT_WINDOW_BATCHES = 3
 QWEN_LANG = {"ru": "Russian", "en": "English", "de": "German", "fr": "French", "es": "Spanish", "it": "Italian", "pt": "Portuguese",
              "ja": "Japanese", "ko": "Korean", "zh": "Chinese"}
@@ -220,6 +220,9 @@ class QwenTTS(BaseTTS):
         self._adapters: Dict[str, str] = {}
         self._peft = None
         self.model = None
+        from dubber.infra import resources
+
+        self.budget = resources.VramBudget() if self.use_cuda else None      # measured before our model takes any memory
         errors = []
         for kind, attn in self.candidates(self.use_cuda, prefer, need_adapters):
             try:
@@ -245,6 +248,8 @@ class QwenTTS(BaseTTS):
         if errors:
             self.log("TTS backends skipped: " + " | ".join(errors))
         self.log(f"TTS backend: {self.backend}")
+        if self.budget is not None:
+            self.log(f"TTS memory: {self.budget.describe()}; batch {self.max_batch()}")
 
     @staticmethod
     def candidates(use_cuda: bool, prefer: str = "auto", need_adapters: bool = False) -> List[Tuple[str, str]]:
@@ -272,15 +277,27 @@ class QwenTTS(BaseTTS):
         return self.backend.startswith("graphs")
 
     def max_batch(self) -> int:
-        if self.graphs or not self.use_cuda:
-            return 1
-        try:
-            import torch
+        from dubber.infra import resources
 
-            free = torch.cuda.mem_get_info()[0] / 1024 ** 3
-            return int(max(1, min(MAX_BATCH, (free - VRAM_RESERVE_GB) // VRAM_PER_ITEM_GB)))
+        if self.graphs:
+            return 1
+        if not self.use_cuda:
+            return resources.tts_batch("cpu", 0.0, resources.RAM_SHARE * resources.ram_gb()[1])
+        try:
+            return resources.tts_batch("cuda", self.budget.left(), self.budget.ram_budget)
         except Exception:  # noqa: BLE001
             return 1
+
+    def _swap_out_other_voices(self, keep: str) -> None:
+        """Budget too tight for several voices: drop every adapter except ``keep`` (they are reloaded when needed)."""
+        for name in [n for n in self._adapters if n != keep]:
+            try:
+                self._peft.delete_adapter(name)
+            except Exception as exc:  # noqa: BLE001 - keep going with what is loaded
+                self.log(f"voice adapter {name} not unloaded: {type(exc).__name__}: {exc}")
+                continue
+            self._adapters.pop(name, None)
+        self._free()
 
     def _inner(self):
         return self.model.model if self.graphs else self.model
@@ -304,6 +321,11 @@ class QwenTTS(BaseTTS):
         self._peft.base_model.enable_adapter_layers()
         self._peft.set_adapter(voice.key)
         set_lora_scale(self._peft, voice.key, voice.adapter_scale)
+        if self.budget is not None and len(self._adapters) > 1:
+            from dubber.infra import resources
+
+            if not resources.keep_voices_loaded(self.budget.left()):
+                self._swap_out_other_voices(voice.key)
 
     def _prompt(self, voice: VoiceSpec):
         key = voice.tag()

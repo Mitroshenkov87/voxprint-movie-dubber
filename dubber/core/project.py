@@ -97,10 +97,11 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "single_voice": {"kind": "clone", "id": ""},
     "original_volume": 0.15,          # original speech under the dub (voice-over style); 0 = removed
     "audio_track": 0,
+    "audio_track_auto": True,         # the original-language track is picked automatically (dubber.core.media.pick_original_track)
     "subtitle_choice": "auto",        # auto | none | <path>
-    "output_format": "same",          # same | mkv | mp4
-    "actor_weight": 0.7,
-    "key_share": 0.2,                 # a speaker with >= this share of the dialogue time is a key character              # actor-like voices: share of the actor's own timbre (dubber.core.actor_voice)
+    "output_format": "mkv",           # mkv | mp4 (remux only; "same" from older projects = the film's container)
+    "actor_weight": 0.7,              # actor-like voices: share of the actor's own timbre (dubber.core.actor_voice)
+    "key_share": 0.2,                 # a speaker with >= this share of the dialogue time is a key character
     "profanity": "keep",              # keep (as in the original) | soften (no mat; see dubber.core.profanity)
 }
 

@@ -213,3 +213,50 @@ def test_fetch_worker_reports_sizes(tmp_path, monkeypatch):
 
     res = w_fetch.run({"keys": ["asr"]}, Ctx())
     assert res["status"] == "OK" and res["metrics"]["models"]["asr"]["source"] == "present"
+
+
+# ------------------------------------------------------------------ VRAM / RAM policy
+def test_vram_policy_caps_at_75_percent_of_free_and_sizes_the_tts_batch():
+    from dubber.infra import resources as R
+    laptop = R.Snapshot("RTX 4090 Laptop", 16.0, 15.0, 32.0, 20.0, "nvidia-smi")
+    assert laptop.vram_budget_gb == 11.25 and laptop.ram_budget_gb == 15.0
+    # everything fits: GPU, the big TTS model
+    assert R.plan_stage("asr", laptop, "cuda").device == "cuda"
+    assert R.plan_stage("tts", laptop, "cuda").tts_model == "tts_1_7b"
+    # busy card (2.5 GB free -> 1.9 GB budget): ASR goes to the CPU, TTS switches to the lighter model only if that fits
+    busy = R.Snapshot("RTX 4090 Laptop", 16.0, 2.5, 32.0, 20.0, "nvidia-smi")
+    assert R.plan_stage("asr", busy, "cuda").device == "cpu"
+    assert R.plan_stage("translation", busy, "cuda").device == "cuda"
+    mid = R.Snapshot("x", 16.0, 6.5, 32.0, 20.0)                    # 4.9 GB budget: 1.7B does not fit, 0.6B does
+    assert R.plan_stage("tts", mid, "cuda").tts_model == "tts_0_6b"
+    assert R.plan_stage("tts", mid, "cuda", lighter_ok=False).tts_model == "tts_1_7b"
+    # batch: what is left of the budget after the model; CUDA Graphs always 1; CPU limited by RAM
+    assert R.tts_batch("cuda", 11.25 - 5.0, 15.0) == 6
+    assert R.tts_batch("cuda", 30.0, 15.0) == R.MAX_BATCH
+    assert R.tts_batch("cuda", 0.2, 15.0) == 1
+    assert R.tts_batch("cuda", 11.25 - 5.0, 15.0, graphs=True) == 1
+    assert R.tts_batch("cuda", 11.25 - 5.0, 1.0) <= 2                 # almost no free RAM
+    assert R.tts_batch("cpu", 0.0, 1.5) == 1 and R.tts_batch("cpu", 0.0, 40.0) == R.MAX_CPU_BATCH
+    # several voices stay loaded while there is room, else they are swapped
+    assert R.keep_voices_loaded(6.0) and not R.keep_voices_loaded(1.0)
+    assert "budget 11.2 GB" in laptop.describe() or "budget 11.3 GB" in laptop.describe()
+
+
+def test_snapshot_reads_ram_and_gpu(monkeypatch):
+    from dubber.infra import resources as R
+    monkeypatch.setenv("VOXPRINT_FAKE_VRAM", "RTX 5090 Laptop,24,20")
+    s = R.snapshot(use_torch=False)
+    assert s.gpu == "RTX 5090 Laptop" and s.vram_budget_gb == 15.0 and s.ram_total_gb > 0
+
+
+def test_runner_moves_a_stage_that_does_not_fit_to_the_cpu(tmp_path, monkeypatch):
+    from dubber.core.project import Project
+    from dubber.pipeline import runner as RN, stages as S
+    monkeypatch.setenv("VOXPRINT_FAKE_VRAM", "RTX 4090 Laptop,16,2")
+    monkeypatch.setattr(S, "_device", lambda cfg: "cuda")
+    logs = []
+    r = RN.Runner(Project(tmp_path / "p"), {"allow_download": True}, RN.Callbacks(log=logs.append))
+    assert r._stage_cfg("asr")["device"] == "cpu"
+    assert any("running on the CPU" in m for m in logs)
+    monkeypatch.setenv("VOXPRINT_FAKE_VRAM", "RTX 4090 Laptop,16,15")
+    assert r._stage_cfg("tts")["device"] == "cuda" and r._stage_cfg("tts")["tts_model"] == "tts_1_7b"

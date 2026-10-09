@@ -1,4 +1,7 @@
-"""The main window: one dark glass window with four steps - Film, Characters, Script, Dub.
+"""The main window: one dark glass window with four steps - Film, Characters, Lines, Dub.
+
+Film is all most people need: drop a movie, press Dub, get ``<name>.dub-<lang>.mkv`` next to it.  Characters (multi-voice only) and
+Lines are optional review tabs; after the analysis they get a small badge only when something deserves a look.
 
 Same shell as the Voxprint Audiobook Builder: translucent root, Acrylic backdrop on Windows 11, cards with rounded corners,
 a gear menu for the UI language.  Heavy work never runs in the GUI thread: the pipeline runs in a QThread that starts one worker
@@ -18,7 +21,7 @@ from PySide6.QtWidgets import (QApplication, QFileDialog, QHBoxLayout, QLabel, Q
 
 from dubber import i18n, paths, platform_win, settings
 from dubber.appinfo import APP_DISPLAY_NAME, APP_VERSION, resource_dir
-from dubber.core import audio, media, voices
+from dubber.core import audio, media, review, voices
 from dubber.core.project import Project, Voice
 from dubber.core.watch import WatchState
 from dubber.i18n import tr
@@ -27,7 +30,7 @@ from dubber.pipeline import stages as S
 from dubber.ui import dialogs
 from dubber.ui.dub_audio import ChunkSource, WavSource
 from dubber.ui.jobs import PipelineThread
-from dubber.ui.pages import CharactersPage, DubPage, FilmPage, ScriptPage, fmt_eta, fmt_time
+from dubber.ui.pages import TARGET_LANGS, CharactersPage, DubPage, FilmPage, LinesPage, fmt_eta, fmt_time
 from dubber.ui.player import HAVE_MULTIMEDIA, Player
 from dubber.ui.theme import build_style
 
@@ -36,7 +39,8 @@ VIDEO_EXTS = {".mkv", ".mp4", ".avi", ".mov", ".webm", ".m4v", ".ts", ".m2ts"}
 SUB_EXTS = {".srt", ".vtt", ".ass", ".ssa"}
 PREPARE_UNTIL = "translation"
 PREVIEW_S = 60.0
-STEPS = ("film", "characters", "script", "dub")
+STEPS = ("film", "characters", "lines", "dub")
+FILM_KINDS = ("prepare", "find", "auto")          # jobs whose progress shows on the Film screen
 
 
 def engine_cfg() -> Dict[str, Any]:
@@ -112,10 +116,10 @@ class MainWindow(QWidget):
         self.player.failed.connect(self._on_player_failed)
         self.film = FilmPage()
         self.chars = CharactersPage()
-        self.script = ScriptPage()
+        self.lines = LinesPage()
         self.dubp = DubPage(self.player)
         self.stack = QStackedWidget()
-        for w in (self.film, self.chars, self.script, self.dubp):
+        for w in (self.film, self.chars, self.lines, self.dubp):
             self.stack.addWidget(w)
         body.addWidget(self.stack, 1)
         self.lbl_footer = QLabel()
@@ -125,16 +129,20 @@ class MainWindow(QWidget):
         self.film.choose_file.connect(self.choose_file)
         self.film.choose_subtitles.connect(self.choose_subtitles)
         self.film.prepare.connect(self.prepare)
-        self.film.cmb_target.currentIndexChanged.connect(lambda _i: self._film_changed())
-        self.film.cmb_subs.currentIndexChanged.connect(lambda _i: self._film_changed())
-        self.film.cmb_profanity.currentIndexChanged.connect(lambda _i: self._profanity_changed())
+        self.film.dub.connect(self.dub_all)
+        self.film.cancel.connect(self.cancel_job)
+        self.film.show_result.connect(self.show_result)
+        self.film.watch.connect(lambda: (self.go(3), self.start_watch()))
+        self.film.option_changed.connect(self._option_changed)
+        self.film.options_toggled.connect(lambda on: settings.save({"options_open": bool(on)}))
+        self.film.set_options_open(bool(settings.load().get("options_open")))
         self.chars.changed.connect(self._chars_changed)
         self.chars.find_speakers.connect(lambda: self.run_pipeline("find", PREPARE_UNTIL))
         self.chars.listen.connect(self.listen)
         self.chars.open_catalog.connect(self.open_voice_catalog)
         self.chars.save_actor.connect(self.save_actor_voice)
         self.chars.next_step.connect(lambda: self.go(2))
-        self.script.next_step.connect(lambda: self.go(3))
+        self.lines.next_step.connect(lambda: self.go(3))
         self.dubp.dub.connect(lambda: self.run_pipeline("dub", "mux"))
         self.dubp.cancel.connect(self.cancel_job)
         self.dubp.preview.connect(self.start_preview)
@@ -165,8 +173,10 @@ class MainWindow(QWidget):
         self.btn_diag.setText(tr("ui.btn_diag"))
         for i, key in enumerate(STEPS):
             self.step_buttons[i].setText(f"{i + 1}. {tr('step.' + key)}")
-        for page in (self.film, self.chars, self.script, self.dubp, self.player):
+        for page in (self.film, self.chars, self.lines, self.dubp, self.player):
             page.retranslate()
+        self._update_steps()
+        self._refresh_plan()
         self.lbl_footer.setText(f"{tr('ui.footer_main')}  ·  {APP_VERSION}")
 
     def _language_menu(self) -> None:
@@ -186,20 +196,35 @@ class MainWindow(QWidget):
     def _prepared(self) -> bool:
         return bool(self.project and (self.project.stages.get(PREPARE_UNTIL) or {}).get("done") and self.project.lines)
 
+    def _multi(self) -> bool:
+        return bool(self.project and self.project.settings.get("multi_voice"))
+
     def _update_steps(self) -> None:
         busy = self.job is not None and self.job.isRunning()
         ready = self._prepared()
-        allowed = [True, ready, ready, ready]
+        allowed = [True, ready and self._multi(), ready, ready]
+        hints = review.attention(self.project) if ready and not busy else {"characters": [], "lines": []}
+        if not self._multi():
+            hints["characters"] = []
         for i, b in enumerate(self.step_buttons):
+            key = STEPS[i]
+            items = [tr(k, **kw) for k, kw in hints.get(key, [])]
             b.setEnabled(allowed[i])
             b.setChecked(self.stack.currentIndex() == i)
+            b.setText(f"{i + 1}. {tr('step.' + key)}" + ("  \u25cf" if items else ""))
+            b.setProperty("attention", "true" if items else "false")
+            b.setToolTip("\n".join(items) if items else (tr("chars.disabled") if key == "characters" and not self._multi() else ""))
+            b.style().unpolish(b)
+            b.style().polish(b)
+        self.film.set_attention([f"{tr('step.' + k)} - {tr(m, **kw)}" for k in ("characters", "lines") for m, kw in hints[k]])
+        self.film.running(busy)
+        self.film.btn_dub.setEnabled(bool(self.project) and not busy)
         self.film.btn_prepare.setEnabled(bool(self.project) and not busy)
-        self.film.btn_file.setEnabled(not busy)
-        for w in (self.chars.chk_multi, self.chars.cmb_single, self.chars.btn_find, self.chars.btn_merge):
+        for w in (self.chars.btn_find, self.chars.btn_merge):
             w.setEnabled(not busy)
         for c in self.chars.cards.values():
             c.setEnabled(not busy)
-        self.script.set_editable(not busy)
+        self.lines.set_editable(not busy)
         self.dubp.running(busy)
         self.dubp.btn_dub.setEnabled(ready and not busy)
         self.dubp.btn_preview.setEnabled(ready and not busy)
@@ -207,6 +232,8 @@ class MainWindow(QWidget):
     def go(self, index: int) -> None:
         if index > 0 and not self._prepared():
             index = 0
+        if index == 1 and not self._multi():
+            index = 2
         self.stack.setCurrentIndex(index)
         self._update_steps()
 
@@ -264,14 +291,93 @@ class MainWindow(QWidget):
         if (folder / "project.json").exists():
             self.project = Project(folder)
         else:
-            self.project = Project.create(folder, path, target_lang=self.film.target_lang(),
-                                          output_format=settings.load().get("output_format", "same"))
+            self.project = Project.create(folder, path, **self.new_project_settings(self.info))
+        self.apply_auto(self.project)
+        self.project.save()
         self.film.load(self.project)
         self.watch_state = WatchState(self.info.duration)
         self._reload_pages()
         self.dubp.lbl_stage.setText("")
         self.dubp.lbl_watch.setText("")
+        self.film.lbl_prepare.setText("")
+        self.film.btn_show.setVisible(bool(self.project.settings.get("output_file")) and Path(self.project.settings["output_file"]).exists())
+        self.film.btn_watch.hide()
+        self._refresh_plan()
         self.go(0)
+
+    # ------------------------------------------------------------------ the best defaults
+    @staticmethod
+    def default_target(info: Optional[media.MediaInfo]) -> str:
+        """Remembered dub language, else the UI language (Russian when the UI language is not a dub language), never the film's own."""
+        s = settings.load()
+        want = str(s.get("dub_target_lang") or "")
+        ui = i18n.current()
+        cands = [want] if want in TARGET_LANGS else []
+        cands += [c for c in (ui, "ru", "en") if c in TARGET_LANGS]
+        orig = ""
+        if info is not None and info.audio:
+            t = next((t for t in info.audio if t.index == media.pick_original_track(info, cands[0])), info.audio[0])
+            orig = t.lang2
+        return next((c for c in cands if c != orig), cands[0])
+
+    def new_project_settings(self, info: Optional[media.MediaInfo]) -> Dict[str, Any]:
+        """A new film starts with the remembered Options (or the defaults: original track, subtitles automatic, profanity as in the
+        original, one voice, voice-over volume, MKV)."""
+        s = settings.load()
+        target = self.default_target(info)
+        out: Dict[str, Any] = {"target_lang": target, "audio_track_auto": True, "audio_track": media.pick_original_track(info, target),
+                               "output_format": settings.output_format()}
+        for key, proj_key in settings.DUB_DEFAULTS.items():
+            if key in ("dub_target_lang", "output_format"):
+                continue
+            out[proj_key] = s[key]
+        if out.get("subtitle_choice") not in ("auto", "none"):
+            out["subtitle_choice"] = "auto"
+        return out
+
+    def apply_auto(self, p: Project) -> None:
+        """Automatic choices the user has not overridden: the original audio track, and one library voice in the dub language
+        (a voice made or downloaded with the Audiobook Builder) instead of a clone, when there is one."""
+        if p.settings.get("audio_track_auto", True):
+            p.settings["audio_track"] = media.pick_original_track(self.info, p.settings.get("target_lang", "ru"))
+        if not p.settings.get("single_voice_user"):
+            lv = voices.default_single_voice(p.settings.get("target_lang", "ru"))
+            p.settings["single_voice"] = {"kind": "library", "id": lv.id} if lv else {"kind": "clone", "id": ""}
+
+    def _refresh_plan(self) -> None:
+        if self.project is None:
+            self.film.set_plan(None)
+            return
+        from dubber.pipeline.stages import output_path
+
+        self.film.set_plan(self.project, output_path(self.project).name)
+
+    def _option_changed(self, what: str) -> None:
+        """An Option changed: store it in the film's project and remember it for the next film."""
+        if self.project is None or (self.job is not None and self.job.isRunning()):
+            return
+        if what == "voice":
+            self.project.settings["single_voice_user"] = True
+        self._film_changed()
+        if what in ("target", "voice") and not self.project.settings.get("single_voice_user"):
+            self.apply_auto(self.project)
+            self.project.save()
+            self.film.load(self.project)
+        p = self.project.settings
+        remember = {"target": {"dub_target_lang": p["target_lang"]}, "profanity": {"dub_profanity": p["profanity"]},
+                    "multi": {"dub_multi_voice": bool(p["multi_voice"])}, "volume": {"dub_original_volume": p["original_volume"]},
+                    "format": {"output_format": p["output_format"]},
+                    "subs": {"dub_subtitles": p["subtitle_choice"]} if p["subtitle_choice"] in ("auto", "none") else {}}.get(what, {})
+        if remember:
+            settings.save(remember)
+        if what == "profanity":
+            self._profanity_changed()
+        if what in ("multi", "volume"):
+            self.chars.load(self.project)
+            self.lines.load(self.project)
+            self.dubp.load(self.project)
+        self._refresh_plan()
+        self._update_steps()
 
     def _film_changed(self) -> None:
         if self.project is None:
@@ -287,26 +393,34 @@ class MainWindow(QWidget):
             return
         from dubber.core import profanity
 
-        self._film_changed()
         if self._prepared():
             n = profanity.apply_to_lines(self.project.lines, self.project.settings["profanity"], self.project.settings["target_lang"])
             self.project.save()
-            self.script.load(self.project)
+            self.lines.load(self.project)
             self.film.lbl_prepare.setText(tr("film.softened", n=n) if self.project.settings["profanity"] == "soften" else "")
 
     def prepare(self) -> None:
+        """The optional review path: make the lines (and speakers), then open the review tabs."""
         if self.project is None:
             self.film.lbl_prepare.setText(tr("ui.start_need_file"))
             return
         self._film_changed()
         self.run_pipeline("prepare", PREPARE_UNTIL)
 
-    # ------------------------------------------------------------------ characters / script
+    def dub_all(self) -> bool:
+        """The main action: the whole pipeline with the current (preset) Options, ending with the dubbed file next to the film."""
+        if self.project is None:
+            self.film.lbl_prepare.setText(tr("ui.start_need_file"))
+            return False
+        self._film_changed()
+        self.apply_auto(self.project)
+        self.project.save()
+        return self.run_pipeline("auto", "mux")
+
+    # ------------------------------------------------------------------ characters / lines
     def _chars_changed(self, what: str) -> None:
-        if what in ("multi", "merge"):
-            self.script.load(self.project)
-        if what == "name":
-            self.script.load(self.project)
+        if what in ("merge", "name"):
+            self.lines.load(self.project)
 
     def listen(self, sid: str) -> None:
         """Play what a voice will sound like: the library sample, the reference clip, or a few of the speaker's lines."""
@@ -376,17 +490,18 @@ class MainWindow(QWidget):
         self.job.progress.connect(self._on_progress)
         self.job.until.connect(self._on_until)
         self.job.done.connect(self._on_done)
-        if kind in ("prepare", "find"):
+        if kind in FILM_KINDS:
             self.film.progress.setValue(0)
             self.film.progress.show()
-            self.film.lbl_prepare.setText(tr("film.preparing"))
+            self.film.btn_watch.hide()
+            self.film.lbl_prepare.setText(tr("film.dubbing") if kind == "auto" else tr("film.preparing"))
             if kind == "find":
                 self.chars.lbl_multi_status.setText(tr("chars.finding"))
         else:
             self.dubp.progress.setValue(0)
             self.dubp.lbl_stage.setText(tr("dub.starting"))
-            if kind == "dub" and self.watch_state is not None:
-                self.watch_state.finished = False
+        if kind in ("dub", "auto") and self.watch_state is not None:
+            self.watch_state.finished = False
         self.job.start()
         self._update_steps()
         return True
@@ -398,7 +513,7 @@ class MainWindow(QWidget):
     def _on_stage(self, key: str, status: str, msg: str) -> None:
         text = tr("run.stage", stage=tr(f"stage.{key}"), status=tr(f"run.{status}")) + (f" — {msg}" if msg and status != "running" else "")
         self.dubp.log.appendPlainText(text)
-        if self.job_kind in ("prepare", "find"):
+        if self.job_kind in FILM_KINDS:
             self.film.lbl_prepare.setText(text)
             if self.job_kind == "find":
                 self.chars.lbl_multi_status.setText(text)
@@ -406,19 +521,22 @@ class MainWindow(QWidget):
             self.dubp.lbl_stage.setText(text)
 
     def _on_progress(self, frac: float, eta: float) -> None:
-        bar = self.film.progress if self.job_kind in ("prepare", "find") else self.dubp.progress
+        bar = self.film.progress if self.job_kind in FILM_KINDS else self.dubp.progress
         bar.setValue(int(frac * 1000))
         if self.job_kind == "dub":
             self.dubp.lbl_eta.setText(fmt_eta(eta))
+        elif self.job_kind == "auto":
+            self.film.lbl_eta.setText(fmt_eta(eta))
 
     def _on_until(self, seconds: float) -> None:
-        if self.job_kind != "dub" or self.watch_state is None:
+        if self.job_kind not in ("dub", "auto") or self.watch_state is None:
             return
         total = self.watch_state.total
         finished = seconds >= total - 0.5
         self.watch_state.update(self.player.position(), seconds, finished)
         self.player.dubbed_until(seconds, finished)
         self.dubp.btn_watch.setEnabled(self.watch_state.ready)
+        self.film.btn_watch.setVisible(self.watch_state.ready)
         self.dubp.lbl_watch.setText(tr("dub.dubbed_until", t=fmt_time(seconds), total=fmt_time(total))
                                     + ("" if self.watch_state.ready else "  " + tr("dub.watch_wait")))
 
@@ -433,7 +551,18 @@ class MainWindow(QWidget):
             self.film.progress.hide()
             self.film.lbl_prepare.setText(tr("film.prepared", n=len(self.project.lines)) if ok else tr("run.failed", error=message))
             if ok and kind == "prepare":
-                self.go(1)
+                self.go(1 if self._multi() else 2)
+        elif kind == "auto":
+            self.film.progress.hide()
+            self.film.lbl_eta.setText("")
+            out = Path(message) if ok and message else None
+            self.film.lbl_prepare.setText(tr("film.done", name=out.name) if out else tr("run.failed", error=message))
+            self.film.btn_show.setVisible(bool(out))
+            if ok and self.watch_state is not None:
+                self.watch_state.finished = True
+                self.player.dubbed_until(self.watch_state.total, True)
+                self.dubp.btn_watch.setEnabled(True)
+                self.film.btn_watch.show()
         elif kind == "dub":
             self.dubp.lbl_stage.setText(tr("dub.done", path=message) if ok else tr("run.failed", error=message))
             if ok and self.watch_state is not None:
@@ -453,8 +582,9 @@ class MainWindow(QWidget):
         if self.project is None:
             return
         self.chars.load(self.project)
-        self.script.load(self.project)
+        self.lines.load(self.project)
         self.dubp.load(self.project)
+        self._refresh_plan()
         s = settings.load()
         self.film.show_subtitle_status(self.project, bool(s.get("subdl_key") or s.get("opensubtitles_key")))
 
@@ -462,6 +592,8 @@ class MainWindow(QWidget):
         if self.project is not None:
             self.project.settings["original_volume"] = round(value, 2)
             self.project.save()
+            settings.save({"dub_original_volume": round(value, 2)})
+            self.film.load(self.project)
 
     # ------------------------------------------------------------------ preview / watch / result
     def start_preview(self) -> None:
@@ -560,6 +692,7 @@ class MainWindow(QWidget):
         dlg.setStyleSheet(build_style(False))
         if dlg.exec() and self.project is not None:
             self._film_changed()
+            self._refresh_plan()
 
     def open_diagnostics(self, start: bool = False) -> None:
         if self.diag_dialog is None:

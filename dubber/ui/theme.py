@@ -53,6 +53,11 @@ QPushButton#primary:hover {{{{ background: {accent_hover}; }}}}
 QPushButton#primary:disabled {{{{ background: #2a3a55; color: #9db0cc; border-color: #3a4d6e; }}}}
 QPushButton#step {{{{ padding: 10px 12px; font-weight: 600; }}}}
 QPushButton#step:checked {{{{ background: {strong}; border-color: {soft}; color: #ffffff; }}}}
+QPushButton#step[attention="true"] {{{{ color: {amber}; border-color: {amber}; }}}}
+QPushButton#step[attention="true"]:checked {{{{ color: #ffffff; border-color: {amber}; }}}}
+QPushButton#primary[big="true"] {{{{ font-size: 20px; padding: 16px 24px; }}}}
+QPushButton#disclosure {{{{ background: transparent; border: none; padding: 4px 2px; font-weight: 600; font-size: 15px; }}}}
+QPushButton#disclosure:hover {{{{ color: {soft}; background: transparent; }}}}
 QTableWidget {{{{ background: #1b1b23; border: 1px solid {border}; border-radius: 8px; gridline-color: #34343f; selection-background-color: {strong}; }}}}
 QHeaderView::section {{{{ background: {control}; color: {text}; border: none; border-right: 1px solid {border}; padding: 6px; }}}}
 QSlider::groove:horizontal {{{{ height: 6px; background: {control}; border-radius: 3px; }}}}
@@ -83,7 +88,8 @@ QMenu::item:selected {{{{ background: {strong}; }}}}
 CONTRAST_PAIRS = [(TEXT, ROOT_PLAIN), (TEXT, CARD_PLAIN), (TEXT, CONTROL_BG), (TEXT, CONTROL_HOVER), (TEXT_MUTED, ROOT_PLAIN),
                   (TEXT_MUTED, CARD_PLAIN), (TEXT_FAINT, ROOT_PLAIN), (TEXT_FAINT, CARD_PLAIN), (TEXT_ON_ACCENT, ACCENT),
                   (TEXT_ON_ACCENT, ACCENT_HOVER), (TEXT_ON_ACCENT, ACCENT_SOFT), (TEXT, ACCENT_STRONG), (GREEN, CARD_PLAIN),
-                  (AMBER, CARD_PLAIN), (RED, CARD_PLAIN), (TEXT_FAINT, "#2a2a35"), ("#ffffff", ACCENT_STRONG), (TEXT, "#4a3a12")]
+                  (AMBER, CARD_PLAIN), (RED, CARD_PLAIN), (TEXT_FAINT, "#2a2a35"), ("#ffffff", ACCENT_STRONG), (TEXT, "#4a3a12"),
+                  (AMBER, CONTROL_BG), (AMBER, CONTROL_HOVER), (ACCENT_SOFT, CARD_PLAIN)]
 
 
 def build_style(glass: bool) -> str:

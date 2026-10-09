@@ -4,7 +4,7 @@ can run in the GUI process (light stages, tests) or in a worker process (models)
 
 Order (research note 06): probe -> extract -> subtitles -> vad -> separation -> asr -> script -> diarization -> translation ->
 voices -> tts (+ time fitting, block by block in film order) -> mix -> mux.  Models run one after another (one process each),
-so the peak VRAM is that of the largest model (Qwen3-TTS 1.7B: ~6-9 GB with batching), well inside 16-24 GB.
+so the peak VRAM is that of the largest model; every stage keeps to 75 % of the free VRAM (``dubber.infra.resources``).
 """
 from __future__ import annotations
 
@@ -449,7 +449,7 @@ def st_tts(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
     stats = {"fits": 0, "shifted": 0, "stretched": 0, "too_long": 0, "retried": 0}
 
     def cache_path(text: str, spec, seed: Optional[int]) -> Path:
-        return tdir / f"{hash_of(text, spec.tag(), getattr(engine, 'backend', ''), seed)}.wav"
+        return tdir / f"{hash_of(text, spec.tag(), getattr(engine, 'backend', ''), Path(str(getattr(engine, 'base_dir', ''))).name, seed)}.wav"
 
     def synth(items: List[Tuple[int, str]], seed: Optional[int] = None) -> Dict[int, np.ndarray]:
         got: Dict[int, np.ndarray] = {}

@@ -130,14 +130,39 @@ class Runner:
         self.p.save()
         from dubber.infra import gpu_lock
 
-        if key in S.GPU and S._device(self.cfg) == "cuda":
+        cfg = self._stage_cfg(key)
+        if key in S.GPU and cfg.get("device") == "cuda":
             eta = TIMEOUT_PER_FILM_S.get(key, 1.0) * float(self.p.settings.get("duration") or 600) / 4
             with gpu_lock.gpu_job(f"dubbing:{key}", eta_s=eta, cancel=self.cancel.is_set,
                                   on_wait=lambda h, s: self.cb.log(f"waiting for the GPU: {h.get('owner', '?')} runs {h.get('job', '?')}")):
-                return self._worker(key, emit)
-        return self._worker(key, emit)
+                return self._worker(key, emit, cfg)
+        return self._worker(key, emit, cfg)
 
-    def _worker(self, key: str, emit: Callable[..., None]) -> str:
+    def _stage_cfg(self, key: str) -> Dict[str, Any]:
+        """The VRAM / RAM policy for this stage, measured now (``dubber.infra.resources``): a model that does not fit 75 % of the
+        free VRAM runs on the CPU or, for speech, as the lighter model.  The worker sizes its TTS batch from the same rule."""
+        from dubber.infra import resources
+
+        device = S._device(self.cfg) if key in S.GPU else "cpu"
+        snap = resources.snapshot(use_torch=False)
+        lighter_ok = bool(self.cfg.get("allow_download", True))
+        if not lighter_ok:
+            from dubber import models
+
+            lighter_ok = models.locate(models.SPECS["tts_0_6b"].repo) is not None
+        plan = resources.plan_stage(key, snap, device, self.cfg.get("tts_model", "tts_1_7b"), lighter_ok)
+        if key in S.GPU:
+            self.cb.log(f"{key}: {snap.describe()} -> {plan.device}" + (f", {plan.tts_model}" if key == "tts" else ""))
+        for note in plan.notes:
+            self.cb.log(note)
+        cfg = dict(self.cfg)
+        if key in S.GPU:
+            cfg["device"] = plan.device
+        if key == "tts" and plan.tts_model:
+            cfg["tts_model"] = plan.tts_model
+        return cfg
+
+    def _worker(self, key: str, emit: Callable[..., None], cfg: Optional[Dict[str, Any]] = None) -> str:
         from dubber.diag.procs import run_worker
 
         def on_log(line: str) -> None:
@@ -153,9 +178,10 @@ class Runner:
                 pass
 
         dur = float(self.p.settings.get("duration") or 600)
-        timeout = max(600.0, TIMEOUT_PER_FILM_S.get(key, 1.0) * dur * (4 if self.cfg.get("device") == "cpu" else 1))
-        env = {"HF_TOKEN": self.cfg["hf_token"]} if self.cfg.get("hf_token") else {}
-        out = run_worker("stage", {"project": str(self.p.folder), "stage": key, "cfg": {k: v for k, v in self.cfg.items() if k != "hf_token"}},
+        cfg = cfg if cfg is not None else self.cfg
+        timeout = max(600.0, TIMEOUT_PER_FILM_S.get(key, 1.0) * dur * (4 if cfg.get("device") == "cpu" else 1))
+        env = {"HF_TOKEN": cfg["hf_token"]} if cfg.get("hf_token") else {}
+        out = run_worker("stage", {"project": str(self.p.folder), "stage": key, "cfg": {k: v for k, v in cfg.items() if k != "hf_token"}},
                          timeout=timeout, env=env, on_log=on_log, cancel=self.cancel, sample_gpu=False)
         if out.cancelled:
             raise Cancelled()
