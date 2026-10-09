@@ -151,6 +151,15 @@ def test_gpu_lock_acquire_release_and_wait():
     assert json.loads(path.read_text())["owner"] == "audiobook-builder"           # never removed by us
 
 
+def test_gpu_lock_reentrant_keeps_the_outer_lock():
+    path = gpu_lock.lock_file()
+    with gpu_lock.gpu_job("whole run", eta_s=100):
+        with gpu_lock.gpu_job("tts", eta_s=10):
+            assert json.loads(path.read_text())["job"] == "whole run"
+        assert path.exists()                                                          # inner stage did not release it
+    assert not path.exists()
+
+
 def test_gpu_lock_staleness_rules(tmp_path):
     p = tmp_path / "l"
     p.write_text("x")

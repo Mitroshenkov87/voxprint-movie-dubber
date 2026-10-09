@@ -156,7 +156,14 @@ def release(path: Optional[Path] = None, owner: str = OWNER) -> None:
 def gpu_job(job: str, eta_s: float = 600.0, on_wait: Callable[[Dict[str, Any], float], None] = lambda d, s: None,
             timeout: Optional[float] = None, poll: float = 5.0, path: Optional[Path] = None,
             cancel: Optional[Callable[[], bool]] = None) -> Iterator[None]:
-    """Hold the shared GPU lock for the duration of the block (waits while another Voxprint program holds it)."""
+    """Hold the shared GPU lock for the duration of the block (waits while another Voxprint program holds it).
+
+    Re-entrant: when this process already holds the lock (an outer ``gpu_job`` around a whole run), the inner block neither
+    re-creates nor releases it, so the GPU is not left unlocked between the stages of one run."""
+    cur = read_lock(path or lock_file())
+    if cur and cur.get("owner") == OWNER and cur.get("pid") == os.getpid():
+        yield
+        return
     t0 = time.monotonic()
     while True:
         holder = try_acquire(job, eta_s, path)
