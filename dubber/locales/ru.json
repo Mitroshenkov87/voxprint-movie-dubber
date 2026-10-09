@@ -7,6 +7,8 @@
  "lang.de": "Немецкий",
  "lang.en": "Английский",
  "lang.ru": "Русский",
+ "splash.loading_ui": "Загрузка интерфейса…",
+ "splash.opening": "Открываю окно…",
  "stage.asr": "Распознавание",
  "stage.diarization": "Говорящие",
  "stage.extract": "Звук",

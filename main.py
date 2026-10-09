@@ -92,14 +92,26 @@ def main(argv=None) -> int:
         print(f"Report saved: {path}", flush=True)
         return 0
     from PySide6.QtCore import QTimer
+    from PySide6.QtGui import QIcon
     from PySide6.QtWidgets import QApplication
 
-    from dubber.ui.window import MainWindow
+    from dubber.appinfo import resource_dir
 
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("Voxprint Movie Dubber")
+    icon = resource_dir() / "assets" / "voxprint-dubber.ico"
+    if icon.is_file():
+        app.setWindowIcon(QIcon(str(icon)))
+    from dubber.ui import splash as splash_mod
+
+    splash = splash_mod.show()                               # the first thing on screen: before the heavy UI imports below
+    splash.loading_ui()
+    from dubber.ui.window import MainWindow
+
+    splash.opening()
     win = MainWindow(autorun="--diagnose" in argv, options_hook=(lambda o: _apply_cli(o, argv)) if "--diagnose" in argv else None)
     win.show()
+    splash.finish(win)                                       # closes once the main window is on screen
     if "--selftest" in argv:
         QTimer.singleShot(400, app.quit)
     return app.exec()
