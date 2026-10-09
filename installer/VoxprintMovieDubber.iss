@@ -214,6 +214,7 @@ var
   OutFile: String;
   Lines: TArrayOfString;
 begin
+  Rc := -1;
   RuntimeOthers := -1;
   RuntimeDir := '';
   OutFile := ExpandConstant('{tmp}\vmd-runtime-users.txt');
@@ -222,9 +223,13 @@ begin
             ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, Rc) and (Rc = 0) then
       if LoadStringsFromFile(OutFile, Lines) and (GetArrayLength(Lines) >= 2) then
       begin
-        RuntimeOthers := StrToIntDef(Lines[0], -1);
-        RuntimeDir := Lines[1];
+        RuntimeOthers := StrToIntDef(Trim(Lines[0]), -1);
+        RuntimeDir := Trim(Lines[1]);
       end;
+  { the installer's own note of the real runtime-<key> folder, in case the interpreter could not tell }
+  if (RuntimeDir = '') and LoadStringsFromFile(ExpandConstant('{app}\runtime-dir.txt'), Lines) and (GetArrayLength(Lines) >= 1) then
+    RuntimeDir := Trim(Lines[0]);
+  Log(Format('runtime: dir=%s, other users=%d (python rc=%d)', [RuntimeDir, RuntimeOthers, Rc]));
   RemoveDir(ExpandConstant('{app}\runtime'));
 end;
 
@@ -248,7 +253,9 @@ begin
       runtime folder: ours are named runtime-<key>) }
     if (RuntimeOthers = 0) and (RuntimeDir <> '') and DirExists(RuntimeDir) and
        (Pos('\runtime-', RuntimeDir) > 0) and FileExists(AddBackslash(RuntimeDir) + 'runtime-key.json') then
-      DelTree(RuntimeDir, True, True, True);
+    begin
+      if not DelTree(RuntimeDir, True, True, True) then Log('runtime: could not delete ' + RuntimeDir);
+    end;
     if (OtherUsers = 0) and (ModelsDir <> '') and DirExists(ModelsDir) then
       if SuppressibleMsgBox(FmtMessage(CustomMessage('UninstallModelsQuestion'), [ModelsDir]),
          mbConfirmation, MB_YESNO or MB_DEFBUTTON2, IDNO) = IDYES then

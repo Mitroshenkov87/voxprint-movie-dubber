@@ -158,6 +158,29 @@ def _split_long(piece: List[Word], max_s: float, max_words: int, min_side: float
     return _split_long(piece[:best_i], max_s, max_words, min_side) + _split_long(piece[best_i:], max_s, max_words, min_side)
 
 
+#: letters per second no voice reaches: a "line" faster than this is a recogniser hallucination squeezed into a few
+#: milliseconds (real case: "I'll give you some space." x3 within 0.2 s at the end of clip 2); normal speech is 12-18
+MAX_RATE = 40.0
+
+
+def impossible_rate(start: float, end: float, text: str) -> bool:
+    letters = sum(c.isalnum() for c in text)
+    return letters >= 6 and letters / max(end - start, 0.01) > MAX_RATE
+
+
+def tidy_punctuation(text: str) -> str:
+    """Stray marks the recogniser leaves (real case: "...at your place.).,"): unmatched brackets go, runs of marks shrink to one."""
+    if "(" not in text:
+        text = text.replace(")", "")
+    if ")" not in text:
+        text = text.replace("(", "")
+    text = re.sub(r"\s+([.,!?;:…])", r"\1", text)
+    text = re.sub(r"([.!?…])\.*[,;:]+[.,;:]*(?=\s|$)", r"\1", text)      # "place..," -> "place."; "Wait..." stays
+    text = re.sub(r"[,;:]+([.!?…])", r"\1", text)
+    text = re.sub(r"([,;:])[,;:]+", r"\1", text)
+    return text.strip()
+
+
 def segment(words: Sequence[Word], turns: Optional[Sequence[Dict[str, Any]]] = None, hard_pause: float = HARD_PAUSE,
             max_s: float = MAX_S, max_words: int = MAX_WORDS) -> List[Tuple[float, float, str]]:
     """``(start, end, text)`` per line."""
@@ -186,7 +209,10 @@ def segment(words: Sequence[Word], turns: Optional[Sequence[Dict[str, Any]]] = N
             if lower:
                 text = re.sub(r"\bi\b", "I", text)
                 text = re.sub(r"\bi'(m|ve|ll|d)\b", lambda m: "I'" + m.group(1), text)
-            if text and text[0].islower():
+            text = tidy_punctuation(text)
+            if not text or impossible_rate(part[0]["start"], part[-1]["end"], text):
+                continue
+            if text[0].islower():
                 text = text[0].upper() + text[1:]
             out.append((round(part[0]["start"], 3), round(part[-1]["end"], 3), text))
     return out

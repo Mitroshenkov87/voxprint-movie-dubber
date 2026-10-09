@@ -7,10 +7,14 @@ the film's language, and the temperature fallback stops at 0.4 (higher temperatu
 or "Choi443buz").  Measured on both user clips (CPU int8): every sentence punctuated, no stray tokens, no lost sentence, and
 not slower than the old settings.  If the text still comes back unpunctuated, one more pass with a different prompt is tried
 and the better-punctuated result is kept.
+
+Holes: with ``condition_on_previous_text`` Whisper can jump over a stretch of speech (real case, clip 2 without separation:
+nothing between 9.3 s and 24.2 s).  Speech found by the VAD but not covered by any recognised word for 2 s or more is a hole;
+then one pass without the previous-text condition is made and its words inside the holes are taken.
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 #: short, punctuated sample sentences per language (the style Whisper copies: casing, commas, ?, !, ...)
 PROMPTS = {
@@ -33,6 +37,66 @@ def decode_options(language: Optional[str], retry: bool = False) -> Dict[str, An
     if prompt:
         opts["initial_prompt"] = prompt
     return opts
+
+
+HOLE_MIN_S = 2.0
+_GRID = 0.05
+
+
+def find_holes(speech: Sequence[Tuple[float, float]], segments: Sequence[Dict[str, Any]], min_s: float = HOLE_MIN_S,
+               pad: float = 0.3, bridge: float = 1.0) -> List[Tuple[float, float]]:
+    """Stretches of VAD speech (seconds) that no recognised word covers (words count ``pad`` seconds wider)."""
+    if not speech:
+        return []
+    n = int(max(b for _, b in speech) / _GRID) + 2
+    mask = [False] * n
+    for a, b in speech:
+        for i in range(max(0, int(a / _GRID)), min(n, int(b / _GRID) + 1)):
+            mask[i] = True
+    for s in segments:
+        ws = s.get("words") or [{"start": s["start"], "end": s["end"]}]
+        for w in ws:
+            for i in range(max(0, int((w["start"] - pad) / _GRID)), min(n, int((w["end"] + pad) / _GRID) + 1)):
+                mask[i] = False
+    runs: List[List[float]] = []
+    i = 0
+    while i < n:
+        if mask[i]:
+            j = i
+            while j + 1 < n and mask[j + 1]:
+                j += 1
+            a, b = i * _GRID, (j + 1) * _GRID
+            if runs and a - runs[-1][1] < bridge:
+                runs[-1][1] = b
+            else:
+                runs.append([a, b])
+            i = j + 1
+        else:
+            i += 1
+    return [(round(a, 2), round(b, 2)) for a, b in runs if b - a >= min_s]
+
+
+def fill_holes(segments: List[Dict[str, Any]], extra: Sequence[Dict[str, Any]], holes: Sequence[Tuple[float, float]],
+               margin: float = 0.3) -> Tuple[List[Dict[str, Any]], int]:
+    """Words of ``extra`` (a second pass) whose middle lies in a hole become new segments; returns (segments, words added)."""
+    taken: List[Dict[str, Any]] = []
+    for a, b in holes:
+        ws = [w for s in extra for w in (s.get("words") or []) if a - margin <= (w["start"] + w["end"]) / 2 <= b + margin]
+        if ws:
+            taken.append({"start": ws[0]["start"], "end": ws[-1]["end"], "text": "".join(w["w"] for w in ws).strip(),
+                          "words": ws, "filled": True})
+    if not taken:
+        return list(segments), 0
+    return sorted(list(segments) + taken, key=lambda s: s["start"]), sum(len(t["words"]) for t in taken)
+
+
+def _speech_regions(x) -> List[Tuple[float, float]]:
+    try:
+        from faster_whisper.vad import VadOptions, get_speech_timestamps
+
+        return [(t["start"] / 16000, t["end"] / 16000) for t in get_speech_timestamps(x, VadOptions())]
+    except Exception:  # noqa: BLE001 - an older faster-whisper without the VAD helpers: no hole check
+        return []
 
 
 def _detect(model, x, log) -> Optional[str]:
@@ -58,17 +122,27 @@ def transcribe_faster_whisper(wav16: str, language: Optional[str], repo: str, de
     folder, _ = models.ensure(repo, allow_download, log=log)
     x, _ = audio.read(wav16, 16000)
 
+    def decode(model, **opts):
+        segs, info = model.transcribe(x, **opts)
+        out = []
+        for s in segs:                       # the generator does the work: a missing CUDA DLL only fails here
+            out.append({"start": round(s.start, 3), "end": round(s.end, 3), "text": s.text.strip(),
+                        "words": [{"w": w.word, "start": round(w.start, 3), "end": round(w.end, 3)} for w in (s.words or [])]})
+            if len(out) % 50 == 0:
+                log(f"ASR: {s.end:.0f} s recognised")
+        return out, info
+
     def run(model) -> Dict[str, Any]:
         lang = language or _detect(model, x, log)
         best: Optional[Dict[str, Any]] = None
         for retry in (False, True):
-            segs, info = model.transcribe(x, **decode_options(lang, retry))
-            out = []
-            for s in segs:                       # the generator does the work: a missing CUDA DLL only fails here
-                out.append({"start": round(s.start, 3), "end": round(s.end, 3), "text": s.text.strip(),
-                            "words": [{"w": w.word, "start": round(w.start, 3), "end": round(w.end, 3)} for w in (s.words or [])]})
-                if len(out) % 50 == 0:
-                    log(f"ASR: {s.end:.0f} s recognised")
+            out, info = decode(model, **decode_options(lang, retry))
+            holes = find_holes(_speech_regions(x), out)
+            if holes:
+                log("ASR: speech without text at " + ", ".join(f"{a:.0f}-{b:.0f} s" for a, b in holes) + "; one more pass for it")
+                extra, _ = decode(model, **{**decode_options(lang, retry), "condition_on_previous_text": False})
+                out, added = fill_holes(out, extra, holes)
+                log(f"ASR: {added} words recovered")
             res = {"language": info.language, "segments": out}
             words = segment.words_of(out)
             ok = segment.punctuated(words)

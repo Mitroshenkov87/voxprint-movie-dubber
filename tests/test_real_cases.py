@@ -289,3 +289,65 @@ def test_installer_suite_integration():
     lic = (Path(__file__).resolve().parent.parent / "LICENSE").read_text(encoding="utf-8")
     assert "Apache License" in lic and "Version 2.0" in lic
     assert "OFFLINE" not in iss.upper().split("ONLINE", 1)[0]
+
+
+# ------------------------------------------------------------------ box re-run of 2026-10-09 (CPU, no separation)
+def test_hallucinated_burst_lines_are_dropped():
+    # end of clip 2: "I'll give you some space." three more times within 0.2 s (93.26-93.48) after the real line at 89.46
+    words = [{"w": " I'll", "start": 89.46, "end": 89.8}, {"w": " give", "start": 89.8, "end": 90.0},
+             {"w": " you", "start": 90.0, "end": 90.2}, {"w": " some", "start": 90.2, "end": 90.4},
+             {"w": " space.", "start": 90.4, "end": 90.68}, {"w": " No.", "start": 92.82, "end": 93.26}]
+    for k, (a, b) in enumerate([(93.26, 93.28), (93.28, 93.34), (93.34, 93.48)]):
+        step = (b - a) / 5
+        words += [{"w": w, "start": a + i * step, "end": a + (i + 1) * step} for i, w in
+                  enumerate([" I'll", " give", " you", " some", " space."])]
+    texts = [t for _, _, t in segment.segment(words)]
+    assert texts == ["I'll give you some space.", "No."]
+    assert not segment.impossible_rate(67.76, 67.98, "Wait.")             # a short real exclamation stays
+
+
+def test_stray_marks_are_tidied():
+    t = segment.tidy_punctuation
+    assert t("Up at your place and wants to meet up at your place.).,") == "Up at your place and wants to meet up at your place."
+    assert t("Wait... what?") == "Wait... what?" and t("Hello , world.") == "Hello, world." and t("Yes, (really) fine.") == "Yes, (really) fine."
+
+
+def test_cyrillic_acronym_only_when_the_source_says_ai():
+    t = S.tidy_translation
+    assert t("А.И. надрал задницу.", "ru", "A.I. kicks ass.") == "ИИ надрал задницу."
+    assert t("Есть опасения, что А.И. возьмет на себя всю нашу работу", "ru", "There's a concern that A.I. will take over") == \
+        "Есть опасения, что ИИ возьмет на себя всю нашу работу"
+    assert t("А.И. Пушкин написал это.", "ru", "A. I. Pushkin wrote it.") == "А.И. Пушкин написал это."
+
+
+def test_uninstaller_finds_the_runtime_from_the_installer_note(tmp_path, monkeypatch):
+    from dubber.infra import runtime
+
+    rt = tmp_path / "Voxprint" / "runtime-0123456789ab"
+    (rt / "env").mkdir(parents=True)
+    (rt / runtime.KEY_FILE).write_text("{}", encoding="utf-8")
+    app = tmp_path / "app"
+    app.mkdir()
+    assert runtime.current_runtime_dir(app) is None or runtime.current_runtime_dir(app) != rt
+    (app / runtime.DIR_FILE).write_text(str(rt), encoding="utf-8")
+    assert runtime.current_runtime_dir(app) == rt
+    ps1 = (Path(__file__).resolve().parents[1] / "installer" / "install-runtime.ps1").read_text(encoding="utf-8")
+    iss = (Path(__file__).resolve().parents[1] / "installer" / "VoxprintMovieDubber.iss").read_text(encoding="utf-8")
+    assert runtime.DIR_FILE in ps1 and runtime.DIR_FILE in iss
+
+
+def test_asr_hole_is_found_and_filled_from_the_second_pass():
+    from dubber.engines import asr
+
+    d = _asr("asr-user-clip2.json")
+    words = [w for s in d["segments"] for w in s["words"]]
+    # the box run without separation: the conditioned pass jumped from 9.3 s to 24.2 s
+    first = [{"start": 0, "end": 9.34, "text": "", "words": [w for w in words if w["end"] <= 9.34]},
+             {"start": 24.16, "end": 93.3, "text": "", "words": [w for w in words if w["start"] >= 24.16]}]
+    holes = asr.find_holes([(0.0, 93.5)], first)
+    assert len(holes) == 1 and 9.3 < holes[0][0] < 10.5 and 23.0 < holes[0][1] < 24.2
+    merged, added = asr.fill_holes(first, d["segments"], holes)
+    got = [w for s in merged for w in s["words"]]
+    assert added > 20 and len(got) == len(words) and [w["start"] for w in got] == sorted(w["start"] for w in got)
+    assert asr.find_holes([(0.0, 93.5)], d["segments"]) == []          # the complete transcript has none
+    assert asr.find_holes([], first) == []

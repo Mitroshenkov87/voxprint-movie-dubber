@@ -26,7 +26,7 @@ GPU = {"separation", "asr", "diarization", "translation", "tts"}                
 BLOCK_S = 60.0              # TTS + fitting work through the film in blocks of this length (Watch mode follows the blocks)
 TAKES = 3                   # best-of-N for lines that do not fit
 #: bumped when a stage's algorithm changes, so projects analysed by an older build redo that stage (and only the later ones)
-ASR_VERSION, SCRIPT_VERSION, MT_VERSION = 2, 2, 2
+ASR_VERSION, SCRIPT_VERSION, MT_VERSION = 3, 3, 3
 
 DEFAULT_CFG: Dict[str, Any] = {
     "device": "auto", "allow_download": True, "inprocess": False,
@@ -390,12 +390,16 @@ def st_translation(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
 
 
 _RU_ACRONYMS = [(re.compile(r"(?<![\w.])(?:A\.\s?I\.?|AI|Эй\.\s?И\.?|Эй-Ай)(?![\w])"), "ИИ")]
+#: the MT also writes the acronym in Cyrillic letters ("А.И. надрал задницу", real case); that looks like initials, so it is only
+#: replaced when the source line really says A.I. / AI
+_RU_ACRONYMS_IF_SOURCE = [(re.compile(r"(?<![\w.])(?:A\.I\.?|AI)(?![\w])"), re.compile(r"(?<![\w.])А\.\s?И\.?(?![\w])"), "ИИ")]
 
 
-def tidy_translation(text: str, tgt: str) -> str:
+def tidy_translation(text: str, tgt: str, source: str = "") -> str:
     """Fix machine-translation leftovers the voice cannot read: Latin acronyms in a Russian line ("A.I." / "AI" / "Эй.И." -> "ИИ")."""
     if tgt == "ru":
-        for rx, rep in _RU_ACRONYMS:
+        rules = list(_RU_ACRONYMS) + [(rx, rep) for src_rx, rx, rep in _RU_ACRONYMS_IF_SOURCE if src_rx.search(source or "")]
+        for rx, rep in rules:
             def sub(m: "re.Match[str]", rep: str = rep) -> str:
                 rest = m.string[m.end():].lstrip()
                 ends_sentence = m.group(0).endswith(".") and (not rest or rest[:1].isupper())
@@ -419,7 +423,7 @@ def _translate(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
 
         out = opus_translate(texts, src, tgt, _device(cfg), cfg.get("allow_download", True), lambda m: emit("log", text=m))
     for ln, t in zip(todo, out):
-        ln.translation = tidy_translation(t.strip(), tgt)
+        ln.translation = tidy_translation(t.strip(), tgt, ln.text)
     return f"{len(todo)} lines translated {src}->{tgt} ({cfg.get('translation')})"
 
 

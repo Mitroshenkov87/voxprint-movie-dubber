@@ -25,6 +25,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -90,13 +91,28 @@ def is_runtime_dir(path: Path) -> bool:
     return bool(_KEY_RE.match(p.name)) and (p / KEY_FILE).is_file()
 
 
-def current_runtime_dir() -> Optional[Path]:
-    """The ``runtime-<key>`` folder of the running interpreter (follows the ``<app>\\runtime`` junction), or None."""
+#: written by install-runtime.ps1 into the program folder: the real ``runtime-<key>`` folder behind the ``runtime`` junction
+DIR_FILE = "runtime-dir.txt"
+
+
+def current_runtime_dir(app_dir: Optional[Path] = None) -> Optional[Path]:
+    """The ``runtime-<key>`` folder of the running interpreter, or None.  First the installer's note
+    ``<app>\\runtime-dir.txt``, then the interpreter prefix with the ``<app>\\runtime`` junction resolved."""
+    app = Path(app_dir) if app_dir else Path(__file__).resolve().parents[2]
     try:
-        prefix = Path(sys.prefix).resolve()
+        note = (app / DIR_FILE).read_text(encoding="utf-8-sig").strip()
+        if note and is_runtime_dir(Path(note)):
+            return Path(note)
     except OSError:
-        return None
-    for cand in (prefix.parent, prefix):
+        pass
+    cands = []
+    for raw in (sys.prefix, os.path.realpath(sys.prefix)):
+        try:
+            pr = Path(raw).resolve()
+        except OSError:
+            continue
+        cands += [pr.parent, pr]
+    for cand in cands:
         if is_runtime_dir(cand):
             return cand
     return None

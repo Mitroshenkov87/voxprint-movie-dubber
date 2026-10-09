@@ -203,6 +203,7 @@ try {
     New-Item -ItemType Junction -Path $link -Target $envDir | Out-Null
     if (-not (Test-Path (Join-Path $link "Scripts\python.exe"))) { throw "the runtime link $link does not work" }
     Say "Linked $link -> $envDir"
+    [IO.File]::WriteAllText((Join-Path $AppDir "runtime-dir.txt"), $rt, (New-Object Text.UTF8Encoding $false))   # the uninstaller reads it
 
     # 4. runtimes this program used before (other keys): drop our key; delete the folder when nobody else uses it
     foreach ($old in (Get-ChildItem -LiteralPath $vxHome -Directory -Filter "runtime-*" -ErrorAction SilentlyContinue)) {
