@@ -124,7 +124,7 @@ def st_extract(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
 
 def _crop(cues: List[subtitles.Cue], p: Project) -> List[subtitles.Cue]:
     t0, t1 = _rng(p)
-    if t0 is None:
+    if t0 is None or t1 is None:
         return cues
     return [c for c in subtitles.shift(cues, -t0) if c.end > 0 and c.start < (t1 - t0)]
 
@@ -299,7 +299,8 @@ def st_asr(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
         wav = p.path("audio", "mix16.wav")
     from dubber.engines.asr import transcribe_faster_whisper
 
-    res = transcribe_faster_whisper(str(wav), _asr_hint(p), cfg.get("asr_repo"), _device(cfg),
+    repo = str(cfg.get("asr_repo") or DEFAULT_CFG["asr_repo"])
+    res = transcribe_faster_whisper(str(wav), _asr_hint(p), repo, _device(cfg),
                                     cfg.get("allow_download", True), lambda m: emit("log", text=m))
     write_json(out, res)
     if res.get("language"):
@@ -322,7 +323,7 @@ def st_diarization(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
     mapping: Dict[int, str] = script.speakers_from_tags(p.lines)
     if mapping:                                    # the subtitles name the speakers: no voice analysis needed
         _renumber(p, mapping)
-        names = {}
+        names: Dict[str, str] = {}
         for ln in p.lines:
             names.setdefault(ln.speaker, mapping.get(ln.id, ""))
         for sp in p.speakers:
@@ -609,8 +610,13 @@ def st_mix(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
         for i, (a, b) in enumerate(bounds):
             x, sr = mix_into(p, a, b, p.lines, cache)
             fh.write(x)
-            for k in [k for k, _ in cache.items() if (p.line(k) and p.line(k).place_start + p.line(k).audio_s < a)]:
-                cache.pop(k, None)
+            stale = []
+            for key in cache:
+                line = p.line(key)
+                if line is not None and line.place_start + line.audio_s < a:
+                    stale.append(key)
+            for key in stale:
+                cache.pop(key, None)
             emit("progress", value=(i + 1) / max(1, len(bounds)))
     os.replace(tmp, out)
     return f"dub track {total / 60:.1f} min, original voice at {int(100 * float(p.settings.get('original_volume', 0.15)))} %"

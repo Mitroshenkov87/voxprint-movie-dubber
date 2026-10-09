@@ -20,7 +20,7 @@ import importlib.util
 import os
 import statistics
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 from dubber import models
 from dubber.workers.common import (WorkerContext, apply_qwen_tts_compat, cuda_sync, free_gpu, peak_vram_gb, reserved_vram_gb, reset_peak, torch_device)
@@ -108,7 +108,8 @@ def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
     if kind == "standard":
         details.append(f"{'voice prompt (cloning)':<28}: {prompt_s:.2f} s")
 
-    def synth(text: str):
+    def synth(text: str, model: Any = model, inner: Any = inner, prompt: Any = prompt) -> Tuple[np.ndarray, int]:
+        # Defaults bind the loaded objects so a later ``del model`` does not make the nested function look undefined.
         mnt = max_tokens_for(text)
         if kind == "graphs":
             wavs, sr = model.generate_voice_clone(text=text, language=language, ref_audio=ref_audio, ref_text=ref_text, max_new_tokens=mnt)
@@ -130,7 +131,8 @@ def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
     details.append(f"{'warm-up (graph capture etc.)':<28}: {warmup_s:.2f} s")
 
     # ---- timed runs
-    rows, gen_total, audio_total = [], 0.0, 0.0
+    rows: List[Tuple[str, int, float, float, float, float]] = []
+    gen_total, audio_total = 0.0, 0.0
     for text in args.get("phrases") or []:
         for r in range(int(args.get("runs", 2))):
             ctx.log(f"TTS {mode}: phrase {len(rows) + 1}")

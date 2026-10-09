@@ -270,7 +270,11 @@ class FilmPage(QWidget):
         self.cmb_audio.currentIndexChanged.connect(lambda _i: self.option_changed.emit("audio"))
         self.cmb_subs.currentIndexChanged.connect(lambda _i: self.option_changed.emit("subs"))
         self.cmb_profanity.currentIndexChanged.connect(lambda _i: self.option_changed.emit("profanity"))
-        self.chk_multi.toggled.connect(lambda _on: self._multi_visibility() or self.option_changed.emit("multi"))
+        def _on_multi(_on: bool) -> None:
+            self._multi_visibility()
+            self.option_changed.emit("multi")
+
+        self.chk_multi.toggled.connect(_on_multi)
         self.cmb_voice.currentIndexChanged.connect(lambda _i: self.option_changed.emit("voice"))
         self.sld_volume.sliderReleased.connect(lambda: self.option_changed.emit("volume"))
         self.cmb_format.currentIndexChanged.connect(lambda _i: self.option_changed.emit("format"))
@@ -634,25 +638,28 @@ class CharactersPage(QWidget):
             self.changed.emit("voice")
 
     def set_voice(self, sid: str, data) -> None:
-        sp = self.project.speaker(sid) if self.project else None
-        if sp is None or data is None:
+        project = self.project
+        sp = project.speaker(sid) if project else None
+        if project is None or sp is None or data is None:
             return
         sp.voice = voice_from_key(data)
-        self.project.save()
+        project.save()
         self.changed.emit("voice")
 
     def set_key(self, sid: str, on: bool) -> None:
-        sp = self.project.speaker(sid) if self.project else None
-        if sp is not None and on != self.project.is_key(sp):
+        project = self.project
+        sp = project.speaker(sid) if project else None
+        if project is not None and sp is not None and on != project.is_key(sp):
             sp.key = bool(on)
-            self.project.save()
+            project.save()
             self.changed.emit("voice")
 
     def rename(self, sid: str, name: str) -> None:
-        sp = self.project.speaker(sid) if self.project else None
-        if sp is not None and name.strip() and name.strip() != sp.name:
+        project = self.project
+        sp = project.speaker(sid) if project else None
+        if project is not None and sp is not None and name.strip() and name.strip() != sp.name:
             sp.name = name.strip()
-            self.project.save()
+            project.save()
             self.changed.emit("name")
 
     def selected(self) -> List[str]:
@@ -663,9 +670,17 @@ class CharactersPage(QWidget):
         if self.project is None or len(sel) < 2:
             self.lbl_multi_status.setText(tr("chars.merge_hint"))
             return
-        keep = max(sel, key=lambda s: self.project.speaker(s).seconds)
-        self.project.merge_speakers(keep, sel)
-        self.load(self.project)
+        project = self.project
+        if project is None:
+            return
+
+        def _seconds(sid: str) -> float:
+            speaker = project.speaker(sid)
+            return speaker.seconds if speaker is not None else 0.0
+
+        keep = max(sel, key=_seconds)
+        project.merge_speakers(keep, sel)
+        self.load(project)
         self.changed.emit("merge")
 
 
@@ -724,6 +739,8 @@ class LinesPage(QWidget):
 
     def _flag(self, i: int) -> str:
         p = self.project
+        if p is None:
+            return ""
         ln = p.lines[i]
         if ln.keep_original:
             return tr("lines.flag_kept")
@@ -906,8 +923,10 @@ class DubPage(QWidget):
         self.sld_volume.blockSignals(False)
         self._volume_text(self.sld_volume.value())
         out = p.settings.get("output_file")
-        self.btn_open.setEnabled(bool(out) and Path(out).exists())
-        self.btn_external.setEnabled(bool(out) and Path(out).exists())
+        out_path = Path(str(out)) if isinstance(out, (str, Path)) else None
+        exists = out_path is not None and out_path.exists()
+        self.btn_open.setEnabled(exists)
+        self.btn_external.setEnabled(exists)
 
     def running(self, on: bool) -> None:
         self.btn_dub.setEnabled(not on)

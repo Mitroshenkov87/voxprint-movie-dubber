@@ -7,6 +7,7 @@ and resumes once ``RESUME_AHEAD_S`` are ready again (or the film is finished).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional, Tuple
 
 READY_AHEAD_S = 300.0
 LOW_WATER_S = 2.0
@@ -55,7 +56,9 @@ class Eta:
     """Remaining time from the dubbed seconds per wall-clock second (exponential moving average)."""
 
     def __init__(self, alpha: float = 0.3) -> None:
-        self.alpha, self.rate, self._last = alpha, 0.0, None
+        self.alpha = alpha
+        self.rate = 0.0
+        self._last: Optional[Tuple[float, float]] = None
 
     def update(self, now: float, done_s: float, total_s: float) -> float:
         if self._last is not None:

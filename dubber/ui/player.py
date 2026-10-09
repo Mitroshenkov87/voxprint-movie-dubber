@@ -156,8 +156,9 @@ class Player(QWidget):
         if dev.isNull():
             self.lbl_state.setText(tr("player.no_audio_device"))
             return
-        self._sink = QAudioSink(dev, fmt, self)
-        self._sink.setBufferSize(int(SR * 2 * 4 * BUFFER_S))
+        sink = QAudioSink(dev, fmt, self)
+        sink.setBufferSize(int(SR * 2 * 4 * BUFFER_S))
+        self._sink = sink
 
     def _restart_sound(self, t: float) -> None:
         if self._sink is None:

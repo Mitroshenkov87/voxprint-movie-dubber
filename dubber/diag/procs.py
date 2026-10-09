@@ -83,8 +83,11 @@ class GpuSampler(threading.Thread):
         self.throttle_field = ""
 
     def _query(self, fields: List[str]) -> Optional[List[str]]:
+        smi = self.smi
+        if not smi:
+            return None
         try:
-            p = subprocess.run([self.smi, f"--query-gpu={','.join(fields)}", "--format=csv,noheader,nounits"], capture_output=True,
+            p = subprocess.run([smi, f"--query-gpu={','.join(fields)}", "--format=csv,noheader,nounits"], capture_output=True,
                                text=True, timeout=10, creationflags=_NO_WINDOW, encoding="utf-8", errors="replace")
             if p.returncode == 0 and p.stdout.strip():
                 return [c.strip() for c in p.stdout.strip().splitlines()[0].split(",")]

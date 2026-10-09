@@ -51,6 +51,6 @@ class GuardedStream:
 
 def guard_stdio() -> None:
     if not isinstance(sys.stdout, GuardedStream):
-        sys.stdout = GuardedStream(sys.stdout)  # type: ignore[assignment]
+        sys.stdout = GuardedStream(sys.stdout)
     if not isinstance(sys.stderr, GuardedStream):
-        sys.stderr = GuardedStream(sys.stderr)  # type: ignore[assignment]
+        sys.stderr = GuardedStream(sys.stderr)

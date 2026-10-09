@@ -285,9 +285,10 @@ class DiagnosticsDialog(QDialog):
             self.lbl_status.setText(str(exc))
 
     def closeEvent(self, e) -> None:  # noqa: N802
-        if self.running():
-            self.diag.cancel()
-            self.diag.wait(15000)
+        diag = self.diag
+        if self.running() and diag is not None:
+            diag.cancel()
+            diag.wait(15000)
         super().closeEvent(e)
 
 
@@ -329,7 +330,12 @@ class CatalogThread(QThread):
             if self.cancelled:
                 break
             try:
-                vc.install(v, progress=lambda f, n=v.name: self.progress.emit(f, n), cancel=lambda: self.cancelled)
+                voice_name = v.name
+
+                def _progress(frac: float, shown: str = voice_name) -> None:
+                    self.progress.emit(frac, shown)
+
+                vc.install(v, progress=_progress, cancel=lambda: self.cancelled)
                 self.installed.emit(v.id, "")
             except Exception as exc:  # noqa: BLE001 - shown in the dialog, the next voice is tried
                 self.installed.emit(v.id, str(exc))

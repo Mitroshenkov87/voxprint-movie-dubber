@@ -190,7 +190,7 @@ class Project:
         """``<root>/<film name>-<short hash of the full path>`` - the same film always maps to the same (resumable) project."""
         src = Path(source).resolve()
         safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in src.stem)[:60] or "film"
-        return Path(root) / f"{safe}-{hashlib.sha1(str(src).encode('utf-8')).hexdigest()[:8]}"
+        return Path(root) / f"{safe}-{hashlib.sha1(str(src).encode('utf-8'), usedforsecurity=False).hexdigest()[:8]}"
 
     # ------------------------------------------------------------------ files
     @property

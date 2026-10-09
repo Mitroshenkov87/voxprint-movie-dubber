@@ -7,7 +7,7 @@ from typing import List, Optional, Tuple
 import numpy as np
 
 
-def read(path: Path, sr: Optional[int] = None, mono: bool = True) -> Tuple[np.ndarray, int]:
+def read(path: Path | str, sr: Optional[int] = None, mono: bool = True) -> Tuple[np.ndarray, int]:
     import soundfile as sf
 
     data, rate = sf.read(str(path), dtype="float32", always_2d=True)

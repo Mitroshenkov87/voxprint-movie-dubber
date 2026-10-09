@@ -81,7 +81,7 @@ def roformer_model(device: str, model_dir: Path, model_file: str, log: Callable[
     models folder under ``audio-separator``).  Not verified on this machine (no GPU): see DECISIONS.md."""
     import tempfile
 
-    from audio_separator.separator import Separator  # type: ignore
+    from audio_separator.separator import Separator
 
     sep = Separator(model_file_dir=str(model_dir), output_dir=tempfile.mkdtemp(prefix="vmd-rof-"), output_single_stem=None)
     sep.load_model(model_filename=model_file)

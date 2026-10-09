@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple, TypedDict
 
 from dubber import paths
 from dubber.infra import model_store
@@ -92,8 +92,13 @@ def locate(repo: str) -> Optional[Path]:
     return None
 
 
+class EnsureInfo(TypedDict):
+    source: str
+    download_s: float
+
+
 def ensure(repo: str, allow_download: bool = True, token: Optional[str] = None,
-           log: Callable[[str], None] = lambda m: None) -> Tuple[Path, Dict[str, object]]:
+           log: Callable[[str], None] = lambda m: None) -> Tuple[Path, EnsureInfo]:
     """Return ``(folder, info)``; ``info`` = ``{"source": "present|downloaded|legacy", "download_s": float}``.  Raises ModelUnavailable."""
     found = locate(repo)
     if found:
