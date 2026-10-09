@@ -7,7 +7,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 import numpy as np
 
 from dubber.core.project import Line
-from dubber.core.subtitles import Cue, clean_text, is_music
+from dubber.core.subtitles import Cue, clean_text, is_music, sdh_speaker
 
 Window = Tuple[float, float]
 
@@ -63,7 +63,7 @@ def lines_from_cues(cues: Sequence[Cue], target: bool) -> List[Line]:
         text = clean_text(c.text)
         if not text and not music:
             continue
-        ln = Line(0, c.start, c.end, source="subs", keep_original=music, kind="music" if music else "speech")
+        ln = Line(0, c.start, c.end, source="subs", keep_original=music, kind="music" if music else "speech", tag=sdh_speaker(c.text))
         if target:
             ln.translation = text
         else:
@@ -91,7 +91,26 @@ def attach_text(lines: List[Line], cues: Sequence[Cue], attr: str) -> int:
                 n += 1
             if any(is_music(c.text) for c in best):
                 ln.keep_original, ln.kind = True, "music"
+            if not ln.tag:
+                ln.tag = next((t for t in (sdh_speaker(c.text) for c in best) if t), "")
     return n
+
+
+def speakers_from_tags(lines: Sequence[Line], min_cover: float = 0.6) -> Dict[int, str]:
+    """Speaker per line from subtitle speaker tags ("JOHN: ...") when most speech lines carry one (>= ``min_cover`` and at
+    least two names); untagged lines take the nearest tagged line before them (else after).  {} = not enough tags."""
+    speech = [ln for ln in lines if not ln.keep_original]
+    tagged = [ln for ln in speech if ln.tag]
+    if not speech or len(tagged) < min_cover * len(speech) or len({ln.tag.upper() for ln in tagged}) < 2:
+        return {}
+    out: Dict[int, str] = {}
+    last = ""
+    for ln in sorted(speech, key=lambda x: x.start):
+        if ln.tag:
+            last = ln.tag.strip().title()
+        out[ln.id] = last
+    first = next(ln.tag.strip().title() for ln in sorted(tagged, key=lambda x: x.start))
+    return {k: (v or first) for k, v in out.items()}
 
 
 def snap_to_windows(lines: List[Line], windows: Sequence[Window], max_move: float = 0.6) -> None:

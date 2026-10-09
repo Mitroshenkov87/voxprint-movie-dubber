@@ -48,6 +48,7 @@ class Line:
     stretch: float = 1.0              # time factor applied (>1 = faster)
     fit: str = ""                     # fits | shifted | stretched | too_long | kept
     edited: bool = False
+    tag: str = ""                     # speaker name from the subtitles ("JOHN: ...", SDH), if any
     softened: str = ""                # the translation before the profanity filter changed it ("" = unchanged)
 
     @property
@@ -62,7 +63,7 @@ class Line:
 
 @dataclass
 class Voice:
-    kind: str = "clone"               # clone (from the speaker's own lines) | library (shared Voxprint voice library)
+    kind: str = "clone"               # clone (own lines) | library (shared library) | actor (blend of both) | auto (by key role)
     id: str = ""                      # library voice id
 
     @classmethod
@@ -75,15 +76,17 @@ class Voice:
 class Speaker:
     id: str
     name: str = ""
-    voice: Voice = field(default_factory=Voice)
+    voice: Voice = field(default_factory=lambda: Voice("auto"))   # auto: key character -> actor-like, others -> library match
     ref_audio: str = ""               # reference clip built from the speaker's lines (relative)
     ref_text: str = ""
     seconds: float = 0.0              # total speech of the speaker
+    key: Optional[bool] = None        # key character: None = automatic (share of the dialogue), True/False = set by the user
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "Speaker":
         return cls(id=str(d["id"]), name=str(d.get("name") or d["id"]), voice=Voice.from_dict(d.get("voice")),
-                   ref_audio=str(d.get("ref_audio") or ""), ref_text=str(d.get("ref_text") or ""), seconds=float(d.get("seconds") or 0.0))
+                   ref_audio=str(d.get("ref_audio") or ""), ref_text=str(d.get("ref_text") or ""), seconds=float(d.get("seconds") or 0.0),
+                   key=d.get("key") if isinstance(d.get("key"), bool) else None)
 
 
 DEFAULT_SETTINGS: Dict[str, Any] = {
@@ -96,6 +99,8 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "audio_track": 0,
     "subtitle_choice": "auto",        # auto | none | <path>
     "output_format": "same",          # same | mkv | mp4
+    "actor_weight": 0.7,
+    "key_share": 0.2,                 # a speaker with >= this share of the dialogue time is a key character              # actor-like voices: share of the actor's own timbre (dubber.core.actor_voice)
     "profanity": "keep",              # keep (as in the original) | soften (no mat; see dubber.core.profanity)
 }
 
@@ -251,6 +256,13 @@ class Project:
             if not self.speaker(speaker):
                 self.speakers.append(Speaker(speaker, speaker))
             self.invalidate("tts", "fit", "mix", "mux")
+
+    def is_key(self, sp: "Speaker") -> bool:
+        """Key character (gets an actor-like voice in "auto"): set by the user, else >= ``key_share`` of all dialogue time."""
+        if sp.key is not None:
+            return sp.key
+        total = sum(s.seconds for s in self.speakers)
+        return total > 0 and sp.seconds / total >= float(self.settings.get("key_share", 0.2))
 
     def voice_for(self, line: Line) -> Voice:
         if not self.settings.get("multi_voice"):

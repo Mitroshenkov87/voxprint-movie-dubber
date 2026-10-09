@@ -63,7 +63,8 @@ def inputs_for(key: str, p: Project, cfg: Dict[str, Any], prev: str) -> str:
         "diarization": [s.get("multi_voice"), c.get("diarization")],
         "translation": [c.get("translation"), s.get("target_lang"), s.get("profanity")],
         "voices": [s.get("multi_voice"), s.get("single_voice"), [(sp.id, sp.voice.kind, sp.voice.id) for sp in p.speakers]],
-        "tts": [c.get("tts"), c.get("tts_model"), [(ln.id, ln.translation, ln.speaker, ln.keep_original, ln.start, ln.end) for ln in p.lines]],
+        "tts": [c.get("tts"), c.get("tts_model"), s.get("actor_weight") if s.get("multi_voice") else None,
+                [(sp.id, sp.voice.kind, sp.voice.id, p.is_key(sp)) for sp in p.speakers] if s.get("multi_voice") else None, [(ln.id, ln.translation, ln.speaker, ln.keep_original, ln.start, ln.end) for ln in p.lines]],
         "mix": [s.get("original_volume")],
         "mux": [s.get("output_format"), s.get("output")],
     }
@@ -195,7 +196,7 @@ def st_voices(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
     made = []
     if p.settings.get("multi_voice"):
         for sp in p.speakers:
-            if sp.voice.kind != "clone":
+            if sp.voice.kind not in ("clone", "actor", "auto"):
                 continue
             chosen = voices.pick_reference_lines(p.lines, sp.id)
             if chosen:
@@ -293,7 +294,16 @@ def st_diarization(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
     if not wav.exists():
         wav = p.path("audio", "mix16.wav")
     how = cfg.get("diarization", "pyannote")
-    mapping: Dict[int, str] = {}
+    mapping: Dict[int, str] = script.speakers_from_tags(p.lines)
+    if mapping:                                    # the subtitles name the speakers: no voice analysis needed
+        _renumber(p, mapping)
+        names = {}
+        for ln in p.lines:
+            names.setdefault(ln.speaker, mapping.get(ln.id, ""))
+        for sp in p.speakers:
+            if names.get(sp.id) and sp.name.startswith("Speaker "):
+                sp.name = names[sp.id]
+        return f"{len(p.speakers)} speakers (subtitle speaker tags)"
     if how == "pyannote":
         try:
             from dubber.engines.diarization import pyannote_turns
@@ -370,12 +380,32 @@ def voice_spec(p: Project, ln: Line):
             return VoiceSpec(f"lib:{lv.id}", "library", str(lv.ref_audio), lv.ref_text, str(lv.path), lv.adapter_scale)
     if p.settings.get("multi_voice"):
         sp = p.speaker(ln.speaker)
+        if sp and v.kind == "actor":
+            return actor_spec(p, sp)
+        if sp and v.kind == "auto":                # key character: actor-like; the others: the closest library voice
+            return actor_spec(p, sp, library_only=not p.is_key(sp))
         if sp and sp.ref_audio:
             return VoiceSpec(f"clone:{sp.id}", "clone", str(p.abs(sp.ref_audio)), sp.ref_text)
     ref = p.settings.get("single_ref") or {}
     if ref.get("audio"):
         return VoiceSpec("clone:single", "clone", str(p.abs(ref["audio"])), ref.get("text", ""))
     return VoiceSpec("default", "clone", "", "")
+
+
+def actor_spec(p: Project, sp, library_only: bool = False):
+    """Actor-like voice of one speaker: his clip + the library voices to compare with (the engine picks and blends)."""
+    from dubber.core import actor_voice as av
+    from dubber.engines.tts import VoiceSpec
+
+    ref = str(p.abs(sp.ref_audio)) if sp.ref_audio and p.abs(sp.ref_audio).exists() else ""
+    ok = False
+    if ref and not library_only:
+        x, sr = audio.read(Path(ref))
+        ok = av.ref_quality(x, sr)[2]
+    w = float(p.settings.get("actor_weight", av.DEFAULT_WEIGHT))
+    return VoiceSpec(f"{'match' if library_only else 'actor'}:{sp.id}:{w:.2f}", "actor", ref, sp.ref_text, actor_weight=w, actor_ok=ok,
+                     candidates=tuple(av.candidates_from_library(voices.list_library())),
+                     record_dir=str(av.folder(p.folder, sp.id)))
 
 
 def make_tts(p: Project, cfg: Dict[str, Any], need_adapters: bool, emit: Emit):
@@ -408,7 +438,7 @@ def st_tts(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
     specs = {ln.id: voice_spec(p, ln) for ln in lines}
     if any(not s.ref_audio for s in specs.values()) and cfg.get("tts") != "mock":
         raise RuntimeError("no voice reference: choose a library voice or let the program clone one from the film")
-    engine = make_tts(p, cfg, any(s.kind == "library" for s in specs.values()), emit)
+    engine = make_tts(p, cfg, any(s.kind in ("library", "actor") for s in specs.values()), emit)
     sr = engine.sample_rate
     tdir = p.path("tts", "x").parent
     fitdir = p.path("tts", "fit", "x").parent

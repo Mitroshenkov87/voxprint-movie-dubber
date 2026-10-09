@@ -132,6 +132,7 @@ class MainWindow(QWidget):
         self.chars.find_speakers.connect(lambda: self.run_pipeline("find", PREPARE_UNTIL))
         self.chars.listen.connect(self.listen)
         self.chars.open_catalog.connect(self.open_voice_catalog)
+        self.chars.save_actor.connect(self.save_actor_voice)
         self.chars.next_step.connect(lambda: self.go(2))
         self.script.next_step.connect(lambda: self.go(3))
         self.dubp.dub.connect(lambda: self.run_pipeline("dub", "mux"))
@@ -522,6 +523,31 @@ class MainWindow(QWidget):
         self.dubp.btn_external.setEnabled(True)
 
     # ------------------------------------------------------------------ settings / diagnostics
+    def save_actor_voice(self, sid: str) -> None:
+        """Keep an actor-like voice in the shared library - only after the user confirms he may use this person's voice."""
+        from PySide6.QtWidgets import QInputDialog, QMessageBox
+
+        from dubber.core import actor_voice
+        from dubber.infra import shared_paths
+
+        sp = self.project.speaker(sid) if self.project else None
+        if sp is None:
+            return
+        name, ok = QInputDialog.getText(self, tr("actor.save_title"), tr("actor.name"), text=sp.name or sid)
+        if not ok or not name.strip():
+            return
+        if QMessageBox.question(self, tr("actor.save_title"), tr("actor.consent"),
+                                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            path = actor_voice.save_to_library(actor_voice.folder(self.project.folder, sid), name.strip(), tr("actor.consent_note"),
+                                               shared_paths.voices_dir(), self.project.settings.get("target_lang", ""))
+            self.chars.lbl_multi_status.setText(tr("actor.saved", path=str(path)))
+            self.chars.load(self.project)
+        except (OSError, ValueError) as exc:
+            self.chars.lbl_multi_status.setText(tr("run.failed", error=str(exc)))
+
     def open_voice_catalog(self) -> None:
         dlg = dialogs.VoiceCatalogDialog(self)
         dlg.setStyleSheet(build_style(False))

@@ -446,3 +446,108 @@ def test_voice_catalog_lists_and_installs_into_shared_library(tmp_path):
     with pytest.raises(vc.VoiceCatalogError):
         vc.install(bad, root=root, downloader=lambda u, d, *a: d.write_bytes(b"zz"))
     assert not (root / "noa").exists()
+
+
+# ------------------------------------------------------------------ actor-like voice
+def _lib_voice(root, vid, gender, emb, scale=0.5):
+    from safetensors.numpy import save_file
+    d = root / vid
+    d.mkdir(parents=True)
+    for n in ("adapter_model.safetensors", "adapter_config.json"):
+        (d / n).write_bytes(b"x")
+    audio.write(d / "ref_sample.wav", np.zeros(2400, np.float32), 24000)
+    (d / "voice.json").write_text(json.dumps({"name": vid.title(), "gender": gender, "adapter_scale": scale}), encoding="utf-8")
+    save_file({"speaker_embedding": np.asarray(emb, np.float32)}, str(d / "speaker_centroid.safetensors"))
+    return d
+
+
+def test_actor_voice_helpers(tmp_path):
+    from dubber.core import actor_voice as av
+    sr = 16000
+    t = np.arange(sr * 6) / sr
+    speech = (0.3 * np.sin(2 * np.pi * 150 * t) * (np.sin(2 * np.pi * 2 * t) > 0)).astype(np.float32)
+    assert av.ref_quality(speech, sr)[2]
+    assert not av.ref_quality(speech[: sr * 2], sr)[2]                       # too short
+    noisy = speech + 0.2 * np.random.default_rng(0).standard_normal(len(speech)).astype(np.float32)
+    assert not av.ref_quality(noisy, sr)[2]                                  # too noisy
+    a, m, f = _lib_voice(tmp_path, "levi", "male", [1, 0, 0]), _lib_voice(tmp_path, "natan", "male", [0.6, 0.8, 0]), \
+        _lib_voice(tmp_path, "noa", "female", [0.7, 0.7, 0.1])
+    cands = [av.Candidate("levi", a, "male", 0.5), av.Candidate("natan", m, "male", 0.5), av.Candidate("noa", f, "female", 0.5)]
+    best, score = av.pick_closest(np.array([0.5, 0.86, 0.0]), cands, "male")
+    assert best.id == "natan" and score > 0.99
+    assert av.pick_closest(np.array([0.5, 0.86, 0.0]), cands, "female")[0].id == "noa"
+    assert av.pick_closest(None, cands, "female")[0].id == "noa"
+    actor = np.array([3.0, 0.0, 0.0])
+    b = av.blend(actor, np.array([0.0, 1.0, 0.0]), 0.7)
+    assert np.linalg.norm(b) == pytest.approx(3.0) and b[0] > b[1] > 0
+    assert av.adapter_scale(0.5, 0.7) == pytest.approx(0.15)
+
+
+def test_actor_voice_resolves_blends_and_saves(tmp_path, monkeypatch):
+    from dubber.core import actor_voice as av
+    from dubber.engines import tts as T
+    root = tmp_path / "lib"
+    _lib_voice(root, "levi", "male", [1, 0, 0])
+    _lib_voice(root, "noa", "female", [0, 1, 0])
+    ref = tmp_path / "actor.wav"
+    audio.write(ref, np.zeros(24000, np.float32), 24000)
+    cands = tuple(av.candidates_from_library(voices.list_library(root)))
+    rec_dir = tmp_path / "proj" / "voices" / "actor_S1"
+    spec = T.VoiceSpec("actor:S1", "actor", str(ref), "hello", actor_weight=0.7, candidates=cands, record_dir=str(rec_dir))
+
+    class Fake(T.MockTTS):
+        def actor_embedding(self, voice):
+            return np.array([0.1, 2.0, 0.0], np.float32)          # sounds like Noa
+    eng = Fake()
+    got = eng.resolve(spec)
+    assert got.kind == "library" and Path(got.adapter_dir).name == "noa" and got.ref_audio == str(ref)
+    assert got.adapter_scale == pytest.approx(0.15) and got.key in eng._blends
+    rec = av.read_record(rec_dir)
+    assert rec["mode"] == "blend" and rec["library_id"] == "noa" and (rec_dir / "blended_embedding.npy").is_file()
+    assert eng.resolve(spec) is got                                # once per voice
+    # bad actor clip -> the library voice as is
+    poor = T.VoiceSpec("actor:S2", "actor", str(ref), "", actor_weight=0.7, actor_ok=False, candidates=cands)
+    fb = Fake().resolve(poor)
+    assert fb.ref_audio.endswith("ref_sample.wav") and fb.adapter_scale == 0.5
+    # keep it: only with a consent note, in the library format
+    with pytest.raises(ValueError):
+        av.save_to_library(rec_dir, "Actor", "", root)
+    saved = av.save_to_library(rec_dir, "Hero Actor", "user confirmed", root, "ru")
+    info = json.loads((saved / "voice.json").read_text(encoding="utf-8"))
+    assert saved.name == "hero-actor" and info["consent"]["confirmed"] and not info["commercial_use"]
+    assert {v.id for v in voices.list_library(root)} == {"levi", "noa", "hero-actor"}
+    assert T.load_centroid(saved) is not None
+
+
+def test_end_to_end_mock_with_actor_voice(tmp_path, film):
+    from dubber.infra import shared_paths
+    _lib_voice(shared_paths.voices_dir(), "levi", "male", [1, 0, 0])
+    p = Project.create(tmp_path / "proj", film, target_lang="ru", source_lang="en", multi_voice=True)
+    assert R.Runner(p, S.MOCK_CFG).run(until_stage="translation").ok
+    q = Project(p.folder)
+    for sp in q.speakers:
+        sp.voice = Voice("actor", "")
+    q.save()
+    res = R.Runner(Project(p.folder), S.MOCK_CFG).run()
+    assert res.ok, res
+    rec = json.loads((p.folder / "voices" / f"actor_{q.speakers[0].id}" / "actor_voice.json").read_text())
+    assert rec["library_id"] == "levi"
+
+
+def test_key_characters_and_subtitle_speaker_tags(tmp_path, film):
+    from dubber.core.project import Speaker
+    p = Project.create(tmp_path / "proj", film)
+    p.speakers = [Speaker("S1", seconds=50), Speaker("S2", seconds=30), Speaker("S3", seconds=12), Speaker("S4", seconds=8)]
+    assert [p.is_key(s) for s in p.speakers] == [True, True, False, False]
+    p.speakers[2].key, p.speakers[0].key = True, False
+    assert [p.is_key(s) for s in p.speakers] == [False, True, True, False]
+    assert Speaker("x").voice.kind == "auto"
+    tagged = SRT.replace("Good evening.", "ANNA: Good evening.").replace("I almost", "BOB: I almost") \
+        .replace("Then let us", "ANNA: Then let us")
+    (film.parent / "clip.en.srt").write_text(tagged, encoding="utf-8")
+    q = Project.create(tmp_path / "proj2", film, target_lang="ru", source_lang="en", multi_voice=True)
+    res = R.Runner(q, S.MOCK_CFG).run()
+    assert res.ok, res
+    q = Project(q.folder)
+    assert "subtitle speaker tags" in q.stages["diarization"]["summary"]
+    assert [ln.speaker for ln in q.lines] == ["S1", "S2", "S1", "S1"] and {s.name for s in q.speakers} == {"Anna", "Bob"}

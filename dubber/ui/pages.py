@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QFrame, 
                                QLineEdit, QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QSlider, QTableWidget,
                                QTableWidgetItem, QVBoxLayout, QWidget)
 
-from dubber.core import media, script, subtitles, voices
+from dubber.core import actor_voice, media, script, subtitles, voices
 from dubber.core.project import Project, Voice
 from dubber.i18n import tr
 
@@ -266,6 +266,10 @@ class SpeakerCard(QFrame):
         self.chk = QCheckBox()
         self.edt_name = QLineEdit(sp.name or sp.id)
         self.edt_name.editingFinished.connect(lambda: page.rename(self.sid, self.edt_name.text()))
+        self.chk_key = QCheckBox(tr("chars.key"))
+        self.chk_key.setToolTip(tr("chars.key_tip"))
+        self.chk_key.setChecked(page.project.is_key(sp) if page.project is not None else False)
+        self.chk_key.toggled.connect(lambda on: page.set_key(self.sid, on))
         self.lbl_secs = label("hint", False)
         self.lbl_secs.setText(tr("chars.seconds", s=int(sp.seconds), n=page.count_lines(sp.id)))
         self.cmb_voice = QComboBox()
@@ -273,20 +277,28 @@ class SpeakerCard(QFrame):
         self.cmb_voice.currentIndexChanged.connect(lambda _i: page.set_voice(self.sid, self.cmb_voice.currentData()))
         self.btn_play = QPushButton(tr("chars.listen"))
         self.btn_play.clicked.connect(lambda: page.listen.emit(self.sid))
+        self.btn_save = QPushButton(tr("chars.save_actor"))
+        self.btn_save.clicked.connect(lambda: page.save_actor.emit(self.sid))
+        made = page.project is not None and (actor_voice.folder(page.project.folder, sp.id) / actor_voice.RECORD).is_file()
+        self.btn_save.setVisible(sp.voice.kind == "actor" and made)
         self.lbl_samples = label("fileLabel")
         self.lbl_samples.setText("\n".join(f"“{s}”" for s in samples) or tr("chars.no_lines"))
         lay.addWidget(self.chk, 0, 0)
+        self.chk.setToolTip(tr("chars.merge_hint"))
         lay.addWidget(self.edt_name, 0, 1)
         lay.addWidget(self.lbl_secs, 0, 2)
         lay.addWidget(self.cmb_voice, 0, 3)
         lay.addWidget(self.btn_play, 0, 4)
-        lay.addWidget(self.lbl_samples, 1, 1, 1, 4)
+        lay.addWidget(self.chk_key, 1, 0, 1, 1, Qt.AlignmentFlag.AlignTop)
+        lay.addWidget(self.lbl_samples, 1, 1, 1, 3)
+        lay.addWidget(self.btn_save, 1, 4)
         lay.setColumnStretch(1, 1)
 
 
 class CharactersPage(QWidget):
     changed = Signal(str)                  # what changed: voice | multi | merge | name
     listen = Signal(str)                   # speaker id ('' = the single voice)
+    save_actor = Signal(str)               # speaker id: keep his actor-like voice in the library
     find_speakers = Signal()
     open_catalog = Signal()
     next_step = Signal()
@@ -335,9 +347,16 @@ class CharactersPage(QWidget):
         self.btn_merge = QPushButton()
         self.btn_merge.clicked.connect(self.merge_selected)
         self.lbl_multi_status = label("status")
+        self.lbl_actor = label("fileLabel", False)
+        self.sld_actor = QSlider(Qt.Orientation.Horizontal)
+        self.sld_actor.setRange(0, 100)
+        self.sld_actor.setFixedWidth(140)
+        self.sld_actor.sliderReleased.connect(self._on_actor_weight)
         row.addWidget(self.btn_find)
         row.addWidget(self.btn_merge)
         row.addWidget(self.lbl_multi_status, 1)
+        row.addWidget(self.lbl_actor)
+        row.addWidget(self.sld_actor)
         ml.addLayout(row)
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
@@ -364,6 +383,8 @@ class CharactersPage(QWidget):
         self.btn_merge.setText(tr("chars.merge"))
         self.btn_next.setText(tr("chars.next"))
         self.btn_catalog.setText(tr("chars.catalog"))
+        self.lbl_actor.setText(tr("chars.actor_weight"))
+        self.sld_actor.setToolTip(tr("chars.actor_weight_tip"))
         if self.project is not None:
             self.load(self.project)
 
@@ -389,10 +410,12 @@ class CharactersPage(QWidget):
             c.setParent(None)
             c.deleteLater()
         self.cards = {}
+        self.sld_actor.setValue(int(round(100 * float(p.settings.get("actor_weight", actor_voice.DEFAULT_WEIGHT)))))
+        card_items = [(Voice("auto", ""), tr("voice.auto"))] + items[:1] + [(Voice("actor", ""), tr("voice.actor"))] + items[1:]
         if multi:
             for sp in sorted(p.speakers, key=lambda s: -s.seconds):
                 samples = [ln.text or ln.translation for ln in p.lines if ln.speaker == sp.id and (ln.text or ln.translation)][:3]
-                cardw = SpeakerCard(self, sp, samples, items)
+                cardw = SpeakerCard(self, sp, samples, card_items)
                 self.cards[sp.id] = cardw
                 self.cards_lay.insertWidget(self.cards_lay.count() - 1, cardw)
         need = multi and not self.diarized()
@@ -409,6 +432,12 @@ class CharactersPage(QWidget):
         self.load(self.project)
         self.changed.emit("multi")
 
+    def _on_actor_weight(self) -> None:
+        if self.project is not None:
+            self.project.settings["actor_weight"] = round(self.sld_actor.value() / 100.0, 2)
+            self.project.save()
+            self.changed.emit("voice")
+
     def _on_single(self, _i: int) -> None:
         if self.project is None or self.cmb_single.currentData() is None:
             return
@@ -424,6 +453,13 @@ class CharactersPage(QWidget):
         sp.voice = voice_from_key(data)
         self.project.save()
         self.changed.emit("voice")
+
+    def set_key(self, sid: str, on: bool) -> None:
+        sp = self.project.speaker(sid) if self.project else None
+        if sp is not None and on != self.project.is_key(sp):
+            sp.key = bool(on)
+            self.project.save()
+            self.changed.emit("voice")
 
     def rename(self, sid: str, name: str) -> None:
         sp = self.project.speaker(sid) if self.project else None

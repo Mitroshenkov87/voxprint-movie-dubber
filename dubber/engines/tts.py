@@ -47,6 +47,12 @@ class VoiceSpec:
     ref_text: str = ""
     adapter_dir: str = ""          # library voice folder
     adapter_scale: float = 1.0     # LoRA strength from the voice's voice.json (Audiobook Builder: new voices 0.5, old ones 1.0)
+    # kind "actor" (dubber.core.actor_voice): the actor's clip blended with the closest library voice
+    actor_weight: float = 0.0
+    actor_ok: bool = True          # the actor clip is long / clean enough; else the library voice is used as is
+    gender: str = ""
+    candidates: tuple = ()         # actor_voice.Candidate items
+    record_dir: str = ""
 
     def tag(self) -> str:
         fp = ""
@@ -84,6 +90,46 @@ def is_oom(exc: BaseException) -> bool:
 class BaseTTS:
     sample_rate = 24000
     backend = "base"
+    def resolve(self, voice: VoiceSpec) -> VoiceSpec:
+        """An "actor" voice becomes a concrete one (library adapter + blended embedding, or a fallback) - once per voice."""
+        if voice.kind != "actor":
+            return voice
+        if not hasattr(self, "_resolved"):
+            self._resolved, self._blends = {}, {}
+        if voice.key not in self._resolved:
+            self._resolved[voice.key] = self._resolve_actor(voice)
+        return self._resolved[voice.key]
+
+    def actor_embedding(self, voice: VoiceSpec) -> Optional[np.ndarray]:
+        return None
+
+    def _resolve_actor(self, voice: VoiceSpec) -> VoiceSpec:
+        from dubber.core import actor_voice as av
+
+        emb = self.actor_embedding(voice) if voice.ref_audio else None
+        cand, score = av.pick_closest(emb, list(voice.candidates), voice.gender)
+        rec: Dict[str, Any] = {"actor_ok": bool(voice.actor_ok), "weight": float(voice.actor_weight), "ref_audio": voice.ref_audio,
+                               "ref_text": voice.ref_text, "similarity": round(score, 4)}
+        if cand is None:                                       # empty library: a plain clone of the actor
+            out = VoiceSpec(voice.key, "clone", voice.ref_audio, voice.ref_text)
+            rec.update(mode="clone (no library voice)")
+        elif not voice.actor_ok or emb is None:
+            lib = _library_spec(cand)
+            out = VoiceSpec(f"{voice.key}>{cand.id}", "library", lib[0], lib[1], str(cand.path), cand.adapter_scale)
+            rec.update(mode="library fallback", library_id=cand.id, library_path=str(cand.path), adapter_scale=cand.adapter_scale)
+        else:
+            centroid = av.load_centroid(cand.path)
+            blended = av.blend(emb, centroid, voice.actor_weight)
+            scale = av.adapter_scale(cand.adapter_scale, voice.actor_weight)
+            out = VoiceSpec(f"{voice.key}>{cand.id}", "library", voice.ref_audio, voice.ref_text, str(cand.path), scale)
+            self._blends[out.key] = blended
+            rec.update(mode="blend", library_id=cand.id, library_path=str(cand.path), adapter_scale=scale)
+            if voice.record_dir:
+                av.write_record(Path(voice.record_dir), rec, emb, blended)
+                return out
+        if voice.record_dir:
+            av.write_record(Path(voice.record_dir), rec, emb)
+        return out
 
     def synthesize_batch(self, texts: Sequence[str], voice: VoiceSpec, seed: Optional[int] = None) -> List[np.ndarray]:
         raise NotImplementedError
@@ -128,14 +174,17 @@ class MockTTS(BaseTTS):
     """Speech-like tone with the length a speaker would need (deterministic per text): lets the whole pipeline run on a CPU."""
     backend = "mock"
 
-    def __init__(self, lang: str = "ru", rate: float = 1.0) -> None:
-        self.lang, self.rate = lang, rate
-
     def max_batch(self) -> int:
         return MAX_BATCH
 
+    def __init__(self, lang: str = "ru", rate: float = 1.0) -> None:
+        self.lang, self.rate = lang, rate
+        self._resolved, self._blends = {}, {}
+
     def synthesize_batch(self, texts: Sequence[str], voice: VoiceSpec, seed: Optional[int] = None) -> List[np.ndarray]:
         from dubber.core.script import estimate_seconds
+
+        voice = self.resolve(voice)
 
         out = []
         for t in texts:
@@ -167,6 +216,7 @@ class QwenTTS(BaseTTS):
         self.dtype = torch.bfloat16 if self.use_cuda else torch.float32
         self.base_dir = Path(base_dir)
         self._prompts: Dict[str, Any] = {}
+        self._resolved, self._blends = {}, {}
         self._adapters: Dict[str, str] = {}
         self._peft = None
         self.model = None
@@ -264,16 +314,28 @@ class QwenTTS(BaseTTS):
             else:
                 kw["x_vector_only_mode"] = True
             prompt = self._inner().create_voice_clone_prompt(**kw)
-            if voice.kind == "library" and voice.adapter_dir:
+            if voice.key in self._blends:
+                use_centroid(prompt, self._blends[voice.key])          # actor-like voice: the blended embedding
+            elif voice.kind == "library" and voice.adapter_dir:
                 use_centroid(prompt, load_centroid(Path(voice.adapter_dir)))
             self._prompts[key] = prompt
         return self._prompts[key]
+
+    def actor_embedding(self, voice: VoiceSpec) -> Optional[np.ndarray]:
+        """The actor's x-vector from his reference clip (the model's own speaker encoder)."""
+        try:
+            prompt = self._inner().create_voice_clone_prompt(ref_audio=voice.ref_audio, x_vector_only_mode=True)
+            return prompt[0].ref_spk_embedding.detach().float().cpu().numpy().reshape(-1)
+        except Exception as exc:  # noqa: BLE001 - then the library voice is used
+            self.log(f"actor voice: no speaker embedding ({type(exc).__name__}: {exc})")
+            return None
 
     def synthesize_batch(self, texts: Sequence[str], voice: VoiceSpec, seed: Optional[int] = None) -> List[np.ndarray]:
         import torch
 
         if seed is not None:
             torch.manual_seed(int(seed))
+        voice = self.resolve(voice)
         self._activate(voice)
         mnt = max(max_tokens_for(t) for t in texts)
         if self.graphs:
@@ -340,4 +402,16 @@ def use_centroid(prompt: Any, centroid: Optional[np.ndarray]) -> bool:
         t = it.ref_spk_embedding
         it.ref_spk_embedding = torch.from_numpy(np.asarray(centroid, dtype=np.float32)).to(device=t.device, dtype=t.dtype).reshape(t.shape)
     return True
+
+
+def _library_spec(cand) -> Tuple[str, str]:
+    """(reference clip, its text) of a library voice folder."""
+    import json
+
+    ref = Path(cand.path) / "ref_sample.wav"
+    try:
+        text = str(json.loads((Path(cand.path) / "training_meta.json").read_text(encoding="utf-8-sig")).get("ref_sample_text") or "")
+    except (OSError, ValueError):
+        text = ""
+    return (str(ref) if ref.is_file() else "", text)
 
