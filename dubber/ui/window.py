@@ -132,7 +132,11 @@ class MainWindow(QWidget):
         self.film.dub.connect(self.dub_all)
         self.film.cancel.connect(self.cancel_job)
         self.film.show_result.connect(self.show_result)
-        self.film.watch.connect(lambda: (self.go(3), self.start_watch()))
+        def _on_watch() -> None:
+            self.go(3)
+            self.start_watch()
+
+        self.film.watch.connect(_on_watch)
         self.film.option_changed.connect(self._option_changed)
         self.film.options_toggled.connect(lambda on: settings.save({"options_open": bool(on)}))
         self.film.set_options_open(bool(settings.load().get("options_open")))
@@ -203,7 +207,8 @@ class MainWindow(QWidget):
         busy = self.job is not None and self.job.isRunning()
         ready = self._prepared()
         allowed = [True, ready and self._multi(), ready, ready]
-        hints = review.attention(self.project) if ready and not busy else {"characters": [], "lines": []}
+        project = self.project
+        hints = review.attention(project) if project is not None and ready and not busy else {"characters": [], "lines": []}
         if not self._multi():
             hints["characters"] = []
         for i, b in enumerate(self.step_buttons):
@@ -419,21 +424,26 @@ class MainWindow(QWidget):
 
     # ------------------------------------------------------------------ characters / lines
     def _chars_changed(self, what: str) -> None:
-        if what in ("merge", "name"):
-            self.lines.load(self.project)
+        project = self.project
+        if what in ("merge", "name") and project is not None:
+            self.lines.load(project)
 
     def listen(self, sid: str) -> None:
         """Play what a voice will sound like: the library sample, the reference clip, or a few of the speaker's lines."""
         p = self.project
         if p is None:
             return
-        v = Voice.from_dict(p.settings.get("single_voice")) if not sid else (p.speaker(sid).voice if p.speaker(sid) else Voice())
+        speaker = p.speaker(sid) if sid else None
+        if not sid:
+            v = Voice.from_dict(p.settings.get("single_voice"))
+        else:
+            v = speaker.voice if speaker is not None else Voice()
         clip: Optional[Path] = None
         if v.kind == "library":
             lv = voices.get_library_voice(v.id)
             clip = lv.preview if lv else None
         else:
-            ref = p.speaker(sid).ref_audio if sid and p.speaker(sid) else (p.settings.get("single_ref") or {}).get("audio", "")
+            ref = speaker.ref_audio if speaker is not None else (p.settings.get("single_ref") or {}).get("audio", "")
             if ref and p.abs(ref).exists():
                 clip = p.abs(ref)
             else:
@@ -445,6 +455,8 @@ class MainWindow(QWidget):
 
     def _speaker_sample(self, sid: str) -> Optional[Path]:
         p = self.project
+        if p is None:
+            return None
         src = p.folder / "audio" / "mix44.wav"
         if not src.exists():
             return None
@@ -467,13 +479,15 @@ class MainWindow(QWidget):
             return
         from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 
-        if self._sample_player is None:
-            self._sample_player = QMediaPlayer(self)
+        player = self._sample_player
+        if player is None:
+            player = QMediaPlayer(self)
             self._sample_out = QAudioOutput(self)
-            self._sample_player.setAudioOutput(self._sample_out)
-        self._sample_player.stop()
-        self._sample_player.setSource(QUrl.fromLocalFile(str(path)))
-        self._sample_player.play()
+            player.setAudioOutput(self._sample_out)
+            self._sample_player = player
+        player.stop()
+        player.setSource(QUrl.fromLocalFile(str(path)))
+        player.play()
 
     # ------------------------------------------------------------------ pipeline
     def cfg(self) -> Dict[str, Any]:
@@ -544,12 +558,15 @@ class MainWindow(QWidget):
         kind = self.job_kind
         folder = self.job.result_folder if self.job else None
         self.job_kind = ""
-        if self.project is not None:
-            self.project = Project(self.project.folder)
+        project = self.project
+        if project is not None:
+            project = Project(project.folder)
+            self.project = project
         self._reload_pages()
         if kind in ("prepare", "find"):
             self.film.progress.hide()
-            self.film.lbl_prepare.setText(tr("film.prepared", n=len(self.project.lines)) if ok else tr("run.failed", error=message))
+            n_lines = len(project.lines) if project is not None else 0
+            self.film.lbl_prepare.setText(tr("film.prepared", n=n_lines) if ok else tr("run.failed", error=message))
             if ok and kind == "prepare":
                 self.go(1 if self._multi() else 2)
         elif kind == "auto":
@@ -662,8 +679,9 @@ class MainWindow(QWidget):
         from dubber.core import actor_voice
         from dubber.infra import shared_paths
 
-        sp = self.project.speaker(sid) if self.project else None
-        if sp is None:
+        project = self.project
+        sp = project.speaker(sid) if project else None
+        if project is None or sp is None:
             return
         name, ok = QInputDialog.getText(self, tr("actor.save_title"), tr("actor.name"), text=sp.name or sid)
         if not ok or not name.strip():
@@ -673,10 +691,10 @@ class MainWindow(QWidget):
                                 QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
             return
         try:
-            path = actor_voice.save_to_library(actor_voice.folder(self.project.folder, sid), name.strip(), tr("actor.consent_note"),
-                                               shared_paths.voices_dir(), self.project.settings.get("target_lang", ""))
+            path = actor_voice.save_to_library(actor_voice.folder(project.folder, sid), name.strip(), tr("actor.consent_note"),
+                                               shared_paths.voices_dir(), project.settings.get("target_lang", ""))
             self.chars.lbl_multi_status.setText(tr("actor.saved", path=str(path)))
-            self.chars.load(self.project)
+            self.chars.load(project)
         except (OSError, ValueError) as exc:
             self.chars.lbl_multi_status.setText(tr("run.failed", error=str(exc)))
 

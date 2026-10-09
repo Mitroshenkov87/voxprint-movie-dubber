@@ -99,10 +99,20 @@ _RU_SEND = re.compile(rf"(?<!{_W})(?P<v>иди|пошёл|пошел|пошла|
 _RU_PHRASE_RX = [(re.compile(rf"(?<!{_W})(?:{pat})(?!{_W})", re.IGNORECASE), repl) for pat, repl in _RU_PHRASES]
 
 
+def _send_away(match: "re.Match[str]") -> str:
+    return match.group("v") + " к чёрту"
+
+
+def _phrase_sub(replacement: str) -> Callable[["re.Match[str]"], str]:
+    def apply(match: "re.Match[str]") -> str:
+        return _case_like(match.group(0), replacement)
+    return apply
+
+
 def soften_ru(text: str) -> str:
-    out = _RU_SEND.sub(lambda m: m.group("v") + " к чёрту", text)
+    out = _RU_SEND.sub(_send_away, text)
     for rx, repl in _RU_PHRASE_RX:
-        out = rx.sub(lambda m, r=repl: _case_like(m.group(0), r), out)
+        out = rx.sub(_phrase_sub(repl), out)
 
     def word(m: "re.Match[str]") -> str:
         w = m.group(0)

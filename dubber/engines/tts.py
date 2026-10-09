@@ -65,7 +65,8 @@ class VoiceSpec:
                 fp += f"{st.st_size}:{int(st.st_mtime)};" if st else ""
             except OSError:
                 pass
-        return hashlib.sha1(f"{self.kind}|{self.key}|{self.ref_text}|{fp}|{self.adapter_scale}".encode("utf-8")).hexdigest()[:12]
+        raw = f"{self.kind}|{self.key}|{self.ref_text}|{fp}|{self.adapter_scale}".encode("utf-8")
+        return hashlib.sha1(raw, usedforsecurity=False).hexdigest()[:12]
 
 
 # ---------------------------------------------------------------------------------------------- batching (from the audiobook narrator)
@@ -93,12 +94,16 @@ def is_oom(exc: BaseException) -> bool:
 class BaseTTS:
     sample_rate = 24000
     backend = "base"
+    _resolved: Dict[str, VoiceSpec]
+    _blends: Dict[str, np.ndarray]
+
     def resolve(self, voice: VoiceSpec) -> VoiceSpec:
         """An "actor" voice becomes a concrete one (library adapter + blended embedding, or a fallback) - once per voice."""
         if voice.kind != "actor":
             return voice
         if not hasattr(self, "_resolved"):
-            self._resolved, self._blends = {}, {}
+            self._resolved = {}
+            self._blends = {}
         if voice.key not in self._resolved:
             self._resolved[voice.key] = self._resolve_actor(voice)
         return self._resolved[voice.key]
@@ -196,7 +201,7 @@ class MockTTS(BaseTTS):
 
         out = []
         for t in texts:
-            h = int(hashlib.md5(f"{t}|{voice.key}|{seed}".encode("utf-8")).hexdigest()[:8], 16)
+            h = int(hashlib.md5(f"{t}|{voice.key}|{seed}".encode("utf-8"), usedforsecurity=False).hexdigest()[:8], 16)
             rng = np.random.default_rng(h)
             dur = max(0.3, estimate_seconds(t, self.lang) * rng.uniform(0.92, 1.12) / self.rate)
             n = int(dur * self.sample_rate)
@@ -295,16 +300,22 @@ class QwenTTS(BaseTTS):
             return 1
         if not self.use_cuda:
             return resources.tts_batch("cpu", 0.0, resources.RAM_SHARE * resources.ram_gb()[1])
+        budget = self.budget
+        if budget is None:
+            return 1
         try:
-            return resources.tts_batch("cuda", self.budget.left(), self.budget.ram_budget)
+            return resources.tts_batch("cuda", budget.left(), budget.ram_budget)
         except Exception:  # noqa: BLE001
             return 1
 
     def _swap_out_other_voices(self, keep: str) -> None:
         """Budget too tight for several voices: drop every adapter except ``keep`` (they are reloaded when needed)."""
+        peft = self._peft
+        if peft is None:
+            return
         for name in [n for n in self._adapters if n != keep]:
             try:
-                self._peft.delete_adapter(name)
+                peft.delete_adapter(name)
             except Exception as exc:  # noqa: BLE001 - keep going with what is loaded
                 self.log(f"voice adapter {name} not unloaded: {type(exc).__name__}: {exc}")
                 continue
@@ -317,22 +328,25 @@ class QwenTTS(BaseTTS):
     def _activate(self, voice: VoiceSpec) -> None:
         """Switch the LoRA adapter for a library voice (peft, unmerged so several voices can share the base model)."""
         if voice.kind != "library":
-            if self._peft is not None:                     # a cloned voice runs on the plain base model
-                self._peft.base_model.disable_adapter_layers()
+            peft = self._peft
+            if peft is not None:                           # a cloned voice runs on the plain base model
+                peft.base_model.disable_adapter_layers()
             return
         from peft import PeftModel
 
         q = self._inner()
-        if self._peft is None:
-            self._peft = PeftModel.from_pretrained(q.model.talker, voice.adapter_dir, adapter_name=voice.key)
-            q.model.talker = self._peft
+        peft = self._peft
+        if peft is None:
+            peft = PeftModel.from_pretrained(q.model.talker, voice.adapter_dir, adapter_name=voice.key)
+            self._peft = peft
+            q.model.talker = peft
             self._adapters[voice.key] = voice.adapter_dir
         elif voice.key not in self._adapters:
-            self._peft.load_adapter(voice.adapter_dir, adapter_name=voice.key)
+            peft.load_adapter(voice.adapter_dir, adapter_name=voice.key)
             self._adapters[voice.key] = voice.adapter_dir
-        self._peft.base_model.enable_adapter_layers()
-        self._peft.set_adapter(voice.key)
-        set_lora_scale(self._peft, voice.key, voice.adapter_scale)
+        peft.base_model.enable_adapter_layers()
+        peft.set_adapter(voice.key)
+        set_lora_scale(peft, voice.key, voice.adapter_scale)
         if self.budget is not None and len(self._adapters) > 1:
             from dubber.infra import resources
 
@@ -371,18 +385,21 @@ class QwenTTS(BaseTTS):
             torch.manual_seed(int(seed))
         voice = self.resolve(voice)
         self._activate(voice)
+        model = self.model
+        if model is None:
+            raise RuntimeError("Qwen3-TTS model is not loaded")
         mnt = max(max_tokens_for(t) for t in texts)
         if self.graphs:
             out = []
             for t in texts:
-                wavs, sr = self.model.generate_voice_clone(text=t, language=self.language, ref_audio=voice.ref_audio,
-                                                           ref_text=voice.ref_text, max_new_tokens=max_tokens_for(t))
+                wavs, sr = model.generate_voice_clone(text=t, language=self.language, ref_audio=voice.ref_audio,
+                                                      ref_text=voice.ref_text, max_new_tokens=max_tokens_for(t))
                 out.append(np.asarray(wavs[0], dtype=np.float32).reshape(-1))
                 self.sample_rate = int(sr)
             return out
         with torch.inference_mode():
-            wavs, sr = self.model.generate_voice_clone(text=list(texts), language=[self.language] * len(texts),
-                                                       voice_clone_prompt=self._prompt(voice), max_new_tokens=mnt)
+            wavs, sr = model.generate_voice_clone(text=list(texts), language=[self.language] * len(texts),
+                                                  voice_clone_prompt=self._prompt(voice), max_new_tokens=mnt)
         self.sample_rate = int(sr)
         return [np.asarray(w, dtype=np.float32).reshape(-1) for w in wavs]
 

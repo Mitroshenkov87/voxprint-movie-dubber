@@ -14,3 +14,8 @@ Thumbs.db
 *.partial
 *.tmp
 build_info.json
+audit-report.txt
+.mypy_cache/
+.ruff_cache/
+.app/
+.tools/

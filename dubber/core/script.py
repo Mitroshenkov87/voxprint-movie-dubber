@@ -132,7 +132,7 @@ def assign_speakers(lines: List[Line], turns: Sequence[Dict[str, Any]]) -> None:
             if o > 0:
                 score[t["speaker"]] = score.get(t["speaker"], 0.0) + o
         if score:
-            ln.speaker = max(score, key=score.get)
+            ln.speaker = max(score, key=lambda name: score[name])
 
 
 def cluster_speakers(features: np.ndarray, threshold: float = 0.35, max_speakers: int = 8) -> List[int]:

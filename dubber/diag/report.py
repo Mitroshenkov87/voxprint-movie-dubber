@@ -263,7 +263,8 @@ def key_numbers(results: Sequence[CheckResult]) -> List[str]:
     out: List[str] = []
     g = by.get("gpu.torch")
     gm = (g.metrics if g else {}) or {}
-    smi = (by.get("gpu.smi").metrics if by.get("gpu.smi") else {}) or {}
+    smi_row = by.get("gpu.smi")
+    smi = (smi_row.metrics if smi_row else {}) or {}
     if gm or smi:
         name = gm.get("name") or smi.get("name") or "no NVIDIA GPU detected"
         vram = gm.get("vram_total_gb") or smi.get("vram_total_gb")

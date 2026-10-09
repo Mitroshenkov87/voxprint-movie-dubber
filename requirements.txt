@@ -31,3 +31,7 @@ python-stretch>=0.3
 # diarization for the multi-voice mode (the model is gated: it needs a Hugging Face token + accepted licence; without the token
 # the step is skipped).  Checked: resolves with torch 2.14.1 / torchaudio 2.11 / transformers 5.19 without changing them.
 pyannote.audio>=4.0
+
+# Transitive floor. setuptools 78.1.0 is PYSEC-2025-49 / CVE-2025-47273 (high: path traversal in PackageIndex.download).
+# 78.1.1 fixes that release. The program does not call that downloader; the floor keeps it out of the installed runtime.
+setuptools>=78.1.1

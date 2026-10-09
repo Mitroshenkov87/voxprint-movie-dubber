@@ -82,9 +82,8 @@ class WavSource:
 
     def __init__(self, path: Path, offset: float = 0.0) -> None:
         self.offset = offset
-        self.x = _load(Path(path))
-        if self.x is None:
-            self.x = np.zeros((0, 2), np.float32)
+        loaded = _load(Path(path))
+        self.x: np.ndarray = loaded if loaded is not None else np.zeros((0, 2), np.float32)
 
     @property
     def span(self) -> Tuple[float, float]:

@@ -53,19 +53,17 @@ class MediaInfo:
 
 def probe(path: Path) -> MediaInfo:
     data = ffmpeg.probe(Path(path))
-    info = MediaInfo(Path(path), float(data.get("duration") or 0.0))
+    info = MediaInfo(Path(path), float(data["duration"] or 0.0))
     a = s = 0
-    for st in data["streams"]:                      # type: ignore[index]
-        kind = st.get("type")
+    for st in data["streams"]:
+        kind = st["type"]
         if kind == "video" and not info.video_codec:
-            info.video_codec = str(st.get("codec") or "")
+            info.video_codec = st["codec"]
         elif kind == "audio":
-            info.audio.append(Track(a, int(st.get("index") or 0), str(st.get("codec") or ""), str(st.get("lang") or ""),
-                                    str(st.get("title") or ""), st.get("channels")))
+            info.audio.append(Track(a, st["index"], st["codec"], st["lang"], st["title"], st["channels"]))
             a += 1
         elif kind == "subtitle":
-            info.subtitles.append(Track(s, int(st.get("index") or 0), str(st.get("codec") or ""), str(st.get("lang") or ""),
-                                        str(st.get("title") or "")))
+            info.subtitles.append(Track(s, st["index"], st["codec"], st["lang"], st["title"]))
             s += 1
     return info
 
@@ -101,7 +99,7 @@ def pick_original_track(info: Optional[MediaInfo], target_lang: str = "") -> int
 
 def extract_audio(path: Path, out: Path, sr: int, channels: int, track: int = 0, start: Optional[float] = None,
                   length: Optional[float] = None) -> None:
-    args: List = []
+    args: List[object] = []
     if start is not None:
         args += ["-ss", f"{start:.3f}"]
     args += ["-i", path]

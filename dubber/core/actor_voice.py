@@ -97,8 +97,11 @@ def blend(actor: np.ndarray, library: Optional[np.ndarray], weight: float) -> np
     if library is None or library.size != a.size:
         return a
     w = float(min(1.0, max(0.0, weight)))
-    mix = w * a / max(np.linalg.norm(a), 1e-9) + (1 - w) * library / max(np.linalg.norm(library), 1e-9)
-    return (mix / max(np.linalg.norm(mix), 1e-9) * np.linalg.norm(a)).astype(np.float32)
+    norm_a = float(np.linalg.norm(a))
+    norm_l = float(np.linalg.norm(library))
+    mix = w * a / max(norm_a, 1e-9) + (1.0 - w) * library / max(norm_l, 1e-9)
+    norm_m = float(np.linalg.norm(mix))
+    return (mix / max(norm_m, 1e-9) * norm_a).astype(np.float32)
 
 
 def adapter_scale(library_scale: float, weight: float) -> float:

@@ -14,7 +14,7 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, TypedDict
 
 from dubber import paths
 from dubber.appinfo import resource_dir
@@ -75,7 +75,7 @@ def find_ffmpeg() -> FfmpegInfo:
         info.problems.append(f"{label}: {exe} does not run")
     if info.ffmpeg is None:
         try:
-            import imageio_ffmpeg  # type: ignore
+            import imageio_ffmpeg
 
             exe = imageio_ffmpeg.get_ffmpeg_exe()
             ver = _works(exe)
@@ -108,7 +108,7 @@ def require_ffmpeg() -> str:
     return exe
 
 
-def run(args: Sequence[str], timeout: float = 3600) -> subprocess.CompletedProcess:
+def run(args: Sequence[object], timeout: float = 3600) -> subprocess.CompletedProcess:
     """Run ffmpeg with ``args`` (without the program name); raises :class:`FfmpegError` on failure."""
     cmd = [require_ffmpeg(), "-hide_banner", "-nostdin", "-y", "-loglevel", "error", *map(str, args)]
     try:
@@ -123,7 +123,48 @@ def run(args: Sequence[str], timeout: float = 3600) -> subprocess.CompletedProce
     return p
 
 
-def probe(path: Path) -> Dict[str, object]:
+class StreamInfo(TypedDict):
+    index: int
+    type: str
+    codec: str
+    lang: str
+    channels: Optional[int]
+    rate: Optional[int]
+    title: str
+
+
+class ProbeResult(TypedDict):
+    duration: Optional[float]
+    streams: List[StreamInfo]
+
+
+def _as_int(value: object) -> Optional[int]:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return None
+
+
+def _stream_from_ffprobe(raw: Dict[str, object]) -> StreamInfo:
+    tags = raw.get("tags")
+    tag_map = tags if isinstance(tags, dict) else {}
+    return {
+        "index": _as_int(raw.get("index")) or 0,
+        "type": str(raw.get("codec_type") or ""),
+        "codec": str(raw.get("codec_name") or ""),
+        "lang": str(tag_map.get("language") or ""),
+        "channels": _as_int(raw.get("channels")),
+        "rate": _as_int(raw.get("sample_rate")),
+        "title": str(tag_map.get("title") or ""),
+    }
+
+
+def probe(path: Path) -> ProbeResult:
     """Streams and duration of a media file: ``{"duration": s, "streams": [{"index","type","codec","lang","channels","rate"}]}``."""
     info = ffmpeg_info()
     if info.ffprobe:
@@ -132,12 +173,8 @@ def probe(path: Path) -> Dict[str, object]:
         if p.returncode != 0:
             raise FfmpegError(f"ffprobe failed: {(p.stderr or '').strip()[-400:]}")
         data = json.loads(p.stdout or "{}")
-        streams = []
-        for s in data.get("streams", []):
-            streams.append({"index": s.get("index"), "type": s.get("codec_type"), "codec": s.get("codec_name"),
-                            "lang": (s.get("tags") or {}).get("language", ""), "channels": s.get("channels"),
-                            "rate": int(s["sample_rate"]) if s.get("sample_rate") else None,
-                            "title": (s.get("tags") or {}).get("title", "")})
+        raw_streams = data.get("streams", [])
+        streams = [_stream_from_ffprobe(s) for s in raw_streams if isinstance(s, dict)]
         dur = data.get("format", {}).get("duration")
         return {"duration": float(dur) if dur else None, "streams": streams}
     # no ffprobe: parse the banner that "ffmpeg -i" prints to stderr
@@ -146,28 +183,32 @@ def probe(path: Path) -> Dict[str, object]:
                        creationflags=_NO_WINDOW, encoding="utf-8", errors="replace")
     text = p.stderr or ""
     dur = None
-    m = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", text)
-    if m:
-        dur = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
+    match = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", text)
+    if match:
+        dur = int(match.group(1)) * 3600 + int(match.group(2)) * 60 + float(match.group(3))
     streams = []
-    for m in re.finditer(r"Stream #0:(\d+)(?:\((\w+)\))?[^:]*:\s*(Audio|Video|Subtitle|Data|Attachment):\s*([^\s,(]+)(.*)", text):
-        rate = re.search(r"(\d+) Hz", m.group(5))
-        streams.append({"index": int(m.group(1)), "type": m.group(3).lower(), "codec": m.group(4), "lang": m.group(2) or "",
-                        "channels": None, "rate": int(rate.group(1)) if rate else None, "title": ""})
+    for found in re.finditer(r"Stream #0:(\d+)(?:\((\w+)\))?[^:]*:\s*(Audio|Video|Subtitle|Data|Attachment):\s*([^\s,(]+)(.*)", text):
+        rate = re.search(r"(\d+) Hz", found.group(5))
+        streams.append({"index": int(found.group(1)), "type": found.group(3).lower(), "codec": found.group(4),
+                        "lang": found.group(2) or "", "channels": None, "rate": int(rate.group(1)) if rate else None, "title": ""})
     return {"duration": dur, "streams": streams}
 
 
 def extract_audio(src: Path, dst: Path, sample_rate: int = 16000, channels: int = 1, audio_index: int = 0) -> None:
     """Decode the ``audio_index``-th audio stream of ``src`` to a PCM16 WAV (resampled / downmixed)."""
-    run(["-i", src, "-map", f"0:a:{audio_index}", "-vn", "-sn", "-ac", channels, "-ar", sample_rate, "-c:a", "pcm_s16le", dst])
+    args: List[object] = ["-i", src, "-map", f"0:a:{audio_index}", "-vn", "-sn", "-ac", channels, "-ar", sample_rate,
+                          "-c:a", "pcm_s16le", dst]
+    run(args)
 
 
 def add_dub_track(src: Path, dub_audio: Path, out: Path, language: str = "rus", title: str = "AI dub",
                   codec: str = "aac", bitrate: str = "192k") -> int:
     """Copy everything from ``src`` and append ``dub_audio`` as a new audio track.  Returns the index of the new audio track
     (among the output audio streams).  Video and the original audio are stream-copied (never re-encoded)."""
-    n_audio = sum(1 for s in probe(src)["streams"] if s["type"] == "audio")      # type: ignore[index]
+    n_audio = sum(1 for stream in probe(src)["streams"] if stream["type"] == "audio")
     ca = f"-c:a:{n_audio}"
-    run(["-i", src, "-i", dub_audio, "-map", "0", "-map", "1:a:0", "-c", "copy", ca, codec, f"-b:a:{n_audio}", bitrate,
-         f"-metadata:s:a:{n_audio}", f"language={language}", f"-metadata:s:a:{n_audio}", f"title={title}", out])
+    args: List[object] = ["-i", src, "-i", dub_audio, "-map", "0", "-map", "1:a:0", "-c", "copy", ca, codec,
+                          f"-b:a:{n_audio}", bitrate, f"-metadata:s:a:{n_audio}", f"language={language}",
+                          f"-metadata:s:a:{n_audio}", f"title={title}", out]
+    run(args)
     return n_audio

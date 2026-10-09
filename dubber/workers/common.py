@@ -81,7 +81,7 @@ def _prepare_environment(args: Dict[str, Any]) -> None:
 
 def _add_torch_dll_dirs() -> None:
     """Windows: make CUDA DLLs of the installed PyTorch visible to other native libraries (CTranslate2, onnxruntime)."""
-    if os.name != "nt":
+    if sys.platform != "win32":
         return
     try:
         import importlib.util

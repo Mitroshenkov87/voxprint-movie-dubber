@@ -18,7 +18,7 @@ from typing import List, Optional
 
 from dubber import ffmpeg, paths
 from dubber.appinfo import version_line
-from dubber.diag.procs import decode_throttle, find_nvidia_smi
+from dubber.diag.procs import find_nvidia_smi
 from dubber.diag.report import CheckResult, Status
 
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0

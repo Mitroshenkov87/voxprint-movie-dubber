@@ -5,7 +5,6 @@ Separated from the model checks so that download time never pollutes load-time n
 """
 from __future__ import annotations
 
-import time
 from typing import Any, Dict, List
 
 from dubber import models
@@ -22,7 +21,6 @@ def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
         spec = models.SPECS.get(key)
         repo = overrides.get(key) or (spec.repo if spec else key)
         title = spec.title if spec else repo
-        t = time.time()
         try:
             ctx.log(f"models: checking {repo}")
             folder, info = models.ensure(repo, args.get("allow_download", True), log=ctx.log)

@@ -11,14 +11,13 @@ Order (cheap and safe first, expensive last; the report file is rewritten after 
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import threading
 import time
 import traceback
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from dubber import ffmpeg, models, paths
 from dubber.appinfo import version_line
@@ -173,7 +172,7 @@ class DiagnosticRunner:
             Step("models.fetch", "Models on disk", self._check_models, 6.0, "models"),
         ]
         for mode in o.tts_modes:
-            steps.append(Step(f"tts.{mode}", f"TTS speed: {mode}", lambda m=mode: self._check_tts(m), 5.0, "tts"))
+            steps.append(Step(f"tts.{mode}", f"TTS speed: {mode}", self._tts_fn(mode), 5.0, "tts"))
         steps += [
             Step("stage.extract", "Extract audio", self._stage_extract, 0.5, "stages"),
             Step("stage.vad", "VAD", self._stage_vad, 0.5, "stages"),
@@ -302,6 +301,12 @@ class DiagnosticRunner:
                 "phrases": phrases[:2] if self.opt.quick else phrases, "runs": 1 if self.opt.quick else 2,
                 "device": "auto"}
 
+    def _tts_fn(self, mode: str) -> Callable[[], CheckResult]:
+        """A zero-arg check for one TTS mode. The mode is bound here so the plan does not share one loop variable."""
+        def run() -> CheckResult:
+            return self._check_tts(mode)
+        return run
+
     def _check_tts(self, mode: str) -> CheckResult:
         cid = f"tts.{mode}"
         title = f"Qwen3-TTS speed: {mode}"
@@ -318,7 +323,9 @@ class DiagnosticRunner:
         r = self._worker(cid, title, "tts", args, 1800 if self.has_gpu else 3600)
         if r.status in (Status.OK, Status.WARN) and r.metrics.get("rtf") is not None:
             best = self.best_tts_mode
-            if best is None or r.metrics["rtf"] < (self.report.get(f"tts.{best}").metrics.get("rtf", 1e9) if self.report.get(f"tts.{best}") else 1e9):
+            prev = self.report.get(f"tts.{best}") if best is not None else None
+            prev_rtf = prev.metrics.get("rtf", 1e9) if prev is not None else 1e9
+            if best is None or r.metrics["rtf"] < prev_rtf:
                 self.best_tts_mode = mode
         return r
 
@@ -339,12 +346,12 @@ class DiagnosticRunner:
         clip = self._clip_path()
         if not clip.is_file():
             return CheckResult("stage.extract", "Extract audio", Status.FAIL, f"test clip not found: {clip}")
-        t = time.time()
         info = ffmpeg.probe(clip)
         streams = info["streams"]
         r.kv("clip", f"{clip.name} ({clip.stat().st_size / 1024:.0f} KB, {info['duration']} s)")
-        for s in streams:                                                           # type: ignore[union-attr]
-            r.line(f"  stream {s['index']}: {s['type']} {s['codec']} {s.get('lang', '')} {s.get('channels') or ''} {s.get('rate') or ''}")
+        for stream in streams:
+            r.line(f"  stream {stream['index']}: {stream['type']} {stream['codec']} {stream.get('lang', '')} "
+                   f"{stream.get('channels') or ''} {stream.get('rate') or ''}")
         ctx = pst.StageContext(clip, self.opt.target_lang, self.work / "stages", log=lambda m: None)         # type: ignore[operator]
         res = pst.ExtractStage().run(ctx)
         self.data.update(ctx.data)

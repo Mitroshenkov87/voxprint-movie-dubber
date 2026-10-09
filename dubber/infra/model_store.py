@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import shutil
+import sys
 import threading
 import time
 import uuid
@@ -155,7 +156,7 @@ class ModelLock:
                 # Windows: a lock file held by another thread of this process raises PermissionError on open - it is taken.
                 continue
             try:
-                if os.name == "nt":
+                if sys.platform == "win32":
                     import msvcrt
 
                     fh.seek(0)
@@ -194,7 +195,7 @@ class ModelLock:
             except OSError:
                 pass
         try:
-            if os.name == "nt":
+            if sys.platform == "win32":
                 import msvcrt
 
                 fh.seek(0)

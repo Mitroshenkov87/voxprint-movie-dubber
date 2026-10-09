@@ -2,6 +2,8 @@
 # installs it silently, checks the installed program, uninstalls it and publishes the installer as a workflow artifact.
 # A pushed tag "v*" additionally attaches the installer to a pre-release of this repository.
 # Runners have no GPU: the installer is tested with the CPU build of PyTorch (/TORCH=cpu).
+# The audit job runs first. The installer is not built when ruff, mypy, bandit (high), gitleaks, or an
+# un-allowlisted pip-audit high/critical finding fails that job. Vulture and radon do not fail it.
 name: Build online installer
 on:
   workflow_dispatch:
@@ -10,7 +12,10 @@ on:
 permissions:
   contents: write
 jobs:
+  audit:
+    uses: ./.github/workflows/audit.yml
   installer:
+    needs: audit
     runs-on: windows-latest
     timeout-minutes: 60
     env:

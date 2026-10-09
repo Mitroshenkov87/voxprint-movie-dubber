@@ -82,7 +82,7 @@ class MuxStage(Stage):
         idx = ffmpeg.add_dub_track(ctx.source, Path(ctx.data["dub_track"]), out, language=lang, title=f"AI dub ({ctx.target_lang})")
         ctx.data["output"] = str(out)
         streams = ffmpeg.probe(out)["streams"]
-        n_a = sum(1 for s in streams if s["type"] == "audio")                 # type: ignore[index]
+        n_a = sum(1 for s in streams if s["type"] == "audio")
         return StageResult(self.key, True, f"{out.name}: {n_a} audio tracks (new track #{idx}), video copied", time.time() - t)
 
 

@@ -266,7 +266,7 @@ def _parse_vram_fraction(value: object) -> Optional[float]:
         value = value.strip()
         if not value:
             return None
-    if value is None or isinstance(value, bool):
+    if value is None or isinstance(value, bool) or not isinstance(value, (int, float, str)):
         return None
     try:
         frac = float(value)
