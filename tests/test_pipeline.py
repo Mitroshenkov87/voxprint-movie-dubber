@@ -264,7 +264,10 @@ def test_reference_pick_and_build(tmp_path):
     assert [ln.id for ln in chosen] == [1, 2]
     audio.write(tmp_path / "s.wav", 0.1 * np.ones(24000 * 20, np.float32), 24000)
     secs, text = voices.build_reference(chosen, tmp_path / "s.wav", tmp_path / "ref.wav")
-    assert secs == pytest.approx(9.25, abs=0.01) and text == "a b"
+    # line 2 is padded 0.12 s past its end (the lines touch, so the join itself is not padded) plus the 0.25 s gap
+    assert secs == pytest.approx(9.37, abs=0.02) and text == "a b"
+    faded, _ = audio.read(tmp_path / "ref.wav")
+    assert abs(float(faded[0])) < 1e-4 and abs(float(faded[-1])) < 1e-4 and abs(float(faded[len(faded) // 2])) > 1e-3
 
 
 # ------------------------------------------------------------------ project

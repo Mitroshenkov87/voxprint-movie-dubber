@@ -18,6 +18,7 @@ import numpy as np
 
 from dubber.core import audio, media, mixing, script, subtitles, timefit, voices
 from dubber.core.project import CHUNK_S, Line, Project, Speaker, hash_of, read_json, write_json
+from dubber.engines.asr import transcribe_faster_whisper
 
 Emit = Callable[..., None]
 ORDER = ["probe", "extract", "subtitles", "vad", "separation", "asr", "script", "diarization", "translation", "voices", "tts", "mix", "mux"]
@@ -26,7 +27,7 @@ GPU = {"separation", "asr", "diarization", "translation", "tts"}                
 BLOCK_S = 60.0              # TTS + fitting work through the film in blocks of this length (Watch mode follows the blocks)
 TAKES = 3                   # best-of-N for lines that do not fit
 #: bumped when a stage's algorithm changes, so projects analysed by an older build redo that stage (and only the later ones)
-ASR_VERSION, SCRIPT_VERSION, MT_VERSION = 3, 3, 3
+ASR_VERSION, SCRIPT_VERSION, MT_VERSION, VOICES_VERSION = 3, 3, 3, 2
 
 DEFAULT_CFG: Dict[str, Any] = {
     "device": "auto", "allow_download": True, "inprocess": False,
@@ -87,7 +88,8 @@ def inputs_for(key: str, p: Project, cfg: Dict[str, Any], prev: str) -> str:
         "script": [SCRIPT_VERSION],
         "diarization": [s.get("multi_voice"), c.get("diarization")],
         "translation": [c.get("translation"), s.get("target_lang"), s.get("profanity"), MT_VERSION],
-        "voices": [s.get("multi_voice"), s.get("single_voice"), [(sp.id, sp.voice.kind, sp.voice.id) for sp in p.speakers]],
+        "voices": [VOICES_VERSION, s.get("multi_voice"), s.get("single_voice"),
+                   [(sp.id, sp.voice.kind, sp.voice.id) for sp in p.speakers]],
         "tts": [c.get("tts"), c.get("tts_model"), s.get("actor_weight") if s.get("multi_voice") else None,
                 [(sp.id, sp.voice.kind, sp.voice.id, p.is_key(sp)) for sp in p.speakers] if s.get("multi_voice") else None, [(ln.id, ln.translation, ln.speaker, ln.keep_original, ln.start, ln.end) for ln in p.lines]],
         "mix": [s.get("original_volume")],
@@ -223,21 +225,66 @@ def st_voices(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
         for sp in p.speakers:
             if sp.voice.kind not in ("clone", "actor", "auto"):
                 continue
-            chosen = voices.pick_reference_lines(p.lines, sp.id)
-            if chosen:
-                secs, text = voices.build_reference(chosen, src, p.path("voices", f"{sp.id}.wav"))
+            secs, text = _make_reference(p, cfg, emit, sp.id, src, p.path("voices", f"{sp.id}.wav"))
+            if secs > 0:
                 sp.ref_audio, sp.ref_text = p.rel(p.path("voices", f"{sp.id}.wav")), text
                 made.append(f"{sp.id} {secs:.0f} s")
     else:
         v = p.settings.get("single_voice") or {}
         if (v.get("kind") or "clone") == "clone":
             main = max(p.speakers, key=lambda s: s.seconds).id if p.speakers else None
-            chosen = voices.pick_reference_lines(p.lines, main) or voices.pick_reference_lines(p.lines, None)
-            if chosen:
-                secs, text = voices.build_reference(chosen, src, p.path("voices", "single.wav"))
+            secs, text = _make_reference(p, cfg, emit, main, src, p.path("voices", "single.wav"), fallback_any=True)
+            if secs > 0:
                 p.settings["single_ref"] = {"audio": p.rel(p.path("voices", "single.wav")), "text": text}
                 made.append(f"one voice {secs:.0f} s")
     return "reference clips: " + (", ".join(made) or "none needed (library voices)")
+
+
+def _make_reference(p: Project, cfg: Dict[str, Any], emit: Emit, speaker: Optional[str], src: Path, out: Path,
+                    fallback_any: bool = False) -> Tuple[float, str]:
+    """Build one reference clip and, when ASR is available, check it once against a re-transcription."""
+    if not src.is_file():
+        return 0.0, ""
+    chosen = voices.pick_reference_lines(p.lines, speaker, wav=src)
+    if not chosen and fallback_any and speaker is not None:
+        chosen = voices.pick_reference_lines(p.lines, None, wav=src)
+    if not chosen:
+        return 0.0, ""
+    secs, text = voices.build_reference(chosen, src, out, bounds=p.lines)
+    hyp = _reference_hypothesis(out, cfg, emit)
+    if hyp is None:
+        emit("log", text=voices.reference_log(len(chosen), secs, "skipped"))
+        return secs, text
+    ok, drop, ref_text = voices.assess_reference(chosen, text, hyp)
+    if ok:
+        emit("log", text=voices.reference_log(len(chosen), secs, "OK"))
+        return secs, ref_text
+    if drop is not None and len(chosen) > 1:
+        kept = [ln for i, ln in enumerate(chosen) if i != drop]
+        secs, text = voices.build_reference(kept, src, out, bounds=p.lines)
+        hyp2 = _reference_hypothesis(out, cfg, emit)
+        if hyp2 is None:
+            emit("log", text=voices.reference_log(len(kept), secs, "rebuilt"))
+            return secs, text
+        ok2, _, ref_text = voices.assess_reference(kept, text, hyp2)
+        emit("log", text=voices.reference_log(len(kept), secs, "OK" if ok2 else "rebuilt"))
+        return secs, ref_text
+    emit("log", text=voices.reference_log(len(chosen), secs, "warn"))
+    return secs, ref_text
+
+
+def _reference_hypothesis(wav: Path, cfg: Dict[str, Any], emit: Emit) -> Optional[str]:
+    """Re-transcription of a reference clip, or None in mock mode / when ASR cannot run."""
+    if cfg.get("asr") != "whisper":
+        return None
+    try:
+        res = transcribe_faster_whisper(str(wav), None, cfg.get("asr_repo"), _device(cfg), cfg.get("allow_download", True),
+                                        lambda m: emit("log", text=m))
+    except Exception as exc:  # noqa: BLE001 - no model in a test or a CPU trial: keep the joined text
+        emit("log", text=f"reference check skipped ({type(exc).__name__})")
+        return None
+    text = " ".join(str(s.get("text") or "") for s in (res.get("segments") or [])).strip()
+    return text or None
 
 
 # ---------------------------------------------------------------------------------------------- model stages

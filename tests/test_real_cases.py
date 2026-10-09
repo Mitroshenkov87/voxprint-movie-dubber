@@ -6,10 +6,11 @@ import re
 import shutil
 from pathlib import Path
 
+import numpy as np
 import pytest
 
-from dubber.core import script, segment, timefit
-from dubber.core.project import Project
+from dubber.core import audio, script, segment, timefit, voices
+from dubber.core.project import Line, Project
 from dubber.engines import translation as T
 from dubber.pipeline import runner as R
 from dubber.pipeline import stages as S
@@ -45,6 +46,59 @@ def test_lines_never_span_a_long_pause():
     assert pauses
     for ln in script.lines_from_asr(d["segments"], lang="en"):
         assert not any(ln.start < p0 and p1 < ln.end for p0, p1 in pauses), ln.text
+
+
+def _tone(sr, n, f0, amp=0.2, harmonics=6, noise=0.0, seed=1):
+    t = np.arange(n) / sr
+    x = sum(np.sin(2 * np.pi * f0 * k * t) / k for k in range(1, harmonics + 1))
+    if noise:
+        x = x + noise * np.random.default_rng(seed).normal(0, 1, n)
+    peak = float(np.max(np.abs(x))) or 1.0
+    return (amp * x / peak).astype(np.float32)
+
+
+def test_clip1_reference_keeps_one_voice(tmp_path):
+    """Lines 8 and 19 are a different voice; every line under 1.5 s is out; the two long teacher lines stay."""
+    lines = _lines("asr-user-clip1.json")
+    sr = 24000
+    n = int((lines[-1].end + 0.5) * sr)
+    x = np.zeros(n, np.float32)
+    for ln in lines:
+        a, b = int(ln.start * sr), int(ln.end * sr)
+        if ln.id in (8, 19):
+            x[a:b] = _tone(sr, b - a, 400, amp=0.55, harmonics=1, noise=0.9, seed=ln.id)
+        else:
+            x[a:b] = _tone(sr, b - a, 140, amp=0.2, harmonics=6)
+    path = tmp_path / "speech.wav"
+    audio.write(path, x, sr)
+    chosen = voices.pick_reference_lines(lines, None, wav=path)
+    ids = [ln.id for ln in chosen]
+    assert 1 in ids and 10 in ids
+    assert 8 not in ids and 19 not in ids
+    assert all(ln.duration >= 1.5 for ln in chosen)
+
+
+def test_shouted_short_line_is_not_used_to_fill_the_reference(tmp_path):
+    lines = [Line(1, 0.0, 2.6, "Quite a long enough phrase.", speaker="S1"),
+             Line(2, 3.0, 5.0, "HEY!", speaker="S1")]
+    sr = 24000
+    x = np.zeros(int(6 * sr), np.float32)
+    x[:int(2.6 * sr)] = _tone(sr, int(2.6 * sr), 140, amp=0.05, harmonics=6)
+    a = int(3 * sr)
+    loud = _tone(sr, int(2.0 * sr), 140, amp=0.9, harmonics=6)
+    x[a:a + len(loud)] = loud
+    audio.write(tmp_path / "s.wav", x, sr)
+    assert [ln.id for ln in voices.pick_reference_lines(lines, "S1", wav=tmp_path / "s.wav")] == [1]
+
+
+def test_reference_check_drops_the_leading_chunk_once():
+    lines = [Line(1, 0, 6, "Hello there friend."), Line(2, 7, 13, "We need a clean reference here.")]
+    joined = "Hello there friend. We need a clean reference here."
+    ok, drop, _ = voices.assess_reference(lines, joined, "li Hello there friend. We need a clean reference here.")
+    assert not ok and drop == 0
+    ok2, drop2, text = voices.assess_reference([lines[1]], lines[1].text, lines[1].text)
+    assert ok2 and drop2 is None and text == lines[1].text
+    assert voices.reference_log(2, 12.3, "OK") == "reference: 2 lines, 12.3 s, check OK"
 
 
 def test_clip1_short_exclamations_and_acronyms():
