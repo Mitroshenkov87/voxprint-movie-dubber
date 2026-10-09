@@ -318,6 +318,8 @@ def test_cyrillic_acronym_only_when_the_source_says_ai():
     assert t("Есть опасения, что А.И. возьмет на себя всю нашу работу", "ru", "There's a concern that A.I. will take over") == \
         "Есть опасения, что ИИ возьмет на себя всю нашу работу"
     assert t("А.И. Пушкин написал это.", "ru", "A. I. Pushkin wrote it.") == "А.И. Пушкин написал это."
+    assert t("если мы не будем осторожны, Ай-Ий может уничтожить само человечество.", "ru", "A.I. could destroy humanity itself.") == \
+        "если мы не будем осторожны, ИИ может уничтожить само человечество."
 
 
 def test_uninstaller_finds_the_runtime_from_the_installer_note(tmp_path, monkeypatch):

@@ -392,7 +392,7 @@ def st_translation(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
 _RU_ACRONYMS = [(re.compile(r"(?<![\w.])(?:A\.\s?I\.?|AI|Эй\.\s?И\.?|Эй-Ай)(?![\w])"), "ИИ")]
 #: the MT also writes the acronym in Cyrillic letters ("А.И. надрал задницу", real case); that looks like initials, so it is only
 #: replaced when the source line really says A.I. / AI
-_RU_ACRONYMS_IF_SOURCE = [(re.compile(r"(?<![\w.])(?:A\.I\.?|AI)(?![\w])"), re.compile(r"(?<![\w.])А\.\s?И\.?(?![\w])"), "ИИ")]
+_RU_ACRONYMS_IF_SOURCE = [(re.compile(r"(?<![\w.])(?:A\.I\.?|AI)(?![\w])"), re.compile(r"(?<![\w.])(?:А\.\s?И\.?|Ай-?Ий|Ай-?Ай)(?![\w])"), "ИИ")]
 
 
 def tidy_translation(text: str, tgt: str, source: str = "") -> str:
