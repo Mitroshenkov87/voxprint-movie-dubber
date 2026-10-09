@@ -10,7 +10,7 @@ import pytest
 import soundfile as sf
 
 from dubber import ffmpeg, i18n, models, paths
-from dubber.pipeline import stages
+from dubber.diag import clip_stages as stages
 from dubber.workers import common
 
 ROOT = Path(__file__).resolve().parent.parent

@@ -1,1 +1,2 @@
-"""The dubbing pipeline: stage descriptions and the stages available so far (audio extraction, fit plan, mix, mux)."""
+"""The dubbing pipeline: stage functions (:mod:`.stages`) and the runner (:mod:`.runner`: caching, worker processes, GPU lock,
+Watch-mode chunks, preview fragment)."""

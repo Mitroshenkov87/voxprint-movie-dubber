@@ -26,7 +26,7 @@ from dubber.diag import checks_system as cs
 from dubber.diag.constants import LANG_NAMES, TTS_PHRASES, WARMUP_PHRASE, test_clip_dir
 from dubber.diag.procs import GpuSampler, WorkerOutcome, describe_exit_code, run_worker
 from dubber.diag.report import CheckResult, Report, Status, report_filename, save_report
-from dubber.pipeline import stages as pst
+from dubber.diag import clip_stages as pst
 
 ALL_TTS_MODES = ("standard_sdpa", "standard_fa2", "graphs_sdpa", "graphs_fa2")
 
