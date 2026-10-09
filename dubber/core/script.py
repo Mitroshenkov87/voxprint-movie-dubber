@@ -6,6 +6,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set,
 
 import numpy as np
 
+from dubber.core import timefit
 from dubber.core.project import Line
 from dubber.core.subtitles import Cue, clean_text, is_music, sdh_speaker
 from dubber.engines.translation import split_sentences
@@ -174,13 +175,24 @@ def estimate_seconds(text: str, lang: str) -> float:
 
 
 def too_long(line: Line, lang: str, slack: float = 1.15, next_start: Optional[float] = None) -> bool:
-    """Flag for the Script table: the translation will not fit its slot even after squeezing (shown before any synthesis)."""
+    """Flag for the Script table: the translation will not fit its slot even after squeezing (shown before any synthesis).
+
+    A short interjection (Whoa!, Yes!, No., Wait., Boy.) may run into the following pause, up to
+    min(next start - gap, end + 0.8 s), before it is stretched. It is flagged only when it would still
+    overlap the next line at 1.25x. With no following line the bare slot is judged at that same 1.25x."""
     if line.keep_original or not line.translation.strip():
         return False
+    est = estimate_seconds(line.translation, lang)
+    if timefit.is_short_interjection(line):
+        if next_start is None:
+            return est > line.duration * timefit.HARD_STRETCH
+        if est <= max(line.duration, timefit.interjection_end(line, next_start) - line.start):
+            return False
+        return est > (next_start - timefit.GAP - line.start) * timefit.HARD_STRETCH
     room = line.duration
     if next_start is not None:
         room = max(room, min(next_start - 0.1, line.end + 0.8) - line.start)
-    return estimate_seconds(line.translation, lang) > room * slack
+    return est > room * slack
 
 
 _FILLERS = {

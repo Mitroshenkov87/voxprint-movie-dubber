@@ -626,6 +626,7 @@ def st_tts(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
             fp = fitdir / f"line_{ln.id}.wav"
             audio.write(fp, w, sr)
             ln.audio, ln.audio_s, ln.place_start, ln.stretch, ln.fit = p.rel(fp), round(len(w) / sr, 3), round(pl.start, 3), pl.stretch, pl.verdict
+            # Whoa! / Yes! / Ewwwww. (slot <= 1 s or <= 2 words) are "too long" only when they still overlap the next line
             stats[pl.verdict] += 1
             records.append({"id": ln.id, "audio": ln.audio, "start": ln.place_start, "end": ln.end, "keep": False})
         until = total if bi == len(blocks) - 1 else min(total, blocks[bi + 1][1][0].start - 0.05)

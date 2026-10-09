@@ -154,6 +154,18 @@ def test_length_estimate_and_too_long_flag():
     assert script.too_long(ln, "ru") and not script.too_long(Line(2, 0, 3, translation="Да."), "ru")
 
 
+def test_short_interjection_uses_the_pause_before_it_is_too_long():
+    # clip 1: Whoa! is a 0.36 s slot. A reading longer than 1.25x of that slot is flagged until the next line's pause can take it.
+    whoa = Line(1, 6.84, 7.20, "Whoa!", translation="Ого-го!")
+    assert whoa.duration == pytest.approx(0.36)
+    assert script.too_long(whoa, "ru")
+    assert not script.too_long(whoa, "ru", next_start=7.58)
+    eww = Line(2, 0.0, 0.36, "Ewwwww.", translation="Фу, нет!")
+    assert script.too_long(eww, "ru") and not script.too_long(eww, "ru", next_start=1.4)
+    tight = Line(3, 0.0, 0.36, "Yes!", translation="Ого, подождите, это никак не влезет в паузу.")
+    assert script.too_long(tight, "ru", next_start=0.50)
+
+
 def test_shorten_variants_are_shorter():
     text = "Ну, знаешь, я просто хотел сказать (тихо), что это было очень, очень важно, понимаешь"
     out = script.shorten(text, "ru")
@@ -163,6 +175,15 @@ def test_shorten_variants_are_shorter():
 # ------------------------------------------------------------------ time fitting
 def _lines(*spans):
     return [Line(i + 1, a, b, translation="x") for i, (a, b) in enumerate(spans)]
+
+
+def test_place_short_interjection_extends_into_the_pause():
+    lines = [Line(1, 0.0, 0.36, "Whoa!"), Line(2, 1.4, 2.2, "Next words here")]
+    plan = {p.id: p for p in timefit.place(lines, {1: 0.9, 2: 0.6}, total=4.0)}
+    assert plan[1].verdict != "too_long" and plan[1].stretch == 1.0
+    overlap = [Line(1, 0.0, 0.36, "Yes!"), Line(2, 0.45, 1.2, "Go now please")]
+    plan2 = {p.id: p for p in timefit.place(overlap, {1: 2.0, 2: 0.5}, total=3.0)}
+    assert plan2[1].verdict == "too_long"
 
 
 def test_place_fits_shifts_stretches_and_flags():
