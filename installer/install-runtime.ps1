@@ -70,7 +70,24 @@ try {
     Remove-Item -LiteralPath (Join-Path $runtime ".install-complete") -Force -ErrorAction SilentlyContinue
     Run "Creating the Python 3.11 environment" $uv @("venv", $runtime, "--python", "3.11", "--allow-existing")
 
-    # 3. PyTorch first (the build is chosen by --torch-backend), then the rest
+    # 3. PyTorch first (the build is chosen by --torch-backend), then the rest.
+    #    "auto" picks the newest CUDA build the driver supports (cu130 on recent drivers).  CTranslate2 (faster-whisper) is built
+    #    for CUDA 12 and needs cublas64_12.dll / cuDNN 9 for CUDA 12, which only the cu12x PyTorch builds ship -> with cu130 the
+    #    speech recognition silently runs on the CPU.  The newest cu12x build of current PyTorch is cu126, which covers GPUs up to
+    #    compute capability 9.x (RTX 20/30/40); Blackwell (RTX 50, 12.x) needs cu128+, so there "auto" stays (ASR then uses the CPU).
+    if ($Backend -eq "auto") {
+        $smi = Get-Command nvidia-smi -ErrorAction SilentlyContinue
+        if ($smi) {
+            try {
+                $q = (& $smi.Source --query-gpu=driver_version,compute_cap --format=csv,noheader 2>$null | Select-Object -First 1)
+                $drv, $cap = ($q -split ',') | ForEach-Object { $_.Trim() }
+                if ([double]($drv.Split('.')[0]) -ge 560 -and [double]$cap -lt 10) {
+                    $Backend = "cu126"
+                    Say "NVIDIA driver ${drv}, compute capability ${cap}: using the CUDA 12.6 PyTorch build (the speech recognizer needs CUDA 12)"
+                }
+            } catch { Say "nvidia-smi query failed; PyTorch build left to auto" }
+        }
+    }
     Run "Installing PyTorch ($Backend build) - this is the largest download" $uv @("pip", "install", "--python", $py, "--compile-bytecode", "torch", "torchaudio", "--torch-backend=$Backend")
     Run "Installing the other packages" $uv @("pip", "install", "--python", $py, "--compile-bytecode", "-r", $Requirements)
     Run "Checking the installation" $py @("-c", "import torch, transformers, PySide6, faster_qwen3_tts; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())")

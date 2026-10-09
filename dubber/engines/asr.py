@@ -12,21 +12,24 @@ def transcribe_faster_whisper(wav16: str, language: Optional[str], repo: str, de
     from dubber.core import audio
 
     folder, _ = models.ensure(repo, allow_download, log=log)
-    model = None
+    x, _ = audio.read(wav16, 16000)
+
+    def run(model) -> Dict[str, Any]:
+        segs, info = model.transcribe(x, beam_size=5, word_timestamps=True, vad_filter=True, language=language or None,
+                                      condition_on_previous_text=False)
+        out = []
+        for s in segs:                       # the generator does the work: a missing CUDA DLL only fails here
+            out.append({"start": round(s.start, 3), "end": round(s.end, 3), "text": s.text.strip(),
+                        "words": [{"w": w.word, "start": round(w.start, 3), "end": round(w.end, 3)} for w in (s.words or [])]})
+            if len(out) % 50 == 0:
+                log(f"ASR: {s.end:.0f} s recognised")
+        return {"language": info.language, "segments": out}
+
     if device == "cuda":
         try:
-            model = WhisperModel(str(folder), device="cuda", compute_type="float16")
-        except Exception as exc:  # noqa: BLE001 - missing cuBLAS/cuDNN DLLs: CPU still works
-            log(f"ASR on GPU failed ({type(exc).__name__}); using the CPU")
-    if model is None:
-        model = WhisperModel(str(folder), device="cpu", compute_type="int8", cpu_threads=0)
-    x, _ = audio.read(wav16, 16000)
-    segs, info = model.transcribe(x, beam_size=5, word_timestamps=True, vad_filter=True, language=language or None,
-                                  condition_on_previous_text=False)
-    out = []
-    for s in segs:
-        out.append({"start": round(s.start, 3), "end": round(s.end, 3), "text": s.text.strip(),
-                    "words": [{"w": w.word, "start": round(w.start, 3), "end": round(w.end, 3)} for w in (s.words or [])]})
-        if len(out) % 50 == 0:
-            log(f"ASR: {s.end:.0f} s recognised")
-    return {"language": info.language, "segments": out}
+            return run(WhisperModel(str(folder), device="cuda", compute_type="float16"))
+        except Exception as exc:  # noqa: BLE001 - missing cuBLAS/cuDNN DLLs (e.g. cublas64_12.dll): the CPU still works
+            if "out of memory" in str(exc).lower():
+                raise
+            log(f"ASR on GPU failed ({type(exc).__name__}: {str(exc)[:160]}); using the CPU")
+    return run(WhisperModel(str(folder), device="cpu", compute_type="int8", cpu_threads=0))

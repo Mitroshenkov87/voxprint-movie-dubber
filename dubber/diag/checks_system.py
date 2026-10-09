@@ -32,10 +32,26 @@ PACKAGES = ["torch", "torchaudio", "transformers", "tokenizers", "huggingface_hu
 def _run(cmd: List[str], timeout: float = 15) -> str:
     """Output of a command (stdout, else stderr); '' on any failure."""
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, creationflags=_NO_WINDOW, encoding="utf-8", errors="replace")
-        return (p.stdout or p.stderr or "").strip()
+        p = subprocess.run(cmd, capture_output=True, timeout=timeout, creationflags=_NO_WINDOW)
+        return (_decode(p.stdout) or _decode(p.stderr) or "").strip()
     except (OSError, subprocess.SubprocessError):
         return ""
+
+
+def _decode(raw: bytes) -> str:
+    """UTF-8 if valid, else the console (OEM) code page on Windows: powercfg / PowerShell print localized text in cp866 etc."""
+    if not raw:
+        return ""
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        pass
+    if sys.platform == "win32":
+        try:
+            return raw.decode("oem", errors="replace")
+        except LookupError:
+            pass
+    return raw.decode("utf-8", errors="replace")
 
 
 def _ps(script: str, timeout: float = 25) -> str:

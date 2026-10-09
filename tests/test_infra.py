@@ -181,3 +181,35 @@ def test_stdio_guard_swallows_dead_handles():
     assert g.write("x") == 0
     g.flush()
     assert stdio_guard.GuardedStream(None).write("x") == 0
+
+
+def test_guarded_stream_survives_unencodable_text():
+    import io
+
+    from dubber.infra.stdio_guard import GuardedStream
+
+    raw = io.BytesIO()
+    inner = io.TextIOWrapper(raw, encoding="cp1251", errors="strict")
+    g = GuardedStream(inner)
+    g.write("power plan: \ufffd\u2713 balanced\n")       # not encodable in cp1251: must not kill the stream
+    g.write("next line\n")
+    g.flush()
+    out = raw.getvalue().decode("cp1251")
+    assert "balanced" in out and "next line" in out
+
+
+def test_fetch_worker_reports_sizes(tmp_path, monkeypatch):
+    from dubber import models
+    from dubber.workers import w_fetch
+
+    folder = tmp_path / "m"
+    folder.mkdir()
+    (folder / "model.bin").write_bytes(b"x" * 1024)
+    monkeypatch.setattr(models, "ensure", lambda repo, allow, log=None: (folder, {"source": "present", "download_s": 0.0}))
+
+    class Ctx:
+        def log(self, m):
+            pass
+
+    res = w_fetch.run({"keys": ["asr"]}, Ctx())
+    assert res["status"] == "OK" and res["metrics"]["models"]["asr"]["source"] == "present"

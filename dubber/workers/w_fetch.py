@@ -9,6 +9,7 @@ import time
 from typing import Any, Dict, List
 
 from dubber import models
+from dubber.infra import model_store
 from dubber.workers.common import WorkerContext
 
 
@@ -25,7 +26,7 @@ def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
         try:
             ctx.log(f"models: checking {repo}")
             folder, info = models.ensure(repo, args.get("allow_download", True), log=ctx.log)
-            size = models._dir_size(folder) / 1024 ** 3
+            size = model_store._dir_size(folder) / 1024 ** 3
             lines.append(f"{title:<46} OK    [{repo}] {info['source']}" + (f", downloaded in {info['download_s']} s" if info["download_s"] else "") + f"  ({size:.2f} GB)")
             ok_n += 1
             dl_total += float(info["download_s"])

@@ -226,23 +226,27 @@ def wer(reference: str, hypothesis: str) -> float:
 
 
 def apply_qwen_tts_compat() -> str:
-    """Work around qwen-tts-hf 0.1.1 vs transformers >= 5.18: its registered "default" RoPE initialiser reads ``config.rope_theta``,
-    which Mimi/other configs no longer have (they keep it in ``config.rope_parameters``) -> ``AttributeError: ... 'rope_theta'``
-    while the speech tokenizer loads.  Replaces the initialiser by a tolerant one.  Returns a note for the report ("" if nothing was needed)."""
+    """Work around qwen-tts-hf 0.1.1 vs transformers >= 5.18: its "default" RoPE initialiser (``qwen_tts._transformers_compat``)
+    reads ``config.rope_theta``, which Mimi/other configs no longer have (they keep it in ``config.rope_parameters``) ->
+    ``AttributeError: ... 'rope_theta'`` while the speech tokenizer loads.  Installs a tolerant initialiser in the transformers
+    registry AND in qwen_tts's own module (faster-qwen3-tts imports qwen_tts lazily inside ``from_pretrained``, and qwen_tts only
+    ``setdefault``s its function, so both places must hold the tolerant one).  Returns a note for the report ("" if nothing was needed)."""
     try:
         import torch
         from transformers.modeling_rope_utils import ROPE_INIT_FUNCTIONS
     except Exception:  # noqa: BLE001
         return ""
-    old = ROPE_INIT_FUNCTIONS.get("default")
-    if old is None or getattr(old, "_vmd_patched", False):
+    cur = ROPE_INIT_FUNCTIONS.get("default")
+    if cur is not None and getattr(cur, "_vmd_patched", False):
         return ""
 
     def default_rope(config, device=None, seq_len=None, layer_type=None):
         base = getattr(config, "rope_theta", None)
         if base is None:
             params = getattr(config, "rope_parameters", None) or {}
-            base = params.get("rope_theta", 10000.0)
+            if isinstance(params, dict) and layer_type and isinstance(params.get(layer_type), dict):
+                params = params[layer_type]
+            base = params.get("rope_theta", 10000.0) if isinstance(params, dict) else 10000.0
         factor = getattr(config, "partial_rotary_factor", 1.0)
         head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
         dim = int(head_dim * factor)
@@ -251,4 +255,10 @@ def apply_qwen_tts_compat() -> str:
 
     default_rope._vmd_patched = True            # type: ignore[attr-defined]
     ROPE_INIT_FUNCTIONS["default"] = default_rope
+    try:                                        # qwen_tts may be imported later (faster-qwen3-tts does it lazily)
+        import qwen_tts._transformers_compat as qcompat
+
+        qcompat._default_rope_parameters = default_rope
+    except Exception:  # noqa: BLE001 - package layout differs: the registry entry above is enough
+        pass
     return "applied RoPE compat shim for qwen-tts-hf on this transformers version"

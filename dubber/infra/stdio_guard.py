@@ -19,6 +19,12 @@ class GuardedStream:
             return 0
         try:
             return self._inner.write(text)
+        except UnicodeEncodeError:              # a cp1251/cp866 console or redirected file: replace the character, keep the stream alive
+            try:
+                enc = getattr(self._inner, "encoding", None) or "ascii"
+                return self._inner.write(text.encode(enc, errors="replace").decode(enc, errors="replace"))
+            except Exception:  # noqa: BLE001
+                return 0
         except Exception:  # noqa: BLE001 - errno 22 and a missing console must not escape
             self._dead = True
             return 0
