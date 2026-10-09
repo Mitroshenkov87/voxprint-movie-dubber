@@ -16,6 +16,9 @@ def isolated_env(tmp_path, monkeypatch):
     desk.mkdir()
     monkeypatch.setenv("VOXPRINT_DUBBER_HOME", str(home))
     monkeypatch.setenv("VOXPRINT_DESKTOP", str(desk))
+    monkeypatch.setenv("VOXPRINT_HOME", str(tmp_path / "voxprint-shared"))
+    monkeypatch.setenv("VOXPRINT_GPU_LOCK", str(tmp_path / "voxprint-gpu.lock"))
+    monkeypatch.delenv("VOXPRINT_MODELS_DIR", raising=False)
     monkeypatch.delenv("HF_TOKEN", raising=False)
     from dubber import i18n
     i18n.reset()

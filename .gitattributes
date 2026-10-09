@@ -5,3 +5,15 @@
 *.mkv binary
 *.wav binary
 *.ico binary
+*.py text eol=lf
+*.txt text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.srt text eol=lf
+*.yml text eol=lf
+*.gz binary
+*.zip binary
+*.png binary
+*.jpg binary
+*.mp4 binary
+*.safetensors binary

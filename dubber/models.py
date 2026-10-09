@@ -1,22 +1,19 @@
-"""Model registry, locator and downloader.
+"""Model registry of the dubber on top of the shared Voxprint model store (:mod:`dubber.infra.model_store`).
 
-Layout: ``<models>/<owner>--<name>/`` (same as Voxprint Audiobook Builder, so its copies are re-used read-only: the 4.5 GB TTS base
-model is not downloaded twice).  Order: own folder -> other Voxprint programs' folders -> download from Hugging Face
-(only when allowed).  A download goes to ``<name>.partial`` and is renamed after the check, so a half-downloaded model is never
-used.  The HF token (gated pyannote) comes from the ``HF_TOKEN`` environment variable of the worker process - never from
-the command line and never written to the report.
+The models live in the folder shared with Voxprint AI Audiobook Builder (``%LOCALAPPDATA%\\Voxprint\\models`` by default), one plain
+folder per model, so the 4.5 GB TTS base model is downloaded once for both programs.  The HF token (gated pyannote) comes from
+the ``HF_TOKEN`` environment variable of the worker process - never from the command line and never written to the report.
 """
 from __future__ import annotations
 
 import os
-import shutil
-import threading
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
 from dubber import paths
+from dubber.infra import model_store
+from dubber.infra.model_store import ModelUnavailable  # noqa: F401  (re-exported)
 
 
 @dataclass(frozen=True)
@@ -66,17 +63,14 @@ def total_download_gb(keys: List[str], missing_only: bool = True) -> float:
 
 def local_dir(repo: str, root: Optional[Path] = None) -> Path:
     """``owner/name`` -> ``<models>/owner--name``."""
-    return (root or paths.models_dir()) / repo.replace("/", "--")
+    return model_store.local_dir_for(repo, root)
 
 
 def verify_dir(path: Path, spec: Optional[ModelSpec] = None) -> bool:
-    """A folder counts as a complete model when it has a config and at least one weights file."""
-    if not path.is_dir():
-        return False
-    weights = spec.weights if spec else ("*.safetensors", "*.bin")
-    has_weights = any(any(path.glob(w)) for w in weights)
-    has_config = any((path / n).exists() for n in ("config.json", "config.yaml", "params.json"))
-    return has_weights and has_config
+    """A folder counts as a complete model when it has a config and at least one weights file (+ manifest sizes, if pinned)."""
+    if spec is None:
+        return model_store.verify_structure(path)
+    return model_store.is_ready(path, spec.repo, spec.weights, spec.patterns or None)
 
 
 def _spec_for_repo(repo: str) -> Optional[ModelSpec]:
@@ -87,86 +81,35 @@ def _spec_for_repo(repo: str) -> Optional[ModelSpec]:
 
 
 def locate(repo: str) -> Optional[Path]:
-    """Existing complete copy: own folder first, then sibling programs' folders; None when absent."""
+    """Complete copy in the shared models folder (or, read-only, in the dubber's own folder of builds before the shared store)."""
     spec = _spec_for_repo(repo)
-    own = local_dir(repo)
-    if verify_dir(own, spec):
-        return own
-    for root in paths.foreign_model_roots():
-        p = local_dir(repo, root)
-        if verify_dir(p, spec):
-            return p
+    p = local_dir(repo)
+    if verify_dir(p, spec):
+        return p
+    legacy = paths.legacy_models_dir() / model_store.folder_name(repo)
+    if verify_dir(legacy, spec):
+        return legacy
     return None
-
-
-class ModelUnavailable(RuntimeError):
-    """The model is missing and cannot be fetched (downloads disabled, no token for a gated model, network error)."""
-
-
-def _dir_size(p: Path) -> int:
-    total = 0
-    for root, _dirs, files in os.walk(p):
-        for f in files:
-            try:
-                total += os.path.getsize(os.path.join(root, f))
-            except OSError:
-                pass
-    return total
 
 
 def ensure(repo: str, allow_download: bool = True, token: Optional[str] = None,
            log: Callable[[str], None] = lambda m: None) -> Tuple[Path, Dict[str, object]]:
-    """Return ``(folder, info)`` for ``repo``; ``info`` = ``{"source": "own|foreign|downloaded", "download_s": float, "path": str}``.
-
-    Raises :class:`ModelUnavailable` with an explanatory message otherwise.
-    """
+    """Return ``(folder, info)``; ``info`` = ``{"source": "present|downloaded|legacy", "download_s": float}``.  Raises ModelUnavailable."""
     found = locate(repo)
     if found:
-        src = "own" if found == local_dir(repo) else f"reused from {found.parent}"
-        return found, {"source": src, "download_s": 0.0}
+        return found, {"source": "legacy folder" if found.parent == paths.legacy_models_dir() else "present", "download_s": 0.0}
     spec = _spec_for_repo(repo)
-    if not allow_download:
-        raise ModelUnavailable(f"{repo} is not on this computer and downloading is switched off")
-    token = token or os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN") or None
     if spec and spec.gated and not token:
-        try:
-            from huggingface_hub import get_token
-
-            token = get_token()
-        except Exception:  # noqa: BLE001
-            token = None
+        token = os.environ.get("HF_TOKEN") or None
         if not token:
-            raise ModelUnavailable(f"{repo} is a gated model: accept its terms on huggingface.co and provide a Hugging Face token "
-                                   f"(UI field 'HF token' or the HF_TOKEN environment variable)")
-    try:
-        from huggingface_hub import snapshot_download
-    except Exception as exc:  # noqa: BLE001
-        raise ModelUnavailable(f"huggingface_hub is not installed: {exc}") from exc
-    final = local_dir(repo)
-    part = final.with_name(final.name + ".partial")
-    part.mkdir(parents=True, exist_ok=True)
-    stop = threading.Event()
-    size_gb = spec.size_gb if spec else 0.0
+            try:
+                from huggingface_hub import get_token
 
-    def watch() -> None:
-        while not stop.wait(5.0):
-            log(f"downloading {repo}: {_dir_size(part) / 1024 ** 3:.2f}" + (f" / ~{size_gb:.1f}" if size_gb else "") + " GB")
-
-    w = threading.Thread(target=watch, daemon=True)
-    w.start()
-    t0 = time.time()
-    try:
-        kw = dict(repo_id=repo, local_dir=str(part), token=token)
-        if spec and spec.patterns:
-            kw["allow_patterns"] = list(spec.patterns)
-        snapshot_download(**kw)               # type: ignore[arg-type]
-    except Exception as exc:  # noqa: BLE001
-        raise ModelUnavailable(f"download of {repo} failed: {type(exc).__name__}: {' '.join(str(exc).split())[:160]}") from exc
-    finally:
-        stop.set()
-    if not verify_dir(part, spec):
-        raise ModelUnavailable(f"{repo}: the download finished but the folder looks incomplete ({part})")
-    if final.exists():
-        shutil.rmtree(final, ignore_errors=True)
-    os.replace(part, final)
-    return final, {"source": "downloaded", "download_s": round(time.time() - t0, 1)}
+                token = get_token()
+            except Exception:  # noqa: BLE001
+                token = None
+    info = model_store.ensure_model(repo, allow_download=allow_download, token=token,
+                                    patterns=(spec.patterns or None) if spec else None,
+                                    weights=spec.weights if spec else model_store.DEFAULT_WEIGHTS, gated=bool(spec and spec.gated),
+                                    size_gb=spec.size_gb if spec else 0.0, log_fn=log)
+    return info.path, {"source": info.source, "download_s": info.download_s}

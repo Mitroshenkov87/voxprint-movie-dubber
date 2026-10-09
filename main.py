@@ -5,6 +5,9 @@
     main.py --diagnose-cli        run the diagnostics without a window (console output), same report
     main.py --worker NAME ARGS    internal: one heavy step in its own process (used by the diagnostics and the pipeline)
     main.py --fetch-models        download the AI models (used by the installer); --models KEY,KEY limits the set
+    main.py --register-models-user      (installer) add this program to the shared models folder's .users.json
+    main.py --unregister-models-user --out FILE   (uninstaller) remove it; FILE gets "<other users>\n<models folder>"
+    main.py --run-project DIR [--stages a,b]      run (or resume) a dubbing project without a window (detached long run)
     main.py --selftest            create the window, process events briefly, exit 0 (smoke test)
     main.py --version
 
@@ -66,9 +69,15 @@ def _setup_logging() -> None:
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    from dubber.infra.stdio_guard import guard_stdio
+
+    guard_stdio()                                            # pythonw.exe: stdout may be None or a dead handle
     if "--worker" in argv:                                   # heavy step in its own process: no Qt, no logging setup
         i = argv.index("--worker")
+        from dubber.infra.quiet import mute_library_noise
         from dubber.workers.common import worker_main
+
+        mute_library_noise()
 
         return worker_main(argv[i + 1], argv[i + 2])
     if "--version" in argv:
@@ -77,6 +86,12 @@ def main(argv=None) -> int:
         print(version_line())
         return 0
     _setup_logging()
+    if "--register-models-user" in argv or "--unregister-models-user" in argv:
+        return _models_users(argv)
+    if "--run-project" in argv:
+        from dubber.pipeline.runner import run_project_cli
+
+        return run_project_cli(Path(_arg(argv, "--run-project")), _arg(argv, "--stages", "") or "")
     if "--fetch-models" in argv:
         return _fetch_models(argv)
     if "--diagnose-cli" in argv:
@@ -140,6 +155,26 @@ def _fetch_models(argv) -> int:
             print(f"  FAILED: {' '.join(str(exc).split())[:300]}", flush=True)
     print("All models are ready." if not failed else f"Not downloaded: {', '.join(failed)}.  Run this step again or start the diagnostics later.", flush=True)
     return 1 if failed else 0
+
+
+def _models_users(argv) -> int:
+    """Installer / uninstaller helper for the shared ``models/.users.json`` (never fails the setup: exit 0 unless writing failed)."""
+    from dubber.infra import model_store, shared_paths
+
+    try:
+        model_store.sweep_stale_locks()
+        if "--register-models-user" in argv:
+            model_store.register_user()
+            return 0
+        others = model_store.unregister_user()
+        out = _arg(argv, "--out")
+        if out:
+            Path(out).write_text(f"{len(others)}\n{shared_paths.models_dir()}\n", encoding="utf-8")
+        print(f"other programs using the models: {', '.join(others) or 'none'}", flush=True)
+        return 0
+    except OSError as exc:
+        print(f"models users file: {exc}", flush=True)
+        return 1
 
 
 def _apply_cli(opt, argv) -> None:

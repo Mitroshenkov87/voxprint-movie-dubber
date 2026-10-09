@@ -1,11 +1,10 @@
 """Application folders and the user's Desktop.
 
 * data root: ``%LOCALAPPDATA%\\VoxprintMovieDubber`` (Windows) / ``$XDG_DATA_HOME/voxprint-movie-dubber`` (Linux);
-  override with ``VOXPRINT_DUBBER_HOME``.  Sub-folders: ``models``, ``logs``, ``state``, ``reports``.
+  override with ``VOXPRINT_DUBBER_HOME``.  Sub-folders: ``logs``, ``state``, ``reports``, ``projects``.
 * Desktop: the *real* Desktop folder (Windows ``SHGetKnownFolderPath``: follows OneDrive "Known Folder Move"), with
   fallbacks; override with ``VOXPRINT_DESKTOP`` (tests).  If nothing is writable the report goes to ``reports``.
-* Voxprint Audiobook Builder keeps models in ``%LOCALAPPDATA%\\Voxprint\\models`` (``Qwen--Qwen3-TTS-...``);
-  :func:`foreign_model_roots` lists such folders so that the 4.5 GB TTS model is not downloaded twice.
+* Models are NOT here: they live in the folder shared with Voxprint AI Audiobook Builder (:mod:`dubber.infra.shared_paths`).
 """
 from __future__ import annotations
 
@@ -41,8 +40,20 @@ def _sub(name: str) -> Path:
 
 
 def models_dir() -> Path:
-    """Downloaded model snapshots (``<owner>--<name>`` folders, the same layout as Voxprint Audiobook Builder)."""
-    return _sub("models")
+    """The shared Voxprint models folder (see :mod:`dubber.infra.shared_paths`)."""
+    from dubber.infra import shared_paths
+
+    return shared_paths.models_dir()
+
+
+def legacy_models_dir() -> Path:
+    """``<app home>/models`` used by builds before the shared store (read-only fallback; not created)."""
+    return app_home() / "models"
+
+
+def projects_dir() -> Path:
+    """Default parent of dubbing projects (cache of every stage, resumable)."""
+    return _sub("projects")
 
 
 def logs_dir() -> Path:
@@ -61,23 +72,6 @@ def reports_dir() -> Path:
 def new_work_dir(prefix: str = "vmd-") -> Path:
     """A fresh scratch folder in the OS temp dir (callers delete it when done)."""
     return Path(tempfile.mkdtemp(prefix=prefix))
-
-
-def foreign_model_roots() -> List[Path]:
-    """Model folders of sibling Voxprint programs (read-only reuse).  Existing folders only."""
-    roots: List[Path] = []
-    env = os.environ.get("VOXPRINT_EXTRA_MODELS_DIRS", "")
-    for item in env.split(os.pathsep):
-        if item.strip():
-            roots.append(Path(item.strip()))
-    if os.environ.get("VOXPRINT_NO_FOREIGN_MODELS"):
-        return [r for r in roots if r.is_dir()]
-    if IS_WINDOWS:
-        base = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local"))
-        roots.append(base / "Voxprint" / "models")                # Voxprint AI Audiobook Builder
-    else:
-        roots.append(Path.home() / ".local" / "share" / "voxprint" / "models")
-    return [r for r in roots if r.is_dir()]
 
 
 # ---------------------------------------------------------------------------------------------- Desktop
