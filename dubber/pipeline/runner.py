@@ -139,8 +139,9 @@ class Runner:
         return self._worker(key, emit, cfg)
 
     def _stage_cfg(self, key: str) -> Dict[str, Any]:
-        """The VRAM / RAM policy for this stage, measured now (``dubber.infra.resources``): a model that does not fit 75 % of the
-        free VRAM runs on the CPU or, for speech, as the lighter model.  The worker sizes its TTS batch from the same rule."""
+        """The VRAM / RAM policy for this stage, measured now (``dubber.infra.resources``): a model that does not fit the VRAM
+        budget (free memory minus headroom) runs on the CPU or, for speech, as the lighter model.  The worker sizes its TTS
+        batch from the same rule, and measures free VRAM again before each batch."""
         from dubber.infra import resources
 
         device = S._device(self.cfg) if key in S.GPU else "cpu"

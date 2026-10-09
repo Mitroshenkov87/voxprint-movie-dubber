@@ -4,7 +4,8 @@ can run in the GUI process (light stages, tests) or in a worker process (models)
 
 Order (research note 06): probe -> extract -> subtitles -> vad -> separation -> asr -> script -> diarization -> translation ->
 voices -> tts (+ time fitting, block by block in film order) -> mix -> mux.  Models run one after another (one process each),
-so the peak VRAM is that of the largest model; every stage keeps to 75 % of the free VRAM (``dubber.infra.resources``).
+so the peak VRAM is that of the largest model; every stage keeps a headroom of max(2 GB, 8 % of the card)
+(``dubber.infra.resources``).
 """
 from __future__ import annotations
 

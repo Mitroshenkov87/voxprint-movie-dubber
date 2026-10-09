@@ -5,10 +5,10 @@ FlashAttention-2 if that package exists, then standard SDPA.  ``auto`` tries Gra
 ``tts_backend`` is ``standard/sdpa`` (or ``standard/flash_attention_2``) and stays the fallback when Graphs cannot load.  Clip 3
 (16 short lines) measured graphs/sdpa at 67.5 s against batched standard/sdpa at 208.9 s.  On the CPU: SDPA.  Every step falls back
 to the next one if loading fails.
-Batching: up to ``MAX_BATCH`` (12) lines per generate call, sized by the VRAM budget in ``dubber.infra.resources``; lines of similar
-length are batched together (sorted inside a small look-ahead window so the output stays close to film order for Watch mode);
-out-of-memory halves the batch.  Library voices (LoRA adapters) stay loaded side by side while the budget allows, else they are
-swapped one after another.
+Batching: up to ``MAX_BATCH`` (12) lines per generate call, sized by the VRAM budget in ``dubber.infra.resources`` (free memory minus
+a headroom, re-measured before each batch; about 1.2 GB per batched line).  Lines of similar length are batched together (sorted
+inside a small look-ahead window so the output stays close to film order for Watch mode); out-of-memory halves the batch.
+Library voices (LoRA adapters) stay loaded side by side while the budget allows, else they are swapped one after another.
 The CUDA-Graphs backend synthesises one line at a time (static shapes).
 
 Voices: ``clone`` = reference clip + its text (ICL; without a text the x-vector-only mode is used); ``library`` = a LoRA adapter
@@ -149,6 +149,11 @@ class BaseTTS:
         queue = [i for i, _ in items]
         limit = max(1, self.max_batch())
         while queue:
+            budget = getattr(self, "budget", None)
+            if budget is not None:
+                budget.remeasure()
+                # keep an out-of-memory halving; do not grow back past what the fresh measurement allows
+                limit = max(1, min(limit, self.max_batch()))
             group = next_group(queue, texts, limit)
             try:
                 wavs = self.synthesize_batch([texts[i] for i in group], voice)
@@ -225,7 +230,7 @@ class QwenTTS(BaseTTS):
         self.model = None
         from dubber.infra import resources
 
-        self.budget = resources.VramBudget() if self.use_cuda else None      # measured before our model takes any memory
+        self.budget = resources.VramBudget() if self.use_cuda else None      # re-measured before each batch; free memory already includes the model
         errors = []
         for kind, attn in self.candidates(self.use_cuda, prefer, need_adapters):
             try:
