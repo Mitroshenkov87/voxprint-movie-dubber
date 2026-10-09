@@ -19,4 +19,4 @@
 | ffmpeg program (an LGPL build is preferred; PATH or imageio-ffmpeg as a fallback) | audio extraction and muxing, called as a separate program | LGPL/GPL, depending on the build |
 | espeak-ng (only to generate the synthetic test clip, `tools/make_test_clip.py`) | not shipped | GPL-3.0 (the generated audio is synthetic) |
 
-Project licence: "all rights reserved" for now (see `LICENSE`); no open-source licence chosen yet.
+Project licence: Apache-2.0 for the program's own source code (see `LICENSE` and `NOTICE`), the same as Voxprint AI Audiobook Builder.

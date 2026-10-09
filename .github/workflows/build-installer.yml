@@ -1,6 +1,6 @@
 # Builds the small online installer of Voxprint AI Movie Dubber on a free GitHub-hosted Windows runner (no secrets are used),
 # installs it silently, checks the installed program, uninstalls it and publishes the installer as a workflow artifact.
-# A pushed tag "v*" additionally attaches the installer to a pre-release of this (private) repository.
+# A pushed tag "v*" additionally attaches the installer to a pre-release of this repository.
 # Runners have no GPU: the installer is tested with the CPU build of PyTorch (/TORCH=cpu).
 name: Build online installer
 on:

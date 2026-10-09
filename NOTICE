@@ -1,0 +1,13 @@
+Voxprint AI Movie Dubber
+Copyright 2026 Aleksandr Mitroshenkov
+
+The source code of this program is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Not covered by that licence (each has its own terms):
+  * Third-party software and models that Movie Dubber uses, vendors or downloads - see docs/THIRD_PARTY_NOTICES.md
+    (the vendored TIGER / look2hear code keeps its MIT licence, dubber/third_party/look2hear/LICENSE).
+  * Voice packages from the shared Voxprint voice library: every voice carries its own licence in its voice.json.
+  * The icon and splash are original artwork by Aleksandr Mitroshenkov (assets/ICON-LICENSE.txt).
+
+Voxprint AI Movie Dubber is an independent project and is not affiliated with other products or services
+with similar names.
