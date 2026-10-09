@@ -1,24 +1,35 @@
 <#
   Voxprint AI Movie Dubber - online part of the installer.
-  Creates a private Python 3.11 environment in <AppDir>\runtime and installs PyTorch and the other dependencies into it.
-  Nothing is installed system-wide.  Safe to run again (an existing environment is updated).
-    -AppDir        installation folder
+  Installs (or reuses) the shared Python runtime and links it into the program folder.  Nothing is installed system-wide.
+    -AppDir        installation folder (gets the junction <AppDir>\runtime -> <runtime>\env, the uv tool and the LGPL ffmpeg)
     -Requirements  requirements.txt (everything except torch)
-    -Backend       PyTorch build: auto (matches the NVIDIA driver, CPU when there is no GPU), cpu, cu128, ...
+    -Constraints   installer\runtime-constraints.txt (pins that follow from the torch version)
+    -Lock          dubber\infra\runtime_lock.json (verbatim copy of the Audiobook Builder's lock: torch version, flavors, Python)
+    -Backend       PyTorch flavor: auto (newest flavor of the lock the NVIDIA driver supports, CPU without a GPU), cpu, cu126, cu128
     -Log           log file (all output is copied there)
+    -OutFile       receives the runtime folder (one line) for the setup program
+  Rules agreed with Voxprint AI Audiobook Builder (dubber/infra/runtime.py has the same key logic):
+    key = SHA-256 of Python + platform + torch version/flavor + requirements + constraints (12 hex digits)
+    %LOCALAPPDATA%\Voxprint\runtime-<key> is reused only on an exact key match, otherwise a new folder is installed side by side;
+    a shared runtime is never upgraded in place; runtime-<key>\.users.json counts the programs using it.
   The package manager "uv" (a single exe from the Astral GitHub release, SHA-256 checked) downloads the Python build and the wheels.
 #>
 param(
     [Parameter(Mandatory = $true)][string]$AppDir,
     [Parameter(Mandatory = $true)][string]$Requirements,
+    [Parameter(Mandatory = $true)][string]$Constraints,
+    [Parameter(Mandatory = $true)][string]$Lock,
     [string]$Backend = "auto",
-    [string]$Log = (Join-Path $env:TEMP "VoxprintMovieDubber-setup.log")
+    [string]$Log = (Join-Path $env:TEMP "VoxprintMovieDubber-setup.log"),
+    [string]$OutFile = "",
+    [switch]$KeyOnly
 )
-$env:PSModulePath = "$env:ProgramFiles\WindowsPowerShell\Modules;$env:SystemRoot\system32\WindowsPowerShell\v1.0\Modules"   # a parent PowerShell 7 session can leave a path that hides the built-in modules
+if ($env:SystemRoot) { $env:PSModulePath = "$env:ProgramFiles\WindowsPowerShell\Modules;$env:SystemRoot\system32\WindowsPowerShell\v1.0\Modules" }   # a parent PowerShell 7 session can leave a path that hides the built-in modules
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 if ($Backend -notmatch '^[a-z0-9]+$') { throw "Invalid PyTorch backend: $Backend" }
+$UserKey = "movie-dubber"
 
 function Say([string]$text) {
     $line = "[{0}] {1}" -f (Get-Date -Format "HH:mm:ss"), $text
@@ -33,11 +44,103 @@ function Run([string]$what, [string]$exe, [string[]]$arguments) {
     if ($LASTEXITCODE -ne 0) { throw "$what failed (exit code $LASTEXITCODE)" }
 }
 
+function Sha256Hex([string]$text) {
+    $sha = [Security.Cryptography.SHA256]::Create()
+    $bytes = $sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($text))
+    return ([BitConverter]::ToString($bytes) -replace '-', '').ToLower()
+}
+
+function NormalizeReq([string]$path) {
+    $out = @()
+    foreach ($line in (Get-Content -LiteralPath $path -Encoding UTF8)) {
+        $l = ($line -split '#', 2)[0].Trim()
+        if ($l) { $out += $l }
+    }
+    return ($out -join "`n")
+}
+
+function RuntimeKey($lockObj, [string]$flavor) {
+    $material = "python=$($lockObj.python);platform=$($lockObj.platform);torch=$($lockObj.torch_version)+$flavor;" +
+                "req=$(Sha256Hex (NormalizeReq $Requirements));constraints=$(Sha256Hex (NormalizeReq $Constraints))"
+    return (Sha256Hex $material).Substring(0, 12)
+}
+
+function DriverCuda {
+    # "CUDA Version: 12.8" from the nvidia-smi header = the newest CUDA the driver supports; $null without an NVIDIA GPU
+    $smi = Get-Command nvidia-smi -ErrorAction SilentlyContinue
+    if (-not $smi) { return $null }
+    try {
+        $txt = (& $smi.Source 2>$null) -join "`n"
+        if ($txt -match 'CUDA Version:\s*(\d+)\.(\d+)') { return @([int]$Matches[1], [int]$Matches[2]) }
+    } catch { }
+    return $null
+}
+
+function ChooseFlavor($lockObj, $cuda) {
+    $best = "cpu"; $bestV = 0
+    foreach ($f in $lockObj.flavors) {
+        if ($f -match '^cu(\d+)(\d)$' -and $cuda) {
+            $v = [int]$Matches[1] * 10 + [int]$Matches[2]
+            if ($v -le ($cuda[0] * 10 + $cuda[1]) -and $v -gt $bestV) { $best = $f; $bestV = $v }
+        }
+    }
+    return $best
+}
+
+function ReadUsers([string]$file) {
+    $h = [ordered]@{}
+    if (Test-Path -LiteralPath $file) {
+        try {
+            $o = Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json
+            foreach ($p in $o.PSObject.Properties) { $h[$p.Name] = [bool]$p.Value }
+        } catch { }
+    }
+    return $h
+}
+
+function WriteUsers([string]$file, $h) {
+    $tmp = "$file.$([guid]::NewGuid().ToString('N').Substring(0, 8)).tmp"
+    $json = if ($h.Count) { ($h | ConvertTo-Json) } else { "{}" }
+    [IO.File]::WriteAllText($tmp, $json, (New-Object Text.UTF8Encoding $false))
+    Move-Item -LiteralPath $tmp -Destination $file -Force
+}
+
+function RemoveLinkOrDir([string]$path) {
+    if (-not (Test-Path -LiteralPath $path)) { return }
+    $item = Get-Item -LiteralPath $path -Force
+    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        [IO.Directory]::Delete($path)                 # the junction only, never what it points to
+    } else {
+        Remove-Item -LiteralPath $path -Recurse -Force
+    }
+}
+
+$lockObj = Get-Content -LiteralPath $Lock -Raw -Encoding UTF8 | ConvertFrom-Json
+if ($KeyOnly) {                                       # tests: print the key for a flavor
+    RuntimeKey $lockObj $Backend
+    exit 0
+}
+
 try {
     New-Item -ItemType Directory -Force -Path $AppDir | Out-Null
-    Say "Voxprint AI Movie Dubber: installing the Python environment into $AppDir\runtime (PyTorch backend: $Backend)"
+    $tv = $lockObj.torch_version
+    $cuda = DriverCuda
+    if ($Backend -eq "auto") {
+        $flavor = ChooseFlavor $lockObj $cuda
+        if ($cuda) { Say ("NVIDIA driver supports CUDA {0}.{1}: PyTorch {2} {3}" -f $cuda[0], $cuda[1], $tv, $flavor) } else { Say "No NVIDIA GPU found: PyTorch $tv cpu" }
+    } else {
+        if (@($lockObj.flavors) -notcontains $Backend) { throw "PyTorch flavor $Backend is not in the runtime lock (allowed: $($lockObj.flavors -join ', '))" }
+        $flavor = $Backend
+    }
+    $key = RuntimeKey $lockObj $flavor
+    $vxHome = if ($env:VOXPRINT_HOME) { $env:VOXPRINT_HOME } else { Join-Path $env:LOCALAPPDATA "Voxprint" }
+    $rt = Join-Path $vxHome "runtime-$key"
+    $envDir = Join-Path $rt "env"
+    $py = Join-Path $envDir "Scripts\python.exe"
+    $check = @("-c", "import torch, transformers, PySide6, faster_qwen3_tts, faster_whisper; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())")
+    Say "Voxprint AI Movie Dubber: runtime key $key (Python $($lockObj.python), torch $tv+$flavor) -> $rt"
 
-    # 1. uv
+    # 1. uv (kept in the program folder)
     $uvDir = Join-Path $AppDir "tools\uv"
     $uv = Join-Path $uvDir "uv.exe"
     if (-not (Test-Path $uv)) {
@@ -49,9 +152,7 @@ try {
         $sumText = (Invoke-WebRequest -UseBasicParsing -Uri "$url.sha256").Content
         if ($sumText -is [byte[]]) { $sumText = [Text.Encoding]::ASCII.GetString($sumText) }
         $want = ($sumText.Trim() -split '\s+')[0].ToLower()
-        $sha = [Security.Cryptography.SHA256]::Create()
-        $stream = [IO.File]::OpenRead($zip)
-        try { $have = ([BitConverter]::ToString($sha.ComputeHash($stream)) -replace '-', '').ToLower() } finally { $stream.Dispose() }
+        $have = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLower()
         if ($want -ne $have) { throw "uv download is corrupt (SHA-256 mismatch)" }
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         [IO.Compression.ZipFile]::ExtractToDirectory($zip, $uvDir)
@@ -59,40 +160,68 @@ try {
         if (-not (Test-Path $uv)) { throw "uv.exe was not found in the downloaded archive" }
     }
 
-    # 2. Python 3.11 + the environment (all inside the app folder, so the uninstaller removes it)
-    $env:UV_PYTHON_INSTALL_DIR = Join-Path $AppDir "python"
-    $env:UV_CACHE_DIR = Join-Path $AppDir "tools\uv-cache"
-    $env:UV_PYTHON_PREFERENCE = "only-managed"
-    $env:UV_LINK_MODE = "copy"
-    $env:PYTHONUTF8 = "1"
-    $runtime = Join-Path $AppDir "runtime"
-    $py = Join-Path $runtime "Scripts\python.exe"
-    Remove-Item -LiteralPath (Join-Path $runtime ".install-complete") -Force -ErrorAction SilentlyContinue
-    Run "Creating the Python 3.11 environment" $uv @("venv", $runtime, "--python", "3.11", "--allow-existing")
+    # 2. reuse on an exact key match (a broken copy is repaired with the SAME pins - never upgraded)
+    $reuse = $false
+    if ((Test-Path (Join-Path $rt ".install-complete")) -and (Test-Path $py)) {
+        $ErrorActionPreference = "Continue"
+        & $py @check 2>&1 | ForEach-Object { Add-Content -LiteralPath $Log -Value "$_" -Encoding UTF8 }
+        $reuse = ($LASTEXITCODE -eq 0)
+        $ErrorActionPreference = "Stop"
+        if ($reuse) { Say "Reusing the shared runtime $rt (same pinned versions)" } else { Say "The shared runtime $rt failed its check: repairing it with the same versions" }
+    }
+    if (-not $reuse) {
+        $env:UV_PYTHON_INSTALL_DIR = Join-Path $rt "python"
+        $env:UV_CACHE_DIR = Join-Path $AppDir "tools\uv-cache"
+        $env:UV_PYTHON_PREFERENCE = "only-managed"
+        $env:UV_LINK_MODE = "copy"
+        $env:PYTHONUTF8 = "1"
+        New-Item -ItemType Directory -Force -Path $rt | Out-Null
+        Remove-Item -LiteralPath (Join-Path $rt ".install-complete") -Force -ErrorAction SilentlyContinue
+        Run "Creating the Python $($lockObj.python) environment" $uv @("venv", $envDir, "--python", $lockObj.python, "--allow-existing")
+        $pins = Join-Path $env:TEMP "vmd-constraints-$key.txt"
+        $pinText = "torch==$tv`r`ntorchaudio==$tv`r`n" + ((Get-Content -LiteralPath $Constraints -Encoding UTF8) -join "`r`n")
+        [IO.File]::WriteAllText($pins, $pinText, (New-Object Text.UTF8Encoding $false))
+        Run "Installing PyTorch $tv ($flavor build) - this is the largest download" $uv @("pip", "install", "--python", $py, "--compile-bytecode", "torch==$tv", "torchaudio==$tv", "--torch-backend=$flavor")
+        Run "Installing the other packages" $uv @("pip", "install", "--python", $py, "--compile-bytecode", "-r", $Requirements, "-c", $pins, "--torch-backend=$flavor")
+        Run "Checking the installation" $py $check
+        $info = [ordered]@{ key = $key; python = $lockObj.python; platform = $lockObj.platform; torch = "$tv+$flavor"; flavor = $flavor
+                            requirements = (Sha256Hex (NormalizeReq $Requirements)); constraints = (Sha256Hex (NormalizeReq $Constraints))
+                            lock_generated = $lockObj.generated; created_by = $UserKey; created = (Get-Date -Format s) }
+        [IO.File]::WriteAllText((Join-Path $rt "runtime-key.json"), ($info | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
+        Set-Content -LiteralPath (Join-Path $rt ".install-complete") -Value (Get-Date -Format s) -Encoding ASCII
+        Remove-Item -LiteralPath $env:UV_CACHE_DIR -Recurse -Force -ErrorAction SilentlyContinue
+    }
 
-    # 3. PyTorch first (the build is chosen by --torch-backend), then the rest.
-    #    "auto" picks the newest CUDA build the driver supports (cu130 on recent drivers).  CTranslate2 (faster-whisper) is built
-    #    for CUDA 12 and needs cublas64_12.dll / cuDNN 9 for CUDA 12, which only the cu12x PyTorch builds ship -> with cu130 the
-    #    speech recognition silently runs on the CPU.  The newest cu12x build of current PyTorch is cu126, which covers GPUs up to
-    #    compute capability 9.x (RTX 20/30/40); Blackwell (RTX 50, 12.x) needs cu128+, so there "auto" stays (ASR then uses the CPU).
-    if ($Backend -eq "auto") {
-        $smi = Get-Command nvidia-smi -ErrorAction SilentlyContinue
-        if ($smi) {
-            try {
-                $q = (& $smi.Source --query-gpu=driver_version,compute_cap --format=csv,noheader 2>$null | Select-Object -First 1)
-                $drv, $cap = ($q -split ',') | ForEach-Object { $_.Trim() }
-                if ([double]($drv.Split('.')[0]) -ge 560 -and [double]$cap -lt 10) {
-                    $Backend = "cu126"
-                    Say "NVIDIA driver ${drv}, compute capability ${cap}: using the CUDA 12.6 PyTorch build (the speech recognizer needs CUDA 12)"
-                }
-            } catch { Say "nvidia-smi query failed; PyTorch build left to auto" }
+    # 3. register this program as a user of the runtime; link it into the program folder
+    $usersFile = Join-Path $rt ".users.json"
+    $u = ReadUsers $usersFile
+    $u[$UserKey] = $true
+    WriteUsers $usersFile $u
+    $link = Join-Path $AppDir "runtime"
+    RemoveLinkOrDir $link                                     # older builds had a private environment here
+    RemoveLinkOrDir (Join-Path $AppDir "python")              # ... and its base Python
+    New-Item -ItemType Junction -Path $link -Target $envDir | Out-Null
+    if (-not (Test-Path (Join-Path $link "Scripts\python.exe"))) { throw "the runtime link $link does not work" }
+    Say "Linked $link -> $envDir"
+
+    # 4. runtimes this program used before (other keys): drop our key; delete the folder when nobody else uses it
+    foreach ($old in (Get-ChildItem -LiteralPath $vxHome -Directory -Filter "runtime-*" -ErrorAction SilentlyContinue)) {
+        if ($old.FullName -eq $rt -or $old.Name -notmatch '^runtime-[0-9a-f]{12}$' -or -not (Test-Path (Join-Path $old.FullName "runtime-key.json"))) { continue }
+        $f = Join-Path $old.FullName ".users.json"
+        $ou = ReadUsers $f
+        if (-not $ou.Contains($UserKey)) { continue }
+        $ou.Remove($UserKey)
+        WriteUsers $f $ou
+        if (@($ou.Keys | Where-Object { $ou[$_] }).Count -eq 0) {
+            Say "Removing the old runtime $($old.FullName) (no program uses it any more)"
+            Remove-Item -LiteralPath $old.FullName -Recurse -Force -ErrorAction SilentlyContinue
+        } else {
+            Say "Old runtime $($old.FullName) kept: still used by $(@($ou.Keys) -join ', ')"
         }
     }
-    Run "Installing PyTorch ($Backend build) - this is the largest download" $uv @("pip", "install", "--python", $py, "--compile-bytecode", "torch", "torchaudio", "--torch-backend=$Backend")
-    Run "Installing the other packages" $uv @("pip", "install", "--python", $py, "--compile-bytecode", "-r", $Requirements)
-    Run "Checking the installation" $py @("-c", "import torch, transformers, PySide6, faster_qwen3_tts; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())")
+    if ($OutFile) { Set-Content -LiteralPath $OutFile -Value $rt -Encoding UTF8 }
 
-    # 4. LGPL ffmpeg + ffprobe (BtbN FFmpeg-Builds, release 8.1 line, SHA-256 checked against the release's checksums.sha256)
+    # 5. LGPL ffmpeg + ffprobe (BtbN FFmpeg-Builds, release 8.1 line, SHA-256 checked against the release's checksums.sha256)
     #    into <AppDir>\bin, where dubber.ffmpeg looks first.  Not fatal: without it the GPL imageio-ffmpeg fallback still works.
     $binDir = Join-Path $AppDir "bin"
     if (-not (Test-Path (Join-Path $binDir "ffprobe.exe"))) {
@@ -129,9 +258,6 @@ try {
         }
     }
 
-    # 5. cleanup of the download cache; the marker is written last
-    Remove-Item -LiteralPath $env:UV_CACHE_DIR -Recurse -Force -ErrorAction SilentlyContinue
-    Set-Content -LiteralPath (Join-Path $runtime ".install-complete") -Value (Get-Date -Format s) -Encoding ASCII
     Say "Python environment is ready."
     exit 0
 }

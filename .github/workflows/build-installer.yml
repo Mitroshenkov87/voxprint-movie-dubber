@@ -78,10 +78,22 @@ jobs:
           foreach ($f in "main.py", "runtime\Scripts\pythonw.exe", "runtime\Scripts\python.exe", "unins000.exe", "assets\voxprint-dubber.ico", "dubber\appinfo.py") {
             if (-not (Test-Path "C:\vmd\$f")) { throw "missing after install: $f" }
           }
-          $menu = Get-ChildItem "$env:ProgramData\Microsoft\Windows\Start Menu\Programs" -Recurse -Filter "*.lnk" | Where-Object { $_.FullName -like "*Voxprint AI Movie Dubber*" }
+          $menu = Get-ChildItem "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Voxprint" -Filter "*.lnk" | Where-Object { $_.Name -like "*Voxprint AI Movie Dubber*" }
           $menu | ForEach-Object { "start menu: " + $_.FullName }
-          if (-not ($menu | Where-Object { $_.Name -like "Voxprint AI Movie Dubber.lnk" })) { throw "no Start menu shortcut" }
-          if (-not ($menu | Where-Object { $_.Name -like "Run diagnostics.lnk" })) { throw "no diagnostics shortcut" }
+          if (-not ($menu | Where-Object { $_.Name -eq "Voxprint AI Movie Dubber.lnk" })) { throw "no Start menu shortcut in the shared Voxprint folder" }
+          if (-not ($menu | Where-Object { $_.Name -eq "Voxprint AI Movie Dubber - diagnostics.lnk" })) { throw "no diagnostics shortcut" }
+          # the runtime: a junction to the shared, version-keyed LOCALAPPDATA\Voxprint\runtime-<key>, with our key in its users file
+          $link = Get-Item C:\vmd\runtime -Force
+          if (-not ($link.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw "C:\vmd\runtime is not a link to the shared runtime" }
+          $rt = Get-ChildItem "$env:LOCALAPPDATA\Voxprint" -Directory -Filter "runtime-*" | Where-Object { Test-Path "$($_.FullName)\runtime-key.json" } | Select-Object -First 1
+          if (-not $rt) { throw "no shared runtime-<key> folder" }
+          "runtime: " + $rt.FullName + " " + (Get-Content "$($rt.FullName)\runtime-key.json" -Raw)
+          if (-not ((Get-Content "$($rt.FullName)\.users.json" -Raw | ConvertFrom-Json).'movie-dubber')) { throw "movie-dubber is not registered in the runtime users file" }
+          & C:\vmd\runtime\Scripts\python.exe -c "import torch; print('torch', torch.__version__); assert torch.__version__.startswith('2.11.0')"
+          if ($LASTEXITCODE -ne 0) { throw "the runtime does not have the pinned PyTorch 2.11.0" }
+          $suite = "$env:LOCALAPPDATA\Voxprint\state\suite.json"
+          if (-not (Test-Path $suite)) { throw "suite.json was not written" }
+          "suite.json: " + (Get-Content $suite -Raw)
           $sh = New-Object -ComObject WScript.Shell
           $lnk = $sh.CreateShortcut(($menu | Where-Object { $_.Name -eq "Voxprint AI Movie Dubber.lnk" }).FullName)
           "shortcut target: $($lnk.TargetPath) $($lnk.Arguments)"
@@ -147,6 +159,7 @@ jobs:
           $users = "$env:LOCALAPPDATA\Voxprint\models\.users.json"
           if ((Test-Path $users) -and ((Get-Content $users -Raw | ConvertFrom-Json).'movie-dubber')) { throw "movie-dubber is still registered in $users" }
           if (-not (Test-Path "$env:LOCALAPPDATA\Voxprint\models")) { throw "the shared models were deleted without asking" }
+          if (Get-ChildItem "$env:LOCALAPPDATA\Voxprint" -Directory -Filter "runtime-*" -ErrorAction SilentlyContinue) { throw "the unused shared runtime was not removed" }
           "models kept: " + ((Get-ChildItem "$env:LOCALAPPDATA\Voxprint\models" -Directory | ForEach-Object Name) -join ", ")
           "uninstall OK"
 
@@ -187,6 +200,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $notes = "Early pre-release of Voxprint AI Movie Dubber. Small online installer: it downloads Python, PyTorch and the other dependencies during the setup. Windows 10/11 x64; an NVIDIA GPU is needed for useful speed."
           $tag = "${{ github.ref_name }}"
-          gh release create "$tag" --prerelease --title "Voxprint AI Movie Dubber $tag (pre-release)" --verify-tag --notes "$notes" installer/Output/VoxprintMovieDubber-Setup.exe installer/Output/VoxprintMovieDubber-Setup.exe.sha256
+          $notesFile = "docs/release-notes/$tag.md"
+          if (-not (Test-Path $notesFile)) {
+            $notesFile = "release-notes.md"
+            "Early pre-release of Voxprint AI Movie Dubber. Small online installer: it downloads Python, PyTorch and the other dependencies during the setup. Windows 10/11 x64; an NVIDIA GPU is needed for useful speed." | Out-File -Encoding utf8 $notesFile
+          }
+          gh release create "$tag" --prerelease --title "Voxprint AI Movie Dubber $tag (pre-release)" --verify-tag --notes-file "$notesFile" installer/Output/VoxprintMovieDubber-Setup.exe installer/Output/VoxprintMovieDubber-Setup.exe.sha256

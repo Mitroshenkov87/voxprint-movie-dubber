@@ -15,6 +15,9 @@ from dubber.workers.common import WorkerContext, read_wav_mono, wer
 
 
 def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
+    from dubber.infra import cuda_dlls
+
+    cuda_dirs = cuda_dlls.expose() if args.get("device", "auto") != "cpu" else []
     t = time.time()
     from faster_whisper import WhisperModel
 
@@ -24,6 +27,10 @@ def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
     folder, info = models.ensure(repo, args.get("allow_download", True), log=ctx.log)
     details: List[str] = [f"{'model':<28}: {repo} ({info['source']}" + (f", downloaded in {info['download_s']} s)" if info["download_s"] else ")"),
                           f"{'import faster_whisper':<28}: {import_s:.2f} s"]
+    if cuda_dirs:
+        from pathlib import Path
+
+        details.append(f"{'CUDA 12 libraries (cuBLAS)':<28}: {'found' if cuda_dlls.has_cublas12([Path(d) for d in cuda_dirs]) else 'NOT found'} in {cuda_dirs[0]}")
     want_gpu = args.get("device", "auto") != "cpu"
     gpu_expected = bool(args.get("expect_gpu", True))
     model, device, ctype, fallback_err = None, "cpu", "int8", ""

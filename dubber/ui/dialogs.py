@@ -64,7 +64,7 @@ class SettingsDialog(QDialog):
         self.cmb_tts = _combo([("tts_1_7b", "Qwen3-TTS 1.7B"), ("tts_0_6b", "Qwen3-TTS 0.6B")], s["tts_model"])
         self.cmb_backend = _combo([("auto", tr("settings.auto")), ("standard/flash_attention_2", "FlashAttention 2"),
                                    ("graphs/sdpa", "CUDA Graphs"), ("standard/sdpa", "SDPA")], s["tts_backend"])
-        self.cmb_device = _combo([("auto", tr("settings.auto")), ("cuda", "CUDA"), ("cpu", "CPU")], s["device"])
+        self.cmb_device = _combo([("auto", tr("settings.auto")), ("cuda", "CUDA"), ("cpu", "CPU")], settings.device())
         self.chk_download = QCheckBox(tr("settings.allow_download"))
         self.chk_download.setChecked(bool(s["allow_download"]))
         for label, w in (("settings.subdl", self.edt_subdl), ("settings.os_key", self.edt_os_key), ("settings.os_user", self.edt_os_user),
@@ -101,11 +101,14 @@ class SettingsDialog(QDialog):
                 "allow_download": self.chk_download.isChecked()}
 
     def accept(self) -> None:
-        settings.save(self.values())
+        vals = self.values()
+        settings.save(vals)
+        if vals["device"] != settings.device():
+            settings.set_device(vals["device"])          # shared with the other Voxprint programs (suite.json "gpu")
         if self._models_choice is not None:
             try:
                 shared_paths.set_models_dir(self._models_choice)
-            except OSError:
+            except (OSError, ValueError):
                 pass
         super().accept()
 

@@ -17,13 +17,21 @@ Never run `uv run` without `--no-sync`: it can replace the CUDA build of PyTorch
 ```
 ISCC installer\VoxprintMovieDubber.iss
 ```
-The installer contains the program's own files only. During setup `installer/install-runtime.ps1` downloads `uv`, a private Python 3.11,
-PyTorch (the build matching the NVIDIA driver) and the dependencies from `requirements.txt` into `<install folder>\runtime`, and an optional
-final step downloads the AI models (`main.py --fetch-models`). Nothing is installed system-wide.
+The installer contains the program's own files only. During setup `installer/install-runtime.ps1` downloads `uv` and installs the
+runtime: Python 3.11 and PyTorch 2.11.0 pinned by `dubber/infra/runtime_lock.json` (a verbatim copy of the Voxprint AI Audiobook
+Builder lock; flavor cu128 / cu126 / cpu chosen from the driver), the dependencies from `requirements.txt` and the pins in
+`installer/runtime-constraints.txt`. The runtime lives in `%LOCALAPPDATA%\Voxprint\runtime-<key>` (key = hash of all pins, see
+`dubber/infra/runtime.py`): an existing folder with the same key is reused, a different set of versions gets its own folder side by
+side, and a shared runtime is never upgraded in place. `<install folder>\runtime` is a junction to it. `runtime-<key>\.users.json`
+counts the programs using it. An optional final step downloads the AI models (`main.py --fetch-models`).
 
-Setup switches: `/TORCH=auto|cpu|cu128` (PyTorch build), `/TASKS=""` (skip the model download), `/VERYSILENT /SUPPRESSMSGBOXES /DIR=<folder>`.
-The setup adds a Start menu folder (program and "Run diagnostics"), an Apps & features entry and a full uninstaller; the uninstaller
-asks whether to delete the downloaded models and logs in `%LOCALAPPDATA%\VoxprintMovieDubber`.
+Setup switches: `/TORCH=auto|cpu|cu126|cu128` (PyTorch flavor), `/TASKS=""` (skip the model download), `/VERYSILENT /SUPPRESSMSGBOXES /DIR=<folder>`.
+The setup puts its shortcuts into the Start menu folder "Voxprint" (shared with the Audiobook Builder), adds an Apps & features entry
+and a full uninstaller. The uninstaller never touches the Audiobook Builder; it removes the shared runtime only when no other program
+uses it, and the shared models only when no other program uses them and you answer Yes (default: keep).
+
+Shared settings: `%LOCALAPPDATA%\Voxprint\state\suite.json` (schema 1: `ui_language`, `theme`, `models_dir`, `gpu`), read and written by
+both programs (`dubber/infra/suite.py`).
 
 ## GitHub Actions
 `.github/workflows/build-installer.yml` (manual run or a `v*` tag) builds the installer on a free `windows-latest` runner, installs it

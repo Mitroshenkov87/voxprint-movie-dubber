@@ -91,7 +91,8 @@ class Speaker:
 
 DEFAULT_SETTINGS: Dict[str, Any] = {
     "source": "",
-    "source_lang": "en",
+    "source_lang": "auto",            # what the user asked for: auto | en | ru ...; the detected language is kept separately
+                                      # (source_lang_detected) so that detection never invalidates the cached stages
     "target_lang": "ru",
     "multi_voice": False,             # OFF: one voice for every line, diarization skipped
     "single_voice": {"kind": "clone", "id": ""},

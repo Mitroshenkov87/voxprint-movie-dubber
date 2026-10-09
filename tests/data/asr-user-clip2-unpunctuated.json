@@ -1,0 +1,1567 @@
+{
+ "language": "en",
+ "segments": [
+  {
+   "start": 0.0,
+   "end": 6.22,
+   "text": "wow you cleaned yeah man i deep cleaned the entire apartment what's the occasion well i got a hot day",
+   "words": [
+    {
+     "w": " wow",
+     "start": 0.0,
+     "end": 0.26
+    },
+    {
+     "w": " you",
+     "start": 0.26,
+     "end": 0.5
+    },
+    {
+     "w": " cleaned",
+     "start": 0.5,
+     "end": 0.96
+    },
+    {
+     "w": " yeah",
+     "start": 0.96,
+     "end": 1.42
+    },
+    {
+     "w": " man",
+     "start": 1.42,
+     "end": 1.74
+    },
+    {
+     "w": " i",
+     "start": 1.74,
+     "end": 1.92
+    },
+    {
+     "w": " deep",
+     "start": 1.92,
+     "end": 2.22
+    },
+    {
+     "w": " cleaned",
+     "start": 2.22,
+     "end": 2.5
+    },
+    {
+     "w": " the",
+     "start": 2.5,
+     "end": 2.72
+    },
+    {
+     "w": " entire",
+     "start": 2.72,
+     "end": 3.18
+    },
+    {
+     "w": " apartment",
+     "start": 3.18,
+     "end": 3.8
+    },
+    {
+     "w": " what's",
+     "start": 3.8,
+     "end": 4.3
+    },
+    {
+     "w": " the",
+     "start": 4.3,
+     "end": 4.42
+    },
+    {
+     "w": " occasion",
+     "start": 4.42,
+     "end": 4.9
+    },
+    {
+     "w": " well",
+     "start": 4.9,
+     "end": 5.28
+    },
+    {
+     "w": " i",
+     "start": 5.28,
+     "end": 5.36
+    },
+    {
+     "w": " got",
+     "start": 5.36,
+     "end": 5.5
+    },
+    {
+     "w": " a",
+     "start": 5.5,
+     "end": 5.72
+    },
+    {
+     "w": " hot",
+     "start": 5.72,
+     "end": 6.04
+    },
+    {
+     "w": " day",
+     "start": 6.04,
+     "end": 6.22
+    }
+   ]
+  },
+  {
+   "start": 6.22,
+   "end": 11.3,
+   "text": "coming over later so good for you man and i know i've been kind of slacking on the cleaning a little",
+   "words": [
+    {
+     "w": " coming",
+     "start": 6.22,
+     "end": 6.5
+    },
+    {
+     "w": " over",
+     "start": 6.5,
+     "end": 6.72
+    },
+    {
+     "w": " later",
+     "start": 6.72,
+     "end": 7.02
+    },
+    {
+     "w": " so",
+     "start": 7.02,
+     "end": 7.4
+    },
+    {
+     "w": " good",
+     "start": 7.4,
+     "end": 7.76
+    },
+    {
+     "w": " for",
+     "start": 7.76,
+     "end": 7.94
+    },
+    {
+     "w": " you",
+     "start": 7.94,
+     "end": 8.08
+    },
+    {
+     "w": " man",
+     "start": 8.08,
+     "end": 8.36
+    },
+    {
+     "w": " and",
+     "start": 8.36,
+     "end": 8.72
+    },
+    {
+     "w": " i",
+     "start": 8.72,
+     "end": 8.82
+    },
+    {
+     "w": " know",
+     "start": 8.82,
+     "end": 8.94
+    },
+    {
+     "w": " i've",
+     "start": 8.94,
+     "end": 9.1
+    },
+    {
+     "w": " been",
+     "start": 9.1,
+     "end": 9.22
+    },
+    {
+     "w": " kind",
+     "start": 9.22,
+     "end": 9.48
+    },
+    {
+     "w": " of",
+     "start": 9.48,
+     "end": 9.62
+    },
+    {
+     "w": " slacking",
+     "start": 9.62,
+     "end": 10.02
+    },
+    {
+     "w": " on",
+     "start": 10.02,
+     "end": 10.5
+    },
+    {
+     "w": " the",
+     "start": 10.5,
+     "end": 10.7
+    },
+    {
+     "w": " cleaning",
+     "start": 10.7,
+     "end": 10.98
+    },
+    {
+     "w": " a",
+     "start": 10.98,
+     "end": 11.18
+    },
+    {
+     "w": " little",
+     "start": 11.18,
+     "end": 11.3
+    }
+   ]
+  },
+  {
+   "start": 11.3,
+   "end": 16.8,
+   "text": "bit ah that's okay maybe we should make like a a chore wheel what'd you do in your last place in",
+   "words": [
+    {
+     "w": " bit",
+     "start": 11.3,
+     "end": 11.52
+    },
+    {
+     "w": " ah",
+     "start": 11.52,
+     "end": 11.7
+    },
+    {
+     "w": " that's",
+     "start": 11.7,
+     "end": 12.02
+    },
+    {
+     "w": " okay",
+     "start": 12.02,
+     "end": 12.26
+    },
+    {
+     "w": " maybe",
+     "start": 12.26,
+     "end": 12.64
+    },
+    {
+     "w": " we",
+     "start": 12.64,
+     "end": 12.8
+    },
+    {
+     "w": " should",
+     "start": 12.8,
+     "end": 12.96
+    },
+    {
+     "w": " make",
+     "start": 12.96,
+     "end": 13.22
+    },
+    {
+     "w": " like",
+     "start": 13.22,
+     "end": 13.52
+    },
+    {
+     "w": " a",
+     "start": 13.52,
+     "end": 13.8
+    },
+    {
+     "w": " a",
+     "start": 13.8,
+     "end": 14.12
+    },
+    {
+     "w": " chore",
+     "start": 14.12,
+     "end": 14.34
+    },
+    {
+     "w": " wheel",
+     "start": 14.34,
+     "end": 14.82
+    },
+    {
+     "w": " what'd",
+     "start": 14.82,
+     "end": 15.84
+    },
+    {
+     "w": " you",
+     "start": 15.84,
+     "end": 15.9
+    },
+    {
+     "w": " do",
+     "start": 15.9,
+     "end": 16.04
+    },
+    {
+     "w": " in",
+     "start": 16.04,
+     "end": 16.16
+    },
+    {
+     "w": " your",
+     "start": 16.16,
+     "end": 16.26
+    },
+    {
+     "w": " last",
+     "start": 16.26,
+     "end": 16.52
+    },
+    {
+     "w": " place",
+     "start": 16.52,
+     "end": 16.68
+    },
+    {
+     "w": " in",
+     "start": 16.68,
+     "end": 16.8
+    }
+   ]
+  },
+  {
+   "start": 16.8,
+   "end": 20.8,
+   "text": "my last place yeah like how did you organize cleaning and all that well my last roommates",
+   "words": [
+    {
+     "w": " my",
+     "start": 16.8,
+     "end": 16.9
+    },
+    {
+     "w": " last",
+     "start": 16.9,
+     "end": 17.2
+    },
+    {
+     "w": " place",
+     "start": 17.2,
+     "end": 17.5
+    },
+    {
+     "w": " yeah",
+     "start": 17.5,
+     "end": 17.74
+    },
+    {
+     "w": " like",
+     "start": 17.74,
+     "end": 18.0
+    },
+    {
+     "w": " how",
+     "start": 18.0,
+     "end": 18.16
+    },
+    {
+     "w": " did",
+     "start": 18.16,
+     "end": 18.32
+    },
+    {
+     "w": " you",
+     "start": 18.32,
+     "end": 18.5
+    },
+    {
+     "w": " organize",
+     "start": 18.5,
+     "end": 19.04
+    },
+    {
+     "w": " cleaning",
+     "start": 19.04,
+     "end": 19.42
+    },
+    {
+     "w": " and",
+     "start": 19.42,
+     "end": 19.62
+    },
+    {
+     "w": " all",
+     "start": 19.62,
+     "end": 19.72
+    },
+    {
+     "w": " that",
+     "start": 19.72,
+     "end": 19.84
+    },
+    {
+     "w": " well",
+     "start": 19.84,
+     "end": 20.0
+    },
+    {
+     "w": " my",
+     "start": 20.0,
+     "end": 20.18
+    },
+    {
+     "w": " last",
+     "start": 20.18,
+     "end": 20.48
+    },
+    {
+     "w": " roommates",
+     "start": 20.48,
+     "end": 20.8
+    }
+   ]
+  },
+  {
+   "start": 20.8,
+   "end": 26.48,
+   "text": "weren't really receptive to communication oh they they weren't despite me trying damn that's",
+   "words": [
+    {
+     "w": " weren't",
+     "start": 20.8,
+     "end": 21.18
+    },
+    {
+     "w": " really",
+     "start": 21.18,
+     "end": 21.38
+    },
+    {
+     "w": " receptive",
+     "start": 21.38,
+     "end": 21.98
+    },
+    {
+     "w": " to",
+     "start": 21.98,
+     "end": 22.26
+    },
+    {
+     "w": " communication",
+     "start": 22.26,
+     "end": 22.94
+    },
+    {
+     "w": " oh",
+     "start": 22.94,
+     "end": 23.26
+    },
+    {
+     "w": " they",
+     "start": 23.26,
+     "end": 23.46
+    },
+    {
+     "w": " they",
+     "start": 23.46,
+     "end": 23.88
+    },
+    {
+     "w": " weren't",
+     "start": 23.88,
+     "end": 24.46
+    },
+    {
+     "w": " despite",
+     "start": 24.46,
+     "end": 24.82
+    },
+    {
+     "w": " me",
+     "start": 24.82,
+     "end": 25.12
+    },
+    {
+     "w": " trying",
+     "start": 25.12,
+     "end": 25.46
+    },
+    {
+     "w": " damn",
+     "start": 25.46,
+     "end": 25.86
+    },
+    {
+     "w": " that's",
+     "start": 25.86,
+     "end": 26.48
+    }
+   ]
+  },
+  {
+   "start": 26.48,
+   "end": 33.0,
+   "text": "rough indeed so i was at my wits end i can imagine with how to get these adults to clean up after",
+   "words": [
+    {
+     "w": " rough",
+     "start": 26.48,
+     "end": 26.72
+    },
+    {
+     "w": " indeed",
+     "start": 26.72,
+     "end": 27.26
+    },
+    {
+     "w": " so",
+     "start": 27.26,
+     "end": 27.66
+    },
+    {
+     "w": " i",
+     "start": 27.66,
+     "end": 27.82
+    },
+    {
+     "w": " was",
+     "start": 27.82,
+     "end": 28.02
+    },
+    {
+     "w": " at",
+     "start": 28.02,
+     "end": 28.16
+    },
+    {
+     "w": " my",
+     "start": 28.16,
+     "end": 28.32
+    },
+    {
+     "w": " wits",
+     "start": 28.32,
+     "end": 28.6
+    },
+    {
+     "w": " end",
+     "start": 28.6,
+     "end": 28.88
+    },
+    {
+     "w": " i",
+     "start": 28.88,
+     "end": 29.12
+    },
+    {
+     "w": " can",
+     "start": 29.12,
+     "end": 29.28
+    },
+    {
+     "w": " imagine",
+     "start": 29.28,
+     "end": 29.72
+    },
+    {
+     "w": " with",
+     "start": 29.72,
+     "end": 30.18
+    },
+    {
+     "w": " how",
+     "start": 30.18,
+     "end": 30.46
+    },
+    {
+     "w": " to",
+     "start": 30.46,
+     "end": 30.74
+    },
+    {
+     "w": " get",
+     "start": 30.74,
+     "end": 30.96
+    },
+    {
+     "w": " these",
+     "start": 30.96,
+     "end": 31.32
+    },
+    {
+     "w": " adults",
+     "start": 31.32,
+     "end": 31.8
+    },
+    {
+     "w": " to",
+     "start": 31.8,
+     "end": 32.14
+    },
+    {
+     "w": " clean",
+     "start": 32.14,
+     "end": 32.4
+    },
+    {
+     "w": " up",
+     "start": 32.4,
+     "end": 32.62
+    },
+    {
+     "w": " after",
+     "start": 32.62,
+     "end": 33.0
+    }
+   ]
+  },
+  {
+   "start": 33.0,
+   "end": 39.5,
+   "text": "themselves uh so what what did you do i had a realization what is the one thing that will make",
+   "words": [
+    {
+     "w": " themselves",
+     "start": 33.0,
+     "end": 33.48
+    },
+    {
+     "w": " uh",
+     "start": 33.48,
+     "end": 34.26
+    },
+    {
+     "w": " so",
+     "start": 34.26,
+     "end": 34.48
+    },
+    {
+     "w": " what",
+     "start": 34.48,
+     "end": 34.64
+    },
+    {
+     "w": " what",
+     "start": 34.64,
+     "end": 34.86
+    },
+    {
+     "w": " did",
+     "start": 34.86,
+     "end": 35.06
+    },
+    {
+     "w": " you",
+     "start": 35.06,
+     "end": 35.2
+    },
+    {
+     "w": " do",
+     "start": 35.2,
+     "end": 35.52
+    },
+    {
+     "w": " i",
+     "start": 35.52,
+     "end": 36.2
+    },
+    {
+     "w": " had",
+     "start": 36.2,
+     "end": 36.4
+    },
+    {
+     "w": " a",
+     "start": 36.4,
+     "end": 36.48
+    },
+    {
+     "w": " realization",
+     "start": 36.48,
+     "end": 37.04
+    },
+    {
+     "w": " what",
+     "start": 37.04,
+     "end": 37.78
+    },
+    {
+     "w": " is",
+     "start": 37.78,
+     "end": 37.92
+    },
+    {
+     "w": " the",
+     "start": 37.92,
+     "end": 38.06
+    },
+    {
+     "w": " one",
+     "start": 38.06,
+     "end": 38.28
+    },
+    {
+     "w": " thing",
+     "start": 38.28,
+     "end": 38.7
+    },
+    {
+     "w": " that",
+     "start": 38.7,
+     "end": 39.12
+    },
+    {
+     "w": " will",
+     "start": 39.12,
+     "end": 39.26
+    },
+    {
+     "w": " make",
+     "start": 39.26,
+     "end": 39.5
+    }
+   ]
+  },
+  {
+   "start": 39.5,
+   "end": 48.34,
+   "text": "any man clean up instantly what is that one thing a hot date so i would make fake dating profiles of",
+   "words": [
+    {
+     "w": " any",
+     "start": 39.5,
+     "end": 39.88
+    },
+    {
+     "w": " man",
+     "start": 39.88,
+     "end": 40.34
+    },
+    {
+     "w": " clean",
+     "start": 40.34,
+     "end": 40.98
+    },
+    {
+     "w": " up",
+     "start": 40.98,
+     "end": 41.32
+    },
+    {
+     "w": " instantly",
+     "start": 41.32,
+     "end": 42.24
+    },
+    {
+     "w": " what",
+     "start": 42.24,
+     "end": 42.72
+    },
+    {
+     "w": " is",
+     "start": 42.72,
+     "end": 42.84
+    },
+    {
+     "w": " that",
+     "start": 42.84,
+     "end": 42.98
+    },
+    {
+     "w": " one",
+     "start": 42.98,
+     "end": 43.2
+    },
+    {
+     "w": " thing",
+     "start": 43.2,
+     "end": 43.54
+    },
+    {
+     "w": " a",
+     "start": 43.54,
+     "end": 44.5
+    },
+    {
+     "w": " hot",
+     "start": 44.5,
+     "end": 44.76
+    },
+    {
+     "w": " date",
+     "start": 44.76,
+     "end": 45.08
+    },
+    {
+     "w": " so",
+     "start": 45.08,
+     "end": 46.02
+    },
+    {
+     "w": " i",
+     "start": 46.02,
+     "end": 46.3
+    },
+    {
+     "w": " would",
+     "start": 46.3,
+     "end": 46.48
+    },
+    {
+     "w": " make",
+     "start": 46.48,
+     "end": 46.82
+    },
+    {
+     "w": " fake",
+     "start": 46.82,
+     "end": 47.16
+    },
+    {
+     "w": " dating",
+     "start": 47.16,
+     "end": 47.52
+    },
+    {
+     "w": " profiles",
+     "start": 47.52,
+     "end": 48.1
+    },
+    {
+     "w": " of",
+     "start": 48.1,
+     "end": 48.34
+    }
+   ]
+  },
+  {
+   "start": 48.34,
+   "end": 52.8,
+   "text": "gorgeous women and match with them there'd be instant chemistry because i already know all of",
+   "words": [
+    {
+     "w": " gorgeous",
+     "start": 48.34,
+     "end": 48.82
+    },
+    {
+     "w": " women",
+     "start": 48.82,
+     "end": 49.26
+    },
+    {
+     "w": " and",
+     "start": 49.26,
+     "end": 49.76
+    },
+    {
+     "w": " match",
+     "start": 49.76,
+     "end": 50.04
+    },
+    {
+     "w": " with",
+     "start": 50.04,
+     "end": 50.22
+    },
+    {
+     "w": " them",
+     "start": 50.22,
+     "end": 50.44
+    },
+    {
+     "w": " there'd",
+     "start": 50.44,
+     "end": 50.82
+    },
+    {
+     "w": " be",
+     "start": 50.82,
+     "end": 50.9
+    },
+    {
+     "w": " instant",
+     "start": 50.9,
+     "end": 51.12
+    },
+    {
+     "w": " chemistry",
+     "start": 51.12,
+     "end": 51.56
+    },
+    {
+     "w": " because",
+     "start": 51.56,
+     "end": 51.88
+    },
+    {
+     "w": " i",
+     "start": 51.88,
+     "end": 52.08
+    },
+    {
+     "w": " already",
+     "start": 52.08,
+     "end": 52.3
+    },
+    {
+     "w": " know",
+     "start": 52.3,
+     "end": 52.52
+    },
+    {
+     "w": " all",
+     "start": 52.52,
+     "end": 52.7
+    },
+    {
+     "w": " of",
+     "start": 52.7,
+     "end": 52.8
+    }
+   ]
+  },
+  {
+   "start": 52.8,
+   "end": 58.06,
+   "text": "their interests and then we'd set up a date and wouldn't you believe it they cleaned up faster",
+   "words": [
+    {
+     "w": " their",
+     "start": 52.8,
+     "end": 52.96
+    },
+    {
+     "w": " interests",
+     "start": 52.96,
+     "end": 53.42
+    },
+    {
+     "w": " and",
+     "start": 53.42,
+     "end": 53.92
+    },
+    {
+     "w": " then",
+     "start": 53.92,
+     "end": 54.02
+    },
+    {
+     "w": " we'd",
+     "start": 54.02,
+     "end": 54.2
+    },
+    {
+     "w": " set",
+     "start": 54.2,
+     "end": 54.4
+    },
+    {
+     "w": " up",
+     "start": 54.4,
+     "end": 54.52
+    },
+    {
+     "w": " a",
+     "start": 54.52,
+     "end": 54.64
+    },
+    {
+     "w": " date",
+     "start": 54.64,
+     "end": 54.9
+    },
+    {
+     "w": " and",
+     "start": 54.9,
+     "end": 55.48
+    },
+    {
+     "w": " wouldn't",
+     "start": 55.48,
+     "end": 55.7
+    },
+    {
+     "w": " you",
+     "start": 55.7,
+     "end": 55.8
+    },
+    {
+     "w": " believe",
+     "start": 55.8,
+     "end": 56.06
+    },
+    {
+     "w": " it",
+     "start": 56.06,
+     "end": 56.32
+    },
+    {
+     "w": " they",
+     "start": 56.32,
+     "end": 56.78
+    },
+    {
+     "w": " cleaned",
+     "start": 56.78,
+     "end": 57.2
+    },
+    {
+     "w": " up",
+     "start": 57.2,
+     "end": 57.5
+    },
+    {
+     "w": " faster",
+     "start": 57.5,
+     "end": 58.06
+    }
+   ]
+  },
+  {
+   "start": 58.06,
+   "end": 63.82,
+   "text": "than i've ever seen delete the profile make a new one rinse and repeat that seems a bit whenever it",
+   "words": [
+    {
+     "w": " than",
+     "start": 58.06,
+     "end": 58.3
+    },
+    {
+     "w": " i've",
+     "start": 58.3,
+     "end": 58.56
+    },
+    {
+     "w": " ever",
+     "start": 58.56,
+     "end": 58.8
+    },
+    {
+     "w": " seen",
+     "start": 58.8,
+     "end": 59.26
+    },
+    {
+     "w": " delete",
+     "start": 59.26,
+     "end": 60.04
+    },
+    {
+     "w": " the",
+     "start": 60.04,
+     "end": 60.24
+    },
+    {
+     "w": " profile",
+     "start": 60.24,
+     "end": 60.8
+    },
+    {
+     "w": " make",
+     "start": 60.8,
+     "end": 61.16
+    },
+    {
+     "w": " a",
+     "start": 61.16,
+     "end": 61.28
+    },
+    {
+     "w": " new",
+     "start": 61.28,
+     "end": 61.42
+    },
+    {
+     "w": " one",
+     "start": 61.42,
+     "end": 61.64
+    },
+    {
+     "w": " rinse",
+     "start": 61.64,
+     "end": 61.94
+    },
+    {
+     "w": " and",
+     "start": 61.94,
+     "end": 62.06
+    },
+    {
+     "w": " repeat",
+     "start": 62.06,
+     "end": 62.46
+    },
+    {
+     "w": " that",
+     "start": 62.46,
+     "end": 62.66
+    },
+    {
+     "w": " seems",
+     "start": 62.66,
+     "end": 62.9
+    },
+    {
+     "w": " a",
+     "start": 62.9,
+     "end": 63.06
+    },
+    {
+     "w": " bit",
+     "start": 63.06,
+     "end": 63.22
+    },
+    {
+     "w": " whenever",
+     "start": 63.22,
+     "end": 63.6
+    },
+    {
+     "w": " it",
+     "start": 63.6,
+     "end": 63.82
+    }
+   ]
+  },
+  {
+   "start": 63.82,
+   "end": 70.52,
+   "text": "got out of hand or wasn't up to my standards of cleanliness wait somehow there's another beautiful",
+   "words": [
+    {
+     "w": " got",
+     "start": 63.82,
+     "end": 63.96
+    },
+    {
+     "w": " out",
+     "start": 63.96,
+     "end": 64.18
+    },
+    {
+     "w": " of",
+     "start": 64.18,
+     "end": 64.3
+    },
+    {
+     "w": " hand",
+     "start": 64.3,
+     "end": 64.6
+    },
+    {
+     "w": " or",
+     "start": 64.6,
+     "end": 64.94
+    },
+    {
+     "w": " wasn't",
+     "start": 64.94,
+     "end": 65.3
+    },
+    {
+     "w": " up",
+     "start": 65.3,
+     "end": 65.4
+    },
+    {
+     "w": " to",
+     "start": 65.4,
+     "end": 65.54
+    },
+    {
+     "w": " my",
+     "start": 65.54,
+     "end": 65.78
+    },
+    {
+     "w": " standards",
+     "start": 65.78,
+     "end": 66.34
+    },
+    {
+     "w": " of",
+     "start": 66.34,
+     "end": 66.86
+    },
+    {
+     "w": " cleanliness",
+     "start": 66.86,
+     "end": 67.62
+    },
+    {
+     "w": " wait",
+     "start": 67.62,
+     "end": 67.98
+    },
+    {
+     "w": " somehow",
+     "start": 67.98,
+     "end": 69.16
+    },
+    {
+     "w": " there's",
+     "start": 69.16,
+     "end": 69.56
+    },
+    {
+     "w": " another",
+     "start": 69.56,
+     "end": 69.86
+    },
+    {
+     "w": " beautiful",
+     "start": 69.86,
+     "end": 70.52
+    }
+   ]
+  },
+  {
+   "start": 70.52,
+   "end": 77.72,
+   "text": "single woman hold up within a mile of you within a mile who has the same interests and wants to",
+   "words": [
+    {
+     "w": " single",
+     "start": 70.52,
+     "end": 70.96
+    },
+    {
+     "w": " woman",
+     "start": 70.96,
+     "end": 71.42
+    },
+    {
+     "w": " hold",
+     "start": 71.42,
+     "end": 71.8
+    },
+    {
+     "w": " up",
+     "start": 71.8,
+     "end": 71.98
+    },
+    {
+     "w": " within",
+     "start": 71.98,
+     "end": 72.26
+    },
+    {
+     "w": " a",
+     "start": 72.26,
+     "end": 72.46
+    },
+    {
+     "w": " mile",
+     "start": 72.46,
+     "end": 72.72
+    },
+    {
+     "w": " of",
+     "start": 72.72,
+     "end": 72.96
+    },
+    {
+     "w": " you",
+     "start": 72.96,
+     "end": 73.16
+    },
+    {
+     "w": " within",
+     "start": 73.16,
+     "end": 73.68
+    },
+    {
+     "w": " a",
+     "start": 73.68,
+     "end": 73.92
+    },
+    {
+     "w": " mile",
+     "start": 73.92,
+     "end": 74.4
+    },
+    {
+     "w": " who",
+     "start": 74.4,
+     "end": 74.8
+    },
+    {
+     "w": " has",
+     "start": 74.8,
+     "end": 74.92
+    },
+    {
+     "w": " the",
+     "start": 74.92,
+     "end": 75.06
+    },
+    {
+     "w": " same",
+     "start": 75.06,
+     "end": 75.5
+    },
+    {
+     "w": " interests",
+     "start": 75.5,
+     "end": 76.14
+    },
+    {
+     "w": " and",
+     "start": 76.14,
+     "end": 76.88
+    },
+    {
+     "w": " wants",
+     "start": 76.88,
+     "end": 77.56
+    },
+    {
+     "w": " to",
+     "start": 77.56,
+     "end": 77.72
+    }
+   ]
+  },
+  {
+   "start": 77.72,
+   "end": 85.54,
+   "text": "meet up at your place wait hold up how curious hey bro isn't it i got a question yeah but that",
+   "words": [
+    {
+     "w": " meet",
+     "start": 77.72,
+     "end": 77.92
+    },
+    {
+     "w": " up",
+     "start": 77.92,
+     "end": 78.12
+    },
+    {
+     "w": " at",
+     "start": 78.12,
+     "end": 78.32
+    },
+    {
+     "w": " your",
+     "start": 78.32,
+     "end": 78.54
+    },
+    {
+     "w": " place",
+     "start": 78.54,
+     "end": 79.06
+    },
+    {
+     "w": " wait",
+     "start": 79.06,
+     "end": 79.56
+    },
+    {
+     "w": " hold",
+     "start": 79.56,
+     "end": 79.84
+    },
+    {
+     "w": " up",
+     "start": 79.84,
+     "end": 80.14
+    },
+    {
+     "w": " how",
+     "start": 80.14,
+     "end": 80.9
+    },
+    {
+     "w": " curious",
+     "start": 80.9,
+     "end": 81.34
+    },
+    {
+     "w": " hey",
+     "start": 81.34,
+     "end": 81.78
+    },
+    {
+     "w": " bro",
+     "start": 81.78,
+     "end": 82.08
+    },
+    {
+     "w": " isn't",
+     "start": 82.08,
+     "end": 82.84
+    },
+    {
+     "w": " it",
+     "start": 82.84,
+     "end": 82.98
+    },
+    {
+     "w": " i",
+     "start": 82.98,
+     "end": 83.6
+    },
+    {
+     "w": " got",
+     "start": 83.6,
+     "end": 83.74
+    },
+    {
+     "w": " a",
+     "start": 83.74,
+     "end": 83.86
+    },
+    {
+     "w": " question",
+     "start": 83.86,
+     "end": 84.28
+    },
+    {
+     "w": " yeah",
+     "start": 84.28,
+     "end": 85.3
+    },
+    {
+     "w": " but",
+     "start": 85.3,
+     "end": 85.44
+    },
+    {
+     "w": " that",
+     "start": 85.44,
+     "end": 85.54
+    }
+   ]
+  },
+  {
+   "start": 85.54,
+   "end": 91.64,
+   "text": "was my last place so not really applicable have a good date i'll give you some space wait no you",
+   "words": [
+    {
+     "w": " was",
+     "start": 85.54,
+     "end": 85.64
+    },
+    {
+     "w": " my",
+     "start": 85.64,
+     "end": 85.78
+    },
+    {
+     "w": " last",
+     "start": 85.78,
+     "end": 86.04
+    },
+    {
+     "w": " place",
+     "start": 86.04,
+     "end": 86.3
+    },
+    {
+     "w": " so",
+     "start": 86.3,
+     "end": 86.56
+    },
+    {
+     "w": " not",
+     "start": 86.56,
+     "end": 86.94
+    },
+    {
+     "w": " really",
+     "start": 86.94,
+     "end": 87.14
+    },
+    {
+     "w": " applicable",
+     "start": 87.14,
+     "end": 87.56
+    },
+    {
+     "w": " have",
+     "start": 87.56,
+     "end": 88.64
+    },
+    {
+     "w": " a",
+     "start": 88.64,
+     "end": 88.72
+    },
+    {
+     "w": " good",
+     "start": 88.72,
+     "end": 88.8
+    },
+    {
+     "w": " date",
+     "start": 88.8,
+     "end": 89.02
+    },
+    {
+     "w": " i'll",
+     "start": 89.02,
+     "end": 89.9
+    },
+    {
+     "w": " give",
+     "start": 89.9,
+     "end": 90.02
+    },
+    {
+     "w": " you",
+     "start": 90.02,
+     "end": 90.16
+    },
+    {
+     "w": " some",
+     "start": 90.16,
+     "end": 90.34
+    },
+    {
+     "w": " space",
+     "start": 90.34,
+     "end": 90.72
+    },
+    {
+     "w": " wait",
+     "start": 90.72,
+     "end": 91.14
+    },
+    {
+     "w": " no",
+     "start": 91.14,
+     "end": 91.38
+    },
+    {
+     "w": " you",
+     "start": 91.38,
+     "end": 91.64
+    }
+   ]
+  },
+  {
+   "start": 91.64,
+   "end": 93.24,
+   "text": "didn't no",
+   "words": [
+    {
+     "w": " didn't",
+     "start": 91.64,
+     "end": 92.12
+    },
+    {
+     "w": " no",
+     "start": 92.12,
+     "end": 93.24
+    }
+   ]
+  }
+ ]
+}

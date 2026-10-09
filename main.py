@@ -7,6 +7,8 @@
     main.py --fetch-models        download the AI models (used by the installer); --models KEY,KEY limits the set
     main.py --register-models-user      (installer) add this program to the shared models folder's .users.json
     main.py --unregister-models-user --out FILE   (uninstaller) remove it; FILE gets "<other users>\n<models folder>"
+    main.py --register-runtime-user / --unregister-runtime-user --out FILE   the same for the shared runtime-<key>\.users.json
+    main.py --sync-suite-settings (installer) write the shared suite.json (models folder, UI language) if it has none yet
     main.py --run-project DIR [--stages a,b]      run (or resume) a dubbing project without a window (detached long run)
     main.py --selftest            create the window, process events briefly, exit 0 (smoke test)
     main.py --version
@@ -88,6 +90,17 @@ def main(argv=None) -> int:
     _setup_logging()
     if "--register-models-user" in argv or "--unregister-models-user" in argv:
         return _models_users(argv)
+    if "--register-runtime-user" in argv or "--unregister-runtime-user" in argv:
+        from dubber.infra import runtime
+
+        if "--register-runtime-user" in argv:
+            runtime.register_user()
+            return 0
+        return runtime.unregister_cli(_arg(argv, "--out"))
+    if "--sync-suite-settings" in argv:
+        from dubber.infra import suite
+
+        return suite.sync_cli()
     if "--run-project" in argv:
         from dubber.pipeline.runner import run_project_cli
 

@@ -9,7 +9,7 @@ from typing import Any, Dict
 
 APP_NAME = "VoxprintMovieDubber"            # technical name: folders, exe, logs - never localised
 APP_DISPLAY_NAME = "Voxprint AI Movie Dubber"
-APP_VERSION = "0.1.0-pre"
+APP_VERSION = "0.1.0-pre.3"
 AUTHOR = "Aleksandr Mitroshenkov"
 
 

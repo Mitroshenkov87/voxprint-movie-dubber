@@ -62,9 +62,20 @@ def slot_for(line: Line, lines: Sequence[Line], total: Optional[float] = None) -
     return max(line.duration, nxt - GAP - line.start) + EARLY
 
 
-def best_take(durations: Sequence[float], slot: float) -> int:
-    """Best-of-N: among takes that fit without stretching, the longest (most natural pace); else the one needing the least stretch."""
-    fitting = [(d, i) for i, d in enumerate(durations) if d <= slot]
+def best_take(durations: Sequence[float], slot: float, completeness: Optional[Sequence[float]] = None) -> int:
+    """Best-of-N, meaning first: among the takes that fit ``slot`` the most complete wording (``completeness``: share of the
+    full translation kept, 1.0 = all; default all 1.0), then the longest (most natural pace).  When none fits: the most complete
+    wording again, its shortest take - a full line read a little fast is better than a line that lost its meaning (the placement
+    may still squeeze it up to HARD_STRETCH and flags it)."""
+    n = len(durations)
+    comp = list(completeness) if completeness is not None else [1.0] * n
+    fitting = [i for i in range(n) if durations[i] <= slot and comp[i] >= 0.7 - 1e-6]
     if fitting:
-        return max(fitting)[1]
-    return min(range(len(durations)), key=lambda i: durations[i])
+        return max(fitting, key=lambda i: (round(comp[i], 3), durations[i]))
+    top = max(comp)
+    near = [i for i in range(n) if comp[i] >= top - 1e-6]
+    # a variant that keeps >= 85 % and fits within the hard stretch beats an over-long full take
+    hard = [i for i in range(n) if durations[i] <= slot * HARD_STRETCH / MAX_STRETCH and comp[i] >= 0.85]
+    if not any(durations[i] <= slot * HARD_STRETCH / MAX_STRETCH for i in near) and hard:
+        return max(hard, key=lambda i: (round(comp[i], 3), -durations[i]))
+    return min(near, key=lambda i: durations[i])

@@ -36,22 +36,14 @@ def overlap(a0: float, a1: float, b0: float, b1: float) -> float:
 
 
 # ---------------------------------------------------------------------------------------------- lines
-def lines_from_asr(segments: Sequence[Dict[str, Any]], max_len: float = 12.0) -> List[Line]:
-    """ASR segments -> lines; long segments are split at word gaps (word timestamps) so each line fits one breath."""
-    out: List[Line] = []
-    for seg in segments:
-        words = seg.get("words") or []
-        if seg["end"] - seg["start"] <= max_len or len(words) < 4:
-            out.append(Line(0, float(seg["start"]), float(seg["end"]), seg.get("text", "").strip(), source="asr"))
-            continue
-        cur: List[Dict[str, Any]] = []
-        for w in words:
-            if cur and (w["start"] - cur[0]["start"] > max_len or (w["start"] - cur[-1]["end"] > 0.5 and w["start"] - cur[0]["start"] > max_len / 2)):
-                out.append(Line(0, cur[0]["start"], cur[-1]["end"], "".join(x["w"] for x in cur).strip(), source="asr"))
-                cur = []
-            cur.append(w)
-        if cur:
-            out.append(Line(0, cur[0]["start"], cur[-1]["end"], "".join(x["w"] for x in cur).strip(), source="asr"))
+def lines_from_asr(segments: Sequence[Dict[str, Any]], max_len: float = 8.0, lang: Optional[str] = None,
+                  turns: Optional[Sequence[Dict[str, Any]]] = None) -> List[Line]:
+    """ASR segments -> lines rebuilt from the words (:mod:`dubber.core.segment`): sentence ends, pauses > 0.6 s and speaker
+    turns (``turns`` from diarization, when known) break a line; long sentences are split at their best pause/comma."""
+    from dubber.core import segment
+
+    words = segment.words_of(segments, lang)
+    out = [Line(0, a, b, t, source="asr") for a, b, t in segment.segment(words, turns=turns, max_s=max_len)]
     return _number(out)
 
 
@@ -197,16 +189,35 @@ _FILLERS = {
 }
 
 
-def shorten(text: str, lang: str) -> List[str]:
+#: a shorter wording must keep at least this share of the letters (real case: "Бивис, нам нужно достать кое-что из этого ИИ."
+#: was cut to "Бивис." - 12 % of the line, the meaning gone) and at least two words
+MIN_KEEP = 0.7
+
+
+def kept_share(variant: str, text: str) -> float:
+    """Share of the letters of ``text`` still in ``variant`` (1.0 = complete)."""
+    a = sum(c.isalnum() for c in text)
+    return 1.0 if a == 0 else min(1.0, sum(c.isalnum() for c in variant) / a)
+
+
+def acceptable_variant(variant: str, text: str, min_keep: float = MIN_KEEP) -> bool:
+    words = re.findall(r"\w+", variant)
+    return kept_share(variant, text) >= min_keep and (len(words) >= 2 or len(re.findall(r"\w+", text)) < 2)
+
+
+def shorten(text: str, lang: str, min_keep: float = MIN_KEEP) -> List[str]:
     """Shorter variants of a translation, most conservative first: drop parentheticals, filler words, repeated words,
-    then the last clause.  The time fitter tries them in order (research note 04, step "shorten the translation")."""
+    then the last clause.  Only variants that keep >= ``min_keep`` of the letters and two or more words are returned, so the
+    meaning survives; the time fitter tries them only after shifting into pauses and stretching up to 1.15x."""
     out: List[str] = []
 
     def add(t: str) -> None:
         t = re.sub(r"\s+([,.!?…])", r"\1", re.sub(r"\s+", " ", t)).strip(" ,;")
         t = re.sub(r"^[,;]\s*", "", t)
-        if t and t != text and t not in out:
-            out.append(t[0].upper() + t[1:] if text[:1].isupper() else t)
+        if t and t[:1].islower() and text[:1].isupper():
+            t = t[0].upper() + t[1:]
+        if t and t != text and t not in out and acceptable_variant(t, text, min_keep):
+            out.append(t)
     t = re.sub(r"\s*[(\[][^)\]]*[)\]]", "", text)
     add(t)
     for f in sorted(_FILLERS.get(lang, []), key=len, reverse=True):

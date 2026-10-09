@@ -1,7 +1,8 @@
 """Localisation: flat JSON catalogs ``dubber/locales/<code>.json`` and ``tr(key, **params)`` (never raises).
 
 Languages: ``ru`` and ``en`` (the audiobook program also has ``de``; add it the same way - copy en.json, translate, add the code to
-``LANGS``).  Order: ``VOXPRINT_LANG``, saved choice (``state/language``), the OS language, English.
+``LANGS``).  Order: ``VOXPRINT_LANG``, the shared Voxprint choice (``suite.json`` ``ui_language``, when it is a language we
+have), our saved choice (``state/language``), the OS language, English.
 The diagnostic REPORT is always English (so it can be pasted anywhere and read by anyone); only the UI is localised.
 """
 from __future__ import annotations
@@ -78,17 +79,26 @@ def _saved_file() -> Path:
     return paths.state_dir() / "language"
 
 
+def saved_language() -> Optional[str]:
+    try:
+        return normalize_code(_saved_file().read_text(encoding="utf-8"))
+    except OSError:
+        return None
+
+
 def detect_language() -> str:
     code = normalize_code(os.environ.get("VOXPRINT_LANG"))
     if code:
         return code
     try:
-        code = normalize_code(_saved_file().read_text(encoding="utf-8"))
+        from dubber.infra import suite
+
+        code = suite.ui_language()
         if code:
             return code
-    except OSError:
+    except Exception:  # noqa: BLE001 - the shared file must never block the start
         pass
-    return system_language() or DEFAULT_LANG
+    return saved_language() or system_language() or DEFAULT_LANG
 
 
 def current() -> str:
@@ -108,6 +118,9 @@ def set_language(lang: str, save: bool = True) -> None:
                 _saved_file().write_text(lang, encoding="utf-8")
             except OSError:
                 pass
+            from dubber.infra import suite
+
+            suite.set_quietly("ui_language", lang)
 
 
 def reset() -> None:

@@ -50,7 +50,25 @@ def output_format() -> str:
 
 def engine_cfg() -> Dict[str, Any]:
     s = load()
-    return {k: s[k] for k in ENGINE_KEYS}
+    cfg = {k: s[k] for k in ENGINE_KEYS}
+    cfg["device"] = device()
+    return cfg
+
+
+def device() -> str:
+    """auto | cuda | cpu - shared by all Voxprint programs (suite.json ``gpu``); our own older setting counts until it is set."""
+    from dubber.infra import suite
+
+    if suite.has("gpu"):
+        return suite.device_setting()
+    v = str(load().get("device") or "auto")
+    return v if v in ("auto", "cuda", "cpu") else "auto"
+
+
+def set_device(value: str) -> None:
+    from dubber.infra import suite
+
+    suite.set_quietly("gpu", {"cuda": "cuda:0"}.get(value, value))
 
 
 def redacted(values: Dict[str, Any]) -> Dict[str, Any]:

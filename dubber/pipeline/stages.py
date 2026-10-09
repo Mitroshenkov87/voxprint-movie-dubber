@@ -25,6 +25,8 @@ HEAVY = {"vad", "separation", "asr", "diarization", "translation", "tts"}       
 GPU = {"separation", "asr", "diarization", "translation", "tts"}                   # hold the shared Voxprint GPU lock
 BLOCK_S = 60.0              # TTS + fitting work through the film in blocks of this length (Watch mode follows the blocks)
 TAKES = 3                   # best-of-N for lines that do not fit
+#: bumped when a stage's algorithm changes, so projects analysed by an older build redo that stage (and only the later ones)
+ASR_VERSION, SCRIPT_VERSION, MT_VERSION = 2, 2, 2
 
 DEFAULT_CFG: Dict[str, Any] = {
     "device": "auto", "allow_download": True, "inprocess": False,
@@ -48,6 +50,28 @@ def _rng(p: Project) -> Tuple[Optional[float], Optional[float]]:
     return (float(r[0]), float(r[1])) if r else (None, None)
 
 
+# ---------------------------------------------------------------------------------------------- source language
+def requested_source_lang(p: Project) -> str:
+    """The source language the user asked for (``auto`` unless chosen).  Only this goes into the cache keys: the language found
+    by probing / recognition is stored separately (``source_lang_detected``) - otherwise "auto" resolved to "en" after the
+    recognition changed the keys and a later MP4 remux re-ran the whole pipeline from the subtitles (real case, run 2)."""
+    v = str(p.settings.get("source_lang") or "auto").strip().lower()
+    return v or "auto"
+
+
+def source_lang(p: Project) -> str:
+    """The language to work with: the user's choice, else the detected one (recognition, else the audio track tag), else en."""
+    req = requested_source_lang(p)
+    if req != "auto":
+        return req
+    return str(p.settings.get("source_lang_detected") or p.settings.get("source_lang_track") or "en")
+
+
+def _asr_hint(p: Project) -> Optional[str]:
+    req = requested_source_lang(p)
+    return req if req != "auto" else (p.settings.get("source_lang_track") or None)
+
+
 # ---------------------------------------------------------------------------------------------- cache keys
 def inputs_for(key: str, p: Project, cfg: Dict[str, Any], prev: str) -> str:
     s, c = p.settings, cfg
@@ -56,13 +80,13 @@ def inputs_for(key: str, p: Project, cfg: Dict[str, Any], prev: str) -> str:
     parts: Dict[str, Any] = {
         "probe": [file_fingerprint(p.source)],
         "extract": [s.get("audio_track"), s.get("range")],
-        "subtitles": [s.get("source_lang"), s.get("target_lang"), s.get("subtitle_choice"), bool(c.get("subdl_key")), bool(c.get("opensubtitles_key"))],
+        "subtitles": [requested_source_lang(p), s.get("target_lang"), s.get("subtitle_choice"), bool(c.get("subdl_key")), bool(c.get("opensubtitles_key"))],
         "vad": [c.get("vad")],
         "separation": [c.get("separation"), c.get("roformer_model") if c.get("separation") == "roformer" else ""],
-        "asr": [c.get("asr"), c.get("asr_repo"), s.get("source_lang")],
-        "script": [],
+        "asr": [c.get("asr"), c.get("asr_repo"), requested_source_lang(p), ASR_VERSION],
+        "script": [SCRIPT_VERSION],
         "diarization": [s.get("multi_voice"), c.get("diarization")],
-        "translation": [c.get("translation"), s.get("target_lang"), s.get("profanity")],
+        "translation": [c.get("translation"), s.get("target_lang"), s.get("profanity"), MT_VERSION],
         "voices": [s.get("multi_voice"), s.get("single_voice"), [(sp.id, sp.voice.kind, sp.voice.id) for sp in p.speakers]],
         "tts": [c.get("tts"), c.get("tts_model"), s.get("actor_weight") if s.get("multi_voice") else None,
                 [(sp.id, sp.voice.kind, sp.voice.id, p.is_key(sp)) for sp in p.speakers] if s.get("multi_voice") else None, [(ln.id, ln.translation, ln.speaker, ln.keep_original, ln.start, ln.end) for ln in p.lines]],
@@ -83,8 +107,7 @@ def st_probe(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
     if not info.audio:
         raise RuntimeError("the file has no audio track")
     lang = info.audio[min(int(p.settings.get("audio_track") or 0), len(info.audio) - 1)].lang2
-    if lang in ("en", "ru", "de", "fr", "es", "it") and not p.settings.get("source_lang_user"):
-        p.settings["source_lang"] = lang
+    p.settings["source_lang_track"] = lang if lang in ("en", "ru", "de", "fr", "es", "it") else None
     return f"{info.duration / 60:.1f} min, {len(info.audio)} audio, {len(info.subtitles)} subtitle tracks"
 
 
@@ -131,7 +154,7 @@ def find_subs(p: Project, lang: str, cfg: Dict[str, Any], emit: Emit, online: bo
 
 def st_subtitles(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
     choice = p.settings.get("subtitle_choice", "auto")
-    tgt, src = p.settings["target_lang"], p.settings["source_lang"]
+    tgt, src = p.settings["target_lang"], source_lang(p)
     found: Dict[str, Any] = {}
     if choice == "none":
         pass
@@ -179,11 +202,12 @@ def st_script(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
         lines = script.lines_from_cues(subtitles.shift(source_cues, subtitles.estimate_offset(source_cues, windows)), target=False)
         how = "original-language subtitles"
     elif asr.get("segments"):
-        lines = script.lines_from_asr(asr["segments"])
+        lines = script.lines_from_asr(asr["segments"], lang=asr.get("language") or source_lang(p))
         how = "speech recognition"
     else:
         raise RuntimeError("no subtitles and no speech recognition result: enable recognition (ASR) or add subtitles")
-    script.snap_to_windows(lines, windows)
+    if how != "speech recognition":                 # recognised words are timed exactly; subtitle timing is approximate
+        script.snap_to_windows(lines, windows)
     p.lines = lines
     p.speakers = [Speaker("S1", "Speaker 1", seconds=sum(ln.duration for ln in lines))]
     music = sum(ln.keep_original for ln in lines)
@@ -275,11 +299,11 @@ def st_asr(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
         wav = p.path("audio", "mix16.wav")
     from dubber.engines.asr import transcribe_faster_whisper
 
-    res = transcribe_faster_whisper(str(wav), p.settings.get("source_lang"), cfg.get("asr_repo"), _device(cfg),
+    res = transcribe_faster_whisper(str(wav), _asr_hint(p), cfg.get("asr_repo"), _device(cfg),
                                     cfg.get("allow_download", True), lambda m: emit("log", text=m))
     write_json(out, res)
-    if res.get("language") and not p.settings.get("source_lang_user"):
-        p.settings["source_lang"] = res["language"]
+    if res.get("language"):
+        p.settings["source_lang_detected"] = res["language"]
     return f"{len(res['segments'])} segments, language {res.get('language')}"
 
 
@@ -310,6 +334,7 @@ def st_diarization(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
             from dubber.engines.diarization import pyannote_turns
 
             turns = pyannote_turns(str(wav), _device(cfg), cfg.get("allow_download", True), lambda m: emit("log", text=m))
+            resplit_at_turns(p, turns, emit)
             script.assign_speakers(p.lines, turns)
             mapping = {ln.id: ln.speaker for ln in p.lines}
         except Exception as exc:  # noqa: BLE001 - no token / not installed: fall back
@@ -321,6 +346,19 @@ def st_diarization(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
         mapping = cluster_lines(p.lines, str(wav))
     _renumber(p, mapping)
     return f"{len(p.speakers)} speakers ({how})"
+
+
+def resplit_at_turns(p: Project, turns: List[Dict[str, Any]], emit: Emit) -> None:
+    """Lines made from recognition are rebuilt with the speaker turns as hard breaks, so no line mixes two voices (only while
+    nobody edited the script; subtitle lines keep their timing)."""
+    asr = read_json(p.path("analysis", "asr.json"), {}) or {}
+    if not turns or not asr.get("segments") or not p.lines or any(ln.source != "asr" or ln.edited for ln in p.lines):
+        return
+    new = script.lines_from_asr(asr["segments"], lang=asr.get("language") or source_lang(p), turns=turns)
+    if new and len(new) != len(p.lines):
+        emit("log", text=f"lines re-cut at speaker changes: {len(p.lines)} -> {len(new)}")
+    if new:
+        p.lines = new
 
 
 def _renumber(p: Project, mapping: Dict[int, str]) -> None:
@@ -370,7 +408,7 @@ def _translate(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
     todo = [ln for ln in p.lines if not ln.keep_original and not ln.translation.strip() and ln.text.strip()]
     if not todo:
         return "nothing to translate (subtitles in the dub language)"
-    src, tgt = p.settings["source_lang"], p.settings["target_lang"]
+    src, tgt = source_lang(p), p.settings["target_lang"]
     texts = [ln.text for ln in todo]
     if cfg.get("translation") == "mock":
         from dubber.engines.translation import mock_translate
@@ -511,7 +549,8 @@ def st_tts(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
                 if attempt == 1:
                     for seed in range(1, TAKES):
                         cands.append((ln.spoken, synth([(ln.id, ln.spoken)], seed=seed)[ln.id]))
-                k = timefit.best_take([len(w) / sr for _, w in cands], slot)
+                k = timefit.best_take([len(w) / sr for _, w in cands], slot,
+                                      [script.kept_share(t, ln.translation) for t, _ in cands])
                 ln.spoken, wavs[ln.id] = cands[k]
                 secs[ln.id] = len(wavs[ln.id]) / sr
                 stats["retried"] += 1
