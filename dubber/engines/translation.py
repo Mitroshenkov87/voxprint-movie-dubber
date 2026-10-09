@@ -16,6 +16,18 @@ from dubber import models
 #: target/source length in characters below which a translation is treated as incomplete (ru/de/en are all >= ~0.8 normally)
 MIN_RATIO = 0.5
 Translate = Callable[[List[str]], List[str]]
+#: Opus-MT leaves this token alone; it stands in for AI / A.I. / A. I. and is put back after translation
+AI_PLACEHOLDER = "XQZ1"
+# "A. I. Pushkin" is a person's initials, not the acronym, so a following capital name is not replaced.
+# The capital-name lookahead must stay case-sensitive (IGNORECASE would treat "to" as a name).
+_AI_ACRONYM = re.compile(r"(?<![\w])(?:AI|A\.I\.?)(?![\w])|(?<![\w])A\.\s+I\.(?!\s*[A-Z])")
+_AI_TOKEN = re.compile(r"XQZ1\w*", re.IGNORECASE)
+_PROPER = {"Beavis", "Butthead", "Butt-Head", "I", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
+           "Sunday", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
+           "November", "December", "English", "Russian", "American", "America", "God", "Christmas"}
+_WORD = re.compile(r"[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*")
+_CYRILLIC_TARGETS = {"ru", "uk", "be", "bg", "sr", "kk"}
+_LETTER_RUN = re.compile(r"([^\W\d_])\1{2,}")
 
 
 def split_sentences(text: str) -> List[str]:
@@ -117,6 +129,101 @@ class OpusMT:
         return out
 
 
+def source_has_ai(text: str) -> bool:
+    """True when ``text`` says AI / A.I. / A. I. as a word (not inside AIM, not "A. I. Surname")."""
+    return _AI_ACRONYM.search(text or "") is not None
+
+
+def protect_ai(text: str) -> str:
+    """Replace the acronym with ``AI_PLACEHOLDER`` so Opus-MT copies it instead of guessing."""
+    return _AI_ACRONYM.sub(AI_PLACEHOLDER, text or "")
+
+
+def restore_ai(text: str, tgt: str) -> str:
+    """Put the acronym back: "ИИ" for Russian, "AI" otherwise. Inflected leftovers (``XQZ1а``) count too."""
+    rep = "ИИ" if (tgt or "").lower()[:2] == "ru" else "AI"
+    return _AI_TOKEN.sub(rep, text or "")
+
+
+def lowercase_mid_title(text: str) -> str:
+    """Lowercase mid-sentence Title Case common nouns ("Artificial Intelligence" -> "artificial intelligence").
+
+    The first word and a word after ``.!?`` stay, as do ALL CAPS and a small proper-noun list. Opus-MT otherwise
+    reads the capitals as a name ("Искусственная Разведка" for Artificial Intelligence)."""
+    if not text:
+        return text
+    out: List[str] = []
+    idx = 0
+    sentence_start = True
+    for m in _WORD.finditer(text):
+        out.append(text[idx:m.start()])
+        word = m.group(0)
+        if any(c.isalpha() for c in word):
+            if sentence_start or word in _PROPER or (word.isupper() and len(word) > 1):
+                out.append(word)
+            elif _is_title_word(word):
+                out.append(_lower_title(word))
+            else:
+                out.append(word)
+            sentence_start = False
+        else:
+            out.append(word)
+        idx = m.end()
+        if re.match(r"\s*[.!?…]", text[m.end():]):
+            sentence_start = True
+    out.append(text[idx:])
+    return "".join(out)
+
+
+def _is_title_word(word: str) -> bool:
+    parts = [p for p in re.split(r"[-']", word) if p]
+    return bool(parts) and all(p[:1].isupper() and (len(p) == 1 or p[1:].islower()) for p in parts)
+
+
+def _lower_title(word: str) -> str:
+    return re.sub(r"[A-Za-z]+", lambda m: m.group(0)[:1].lower() + m.group(0)[1:], word)
+
+
+def collapse_letter_runs(text: str) -> str:
+    """Collapse a run of 3 or more of the same letter to 2 ("Ewwwww." -> "Eww.") before MT sees it."""
+    return _LETTER_RUN.sub(r"\1\1", text or "")
+
+
+def _proper_names(source: str) -> set:
+    """Capitalised words and ALL-CAPS brands in the source, compared case-insensitively."""
+    names = {m.group(0).lower() for m in re.finditer(r"\b[A-Z][A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*\b", source or "")}
+    names |= {m.group(0).lower() for m in re.finditer(r"\b[A-Z]{2,}\b", source or "")}
+    return names
+
+
+def drop_latin_leftovers(text: str, source: str, tgt: str) -> str:
+    """Drop Latin-only tokens a Cyrillic translation kept ("Фу, www." -> "Фу."), except names and brands from the source."""
+    if (tgt or "").lower()[:2] not in _CYRILLIC_TARGETS:
+        return text or ""
+    keep = _proper_names(source)
+
+    def repl(m: "re.Match[str]") -> str:
+        return m.group(0) if m.group(0).lower() in keep else ""
+
+    cleaned = re.sub(r"\b[A-Za-z]+(?:'[A-Za-z]+)?\b", repl, text or "")
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    cleaned = re.sub(r"\s+([,.;:!?…])", r"\1", cleaned)
+    cleaned = re.sub(r",\s*(?=[.!?…])", "", cleaned)
+    cleaned = re.sub(r"\(\s*\)", "", cleaned)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    return cleaned.strip(" ,;")
+
+
+def prepare_mt(text: str) -> str:
+    """Source text as Opus-MT should see it: letter runs collapsed, AI protected, mid-sentence capitals lowered."""
+    return lowercase_mid_title(protect_ai(collapse_letter_runs(text)))
+
+
+def finish_mt(text: str, source: str, tgt: str) -> str:
+    """Translation after Opus-MT: AI restored, then stray Latin tokens removed for a Cyrillic target."""
+    return drop_latin_leftovers(restore_ai(text, tgt), source, tgt)
+
+
 def opus_translate(texts: List[str], src: str, tgt: str, device: str, allow_download: bool, log: Callable[[str], None],
                    batch: int = 16) -> List[str]:
     if src == tgt or not texts:
@@ -126,7 +233,9 @@ def opus_translate(texts: List[str], src: str, tgt: str, device: str, allow_down
             return opus_translate(opus_translate(texts, src, "en", device, allow_download, log), "en", tgt, device, allow_download, log)
         raise RuntimeError(f"no Opus-MT model for {src}->{tgt}")
     mt = OpusMT(src, tgt, device, allow_download, log)
-    out, retried = complete_translate(texts, lambda xs: mt(xs, 4, batch), tgt, retry_fn=lambda xs: mt(xs, 1, batch), log=log)
+    prepared = [prepare_mt(t) for t in texts]
+    out, retried = complete_translate(prepared, lambda xs: mt(xs, 4, batch), tgt, retry_fn=lambda xs: mt(xs, 1, batch), log=log)
+    out = [finish_mt(o, s, tgt) for o, s in zip(out, texts)]
     log(f"translation: {len(texts)} lines" + (f", {retried} sentence(s) re-translated (incomplete first result)" if retried else ""))
     return out
 

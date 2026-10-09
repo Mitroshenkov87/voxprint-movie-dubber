@@ -2,6 +2,7 @@
 1.15x -> (runner) shorter translation and best-of-N takes -> otherwise the line may run up to 1.25x and is flagged."""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence
 
@@ -25,6 +26,22 @@ class Placement:
         return self.verdict == "too_long"
 
 
+def is_short_interjection(line: Line) -> bool:
+    """Whoa!, Yes!, No., Wait., Boy.: a source slot of at most 1 s, or at most two words."""
+    src = (line.text or "").strip()
+    if not src:
+        return False
+    return line.duration <= 1.0 + 1e-6 or len(re.findall(r"\w+", src)) <= 2
+
+
+def interjection_end(line: Line, next_start: Optional[float]) -> float:
+    """How far a short interjection may run before any stretch: min(next start - GAP, end + 0.8 s)."""
+    cap = line.end + 0.8
+    if next_start is not None:
+        cap = min(next_start - GAP, cap)
+    return cap
+
+
 def place(lines: Sequence[Line], seconds: Dict[int, float], total: Optional[float] = None) -> List[Placement]:
     """Placement of every dubbed line (``seconds``: synthesised length by line id).  Lines are processed in time order and never
     overlap each other."""
@@ -37,6 +54,11 @@ def place(lines: Sequence[Line], seconds: Dict[int, float], total: Optional[floa
         limit = max(ln.end, nxt - GAP)
         earliest = max(ln.start - EARLY, prev_end + GAP if out else 0.0)
         start = max(ln.start, earliest)
+        if is_short_interjection(ln):
+            p = _place_interjection(ln, d, earliest, start, nxt)
+            prev_end = p.start + d / p.stretch
+            out.append(p)
+            continue
         if d <= ln.duration and start + d <= limit:
             p = Placement(ln.id, start, 1.0, "fits")
         elif start + d <= limit:
@@ -53,6 +75,20 @@ def place(lines: Sequence[Line], seconds: Dict[int, float], total: Optional[floa
         prev_end = p.start + d / p.stretch
         out.append(p)
     return out
+
+
+def _place_interjection(ln: Line, d: float, earliest: float, start: float, nxt: float) -> Placement:
+    """Use the following pause (up to 0.8 s) before stretching. Flag only when the line still overlaps the next one."""
+    soft = max(ln.end, interjection_end(ln, nxt))
+    if d <= ln.duration and start + d <= soft:
+        return Placement(ln.id, start, 1.0, "fits")
+    if earliest + d <= soft:
+        return Placement(ln.id, max(earliest, min(start, soft - d)), 1.0, "shifted")
+    avail = max(1e-3, (nxt - GAP) - earliest)
+    if earliest + d / HARD_STRETCH <= nxt - GAP + 1e-6:
+        stretch = 1.0 if d <= avail else round(min(d / avail, HARD_STRETCH), 3)
+        return Placement(ln.id, earliest, stretch, "stretched" if stretch > 1.001 else "shifted")
+    return Placement(ln.id, earliest, HARD_STRETCH, "too_long")
 
 
 def slot_for(line: Line, lines: Sequence[Line], total: Optional[float] = None) -> float:

@@ -460,7 +460,7 @@ class MainWindow(QWidget):
         src = p.folder / "audio" / "mix44.wav"
         if not src.exists():
             return None
-        chosen = voices.pick_reference_lines(p.lines, sid or None, max_s=10.0) or [ln for ln in p.lines if not sid or ln.speaker == sid][:3]
+        chosen = voices.pick_reference_lines(p.lines, sid or None, max_s=10.0, wav=src) or [ln for ln in p.lines if not sid or ln.speaker == sid][:3]
         if not chosen:
             return None
         import numpy as np

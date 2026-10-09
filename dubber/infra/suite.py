@@ -112,7 +112,12 @@ def models_dir() -> Optional[Path]:
 
 
 def gpu() -> str:
-    return normalize_gpu(read_raw().get("gpu")) or DEFAULT_GPU
+    """``auto`` / ``cpu`` / ``cuda:N``. A hand-edited object ``{"device": "cuda:0", "vram_fraction": 0.5}`` still yields the device;
+    :func:`dubber.infra.resources.vram_fraction` reads the cap. ``set_value`` keeps storing a string."""
+    value = read_raw().get("gpu")
+    if isinstance(value, dict):
+        value = value.get("device", value.get("gpu"))
+    return normalize_gpu(value) or DEFAULT_GPU
 
 
 def device_setting() -> str:

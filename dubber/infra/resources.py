@@ -1,8 +1,9 @@
 """Resource policy for every model stage: which GPU there is, how much VRAM and RAM is free right now, and how much a run may take.
 
-Suite rule (agreed with Voxprint AI Audiobook Builder): a run uses at most ``VRAM_SHARE`` (75 %) of the VRAM that is *free* when the
-stage starts, and at most ``RAM_SHARE`` of the free system RAM.  A card that is filled to the brim makes the driver spill into system
-RAM and everything crawls; 70-80 % does not.  Measuring the *free* memory (not the total) leaves room for whatever else uses the GPU.
+Suite rule (agreed with Voxprint AI Audiobook Builder) for system RAM: a run uses at most ``RAM_SHARE`` of the free RAM.
+VRAM is not a share of free memory. The budget is whatever is free right now minus a headroom of ``max(2 GB, 8 % of the card)``,
+measured again before each TTS batch, so the driver is not pushed into system RAM. An optional fraction
+(``VOXPRINT_VRAM_FRACTION``, or ``vram_fraction`` on the shared ``gpu`` value) can cap that budget; it is off unless set.
 
 What the budget decides:
 
@@ -20,10 +21,14 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-VRAM_SHARE = 0.75
+from dubber.infra import suite
+
 RAM_SHARE = 0.75
+#: leave at least this much VRAM unused: max(VRAM_HEADROOM_GB, VRAM_HEADROOM_FRAC * total)
+VRAM_HEADROOM_GB = 2.0
+VRAM_HEADROOM_FRAC = 0.08
 GB = 1024 ** 3
 
 #: VRAM a model needs while it runs (weights + workspace, GB); TTS 1.7B with CUDA Graphs peaked at ~5 GB on the RTX 4090 Laptop test.
@@ -32,7 +37,7 @@ MODEL_VRAM_GB: Dict[str, float] = {"tts_1_7b": 5.0, "tts_0_6b": 2.6, "separation
 #: system RAM a model needs when it runs on the CPU (GB, fp32)
 MODEL_RAM_GB: Dict[str, float] = {"tts_1_7b": 8.0, "tts_0_6b": 3.5, "separation": 2.0, "asr": 3.0, "diarization": 1.5,
                                   "translation": 1.2, "vad": 0.3}
-TTS_ITEM_VRAM_GB = 0.9          # one more line in a TTS batch (KV cache + activations, bf16)
+TTS_ITEM_VRAM_GB = 1.2          # one more line in a batched TTS generate (measured ~1.2 GB; KV cache + activations, bf16)
 TTS_ITEM_RAM_GB = 0.6           # the same on the CPU (fp32)
 TTS_ACT_RESERVE_GB = 0.5        # workspace of a single generate call
 ADAPTER_VRAM_GB = 0.15          # one loaded LoRA voice adapter (+ its prompt)
@@ -55,7 +60,7 @@ class Snapshot:
 
     @property
     def vram_budget_gb(self) -> float:
-        return round(VRAM_SHARE * self.vram_free_gb, 2)
+        return round(vram_allowance_gb(self.vram_free_gb, self.vram_total_gb, vram_fraction()), 2)
 
     @property
     def ram_budget_gb(self) -> float:
@@ -65,8 +70,9 @@ class Snapshot:
         ram = f"RAM {self.ram_free_gb:.1f} of {self.ram_total_gb:.1f} GB free (budget {self.ram_budget_gb:.1f} GB)"
         if not self.has_gpu:
             return f"no NVIDIA GPU found; {ram}"
+        room = vram_headroom_gb(self.vram_total_gb)
         return (f"{self.gpu}: VRAM {self.vram_free_gb:.1f} of {self.vram_total_gb:.1f} GB free, budget {self.vram_budget_gb:.1f} GB "
-                f"({int(VRAM_SHARE * 100)} %); {ram}")
+                f"(headroom {room:.1f} GB); {ram}")
 
 
 # ---------------------------------------------------------------------------------------------- measuring
@@ -160,7 +166,7 @@ class StagePlan:
 
 
 def plan_stage(stage: str, snap: Snapshot, device: str, tts_model: str = "tts_1_7b", lighter_ok: bool = True) -> StagePlan:
-    """Device (and TTS model) for one model stage, so that it fits ``VRAM_SHARE`` of the free VRAM.
+    """Device (and TTS model) for one model stage, so that it fits the VRAM budget (free minus headroom).
 
     Light stages that do not fit go to the CPU (a few minutes slower, never a stall).  TTS on the CPU is far too slow, so it first
     switches to the 0.6B model; if even that does not fit it stays on the GPU at batch 1 (the batch logic halves on out-of-memory)."""
@@ -210,23 +216,92 @@ def keep_voices_loaded(budget_left_gb: float, batch: int = 1) -> bool:
 
 
 class VramBudget:
-    """In a worker process: the budget fixed when the stage starts (``VRAM_SHARE`` of the free VRAM *before* our model is loaded),
-    and what is left of it now (whatever our process took since then counts against it)."""
+    """In a worker process: how much VRAM a batch may use, from the memory that is free *now*.
+
+    ``budget = max(0, free_now - max(2 GB, 8 % of total))``, optionally capped by :func:`vram_fraction`. Re-measure with
+    :meth:`remeasure` before each TTS batch group. ``free_now`` already includes this process, so the result is not reduced
+    a second time by what we allocated."""
 
     def __init__(self) -> None:
         g = gpu_from_torch()
+        self.total = g[1] if g else 0.0
         self.free0 = g[2] if g else 0.0
-        self.budget = VRAM_SHARE * self.free0
-        total, avail = ram_gb()
+        self.fraction = vram_fraction()
+        self.budget = vram_allowance_gb(self.free0, self.total, self.fraction)
+        _total, avail = ram_gb()
         self.ram_budget = RAM_SHARE * avail
 
     def used_by_us(self) -> float:
         g = gpu_from_torch()
         return max(0.0, self.free0 - g[2]) if g else 0.0
 
+    def remeasure(self) -> float:
+        """Set ``budget`` from the VRAM that is free at this moment and return it."""
+        g = gpu_from_torch()
+        free_now = g[2] if g else 0.0
+        if g:
+            self.total = g[1]
+        self.budget = vram_allowance_gb(free_now, self.total, self.fraction)
+        return self.budget
+
     def left(self) -> float:
-        return self.budget - self.used_by_us()
+        """The budget from a fresh measurement (free memory already reflects what this process holds)."""
+        return self.remeasure()
 
     def describe(self) -> str:
-        return (f"VRAM budget {self.budget:.1f} GB ({int(VRAM_SHARE * 100)} % of {self.free0:.1f} GB free at start), "
-                f"used {self.used_by_us():.1f} GB, left {self.left():.1f} GB; RAM budget {self.ram_budget:.1f} GB")
+        left = self.remeasure()
+        cap = f", cap {self.fraction:.0%} of {self.total:.1f} GB" if self.fraction else ""
+        return (f"VRAM budget {self.budget:.1f} GB (free now minus headroom{cap}), left {left:.1f} GB; "
+                f"RAM budget {self.ram_budget:.1f} GB")
+
+
+def vram_headroom_gb(total_gb: float) -> float:
+    """VRAM left unused on purpose: at least 2 GB, or 8 % of the card when that is larger."""
+    return max(VRAM_HEADROOM_GB, VRAM_HEADROOM_FRAC * max(0.0, total_gb))
+
+
+def _parse_vram_fraction(value: object) -> Optional[float]:
+    """A cap in (0, 1], or None when the value is missing, empty, 0, or not a fraction (the cap stays off)."""
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return None
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        frac = float(value)
+    except (TypeError, ValueError):
+        return None
+    if frac <= 0 or frac > 1:
+        return None
+    return frac
+
+
+def _fraction_from_mapping(data: Dict[str, Any]) -> Optional[float]:
+    gpu = data.get("gpu")
+    if isinstance(gpu, dict) and "vram_fraction" in gpu:
+        return _parse_vram_fraction(gpu.get("vram_fraction"))
+    if "vram_fraction" in data:
+        return _parse_vram_fraction(data.get("vram_fraction"))
+    return None
+
+
+def vram_fraction(cfg: Optional[Dict[str, Any]] = None) -> Optional[float]:
+    """Optional user cap. ``VOXPRINT_VRAM_FRACTION`` wins, then ``cfg``, then suite.json (``gpu.vram_fraction`` or ``vram_fraction``).
+
+    Missing, empty, and 0 mean off."""
+    env = os.environ.get("VOXPRINT_VRAM_FRACTION")
+    if env is not None and str(env).strip() != "":
+        return _parse_vram_fraction(env)
+    if cfg:
+        if "vram_fraction" in cfg or (isinstance(cfg.get("gpu"), dict) and "vram_fraction" in cfg["gpu"]):
+            return _fraction_from_mapping(cfg)
+    return _fraction_from_mapping(suite.read_raw())
+
+
+def vram_allowance_gb(free_gb: float, total_gb: float, fraction: Optional[float] = None) -> float:
+    """``max(0, free_now - max(2 GB, 0.08 * total))``, then ``min`` with ``fraction * total`` when a cap is set."""
+    budget = max(0.0, free_gb - vram_headroom_gb(total_gb))
+    if fraction is not None and fraction > 0:
+        budget = min(budget, fraction * total_gb)
+    return budget
