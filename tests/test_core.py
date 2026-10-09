@@ -10,6 +10,8 @@ import pytest
 import soundfile as sf
 
 from dubber import ffmpeg, i18n, models, paths
+from dubber.core import script, timefit
+from dubber.core.project import Line
 from dubber.diag import clip_stages as stages
 from dubber.workers import common
 
@@ -63,6 +65,19 @@ def test_ensure_without_download_raises(monkeypatch):
 
 
 # ------------------------------------------------------------------ pure helpers
+def test_short_interjection_is_not_too_long_when_the_pause_can_take_it():
+    # "Ого-го!" is longer than a 0.36 s slot at 1.25x and shorter than the pause out to 7.58 s.
+    whoa = Line(1, 6.84, 7.20, "Whoa!", translation="Ого-го!")
+    assert script.too_long(whoa, "ru") and not script.too_long(whoa, "ru", next_start=7.58)
+    eww = Line(2, 0.0, 0.36, "Ewwwww.", translation="Фу, нет!")
+    assert script.too_long(eww, "ru") and not script.too_long(eww, "ru", next_start=1.4)
+    lines = [Line(1, 0.0, 0.36, "Boy."), Line(2, 1.3, 2.0, "Wait for me")]
+    plan = {p.id: p for p in timefit.place(lines, {1: 0.85, 2: 0.5}, total=3.0)}
+    assert plan[1].verdict != "too_long"
+    tight = [Line(1, 0.0, 0.36, "No."), Line(2, 0.42, 1.0, "Stop that")]
+    assert timefit.place(tight, {1: 1.8, 2: 0.4}, total=2.0)[0].verdict == "too_long"
+
+
 def test_wer():
     assert common.wer("Hello, world!", "hello world") == 0.0
     assert common.wer("a b c d", "a x c d") == pytest.approx(0.25)

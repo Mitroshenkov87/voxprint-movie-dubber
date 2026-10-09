@@ -34,6 +34,33 @@ def pyannote_turns(wav16: str, device: str, allow_download: bool, log: Callable[
     return [{"start": round(t.start, 3), "end": round(t.end, 3), "speaker": str(lab)} for t, _, lab in ann.itertracks(yield_label=True)]
 
 
+def try_speaker_embeddings(segments: Sequence[np.ndarray], sr: int) -> Optional[List[np.ndarray]]:
+    """One pyannote speaker embedding per waveform, or None when that model is not available.
+
+    The reference picker uses this and falls back to an MFCC + pitch vector, so tests run without the model."""
+    try:
+        import torch
+        from pyannote.audio import Inference, Model
+    except ImportError:
+        return None
+    if not segments:
+        return []
+    try:
+        model = Model.from_pretrained("pyannote/embedding")
+        infer = Inference(model, window="whole")
+        out: List[np.ndarray] = []
+        for seg in segments:
+            wav = np.asarray(seg, dtype=np.float32).reshape(-1)
+            if len(wav) < 16:
+                out.append(np.zeros(1, dtype=np.float32))
+                continue
+            emb = infer({"waveform": torch.from_numpy(wav)[None, :], "sample_rate": int(sr)})
+            out.append(np.asarray(emb, dtype=np.float32).reshape(-1))
+        return out
+    except Exception:  # noqa: BLE001 - no weights, no token, CPU-only trial: the caller has a fallback
+        return None
+
+
 def cluster_lines(lines: Sequence[Line], speech_wav: str, threshold: float = 0.35) -> Dict[int, str]:
     """Fallback: one MFCC fingerprint per line, clustered; returns line id -> ``S1``, ``S2``... (S1 = most lines)."""
     x, sr = audio.read(speech_wav, 16000)

@@ -40,6 +40,9 @@ def attention(p: Project) -> Dict[str, List[Hint]]:
     n_soft = sum(1 for ln in p.lines if ln.softened)
     if n_soft:
         out["lines"].append(("review.lines_softened", {"n": n_soft}))
+    n_ai = sum(1 for ln in p.lines if ln.review == "ai")
+    if n_ai:
+        out["lines"].append(("review.lines_ai", {"n": n_ai}))
     if p.settings.get("multi_voice"):
         if (p.stages.get("diarization") or {}).get("done") and not diarized(p):
             out["characters"].append(("review.chars_not_found", {}))

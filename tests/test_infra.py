@@ -225,37 +225,97 @@ def test_fetch_worker_reports_sizes(tmp_path, monkeypatch):
 
 
 # ------------------------------------------------------------------ VRAM / RAM policy
-def test_vram_policy_caps_at_75_percent_of_free_and_sizes_the_tts_batch():
+def test_vram_budget_keeps_headroom_and_sizes_the_tts_batch():
     from dubber.infra import resources as R
     laptop = R.Snapshot("RTX 4090 Laptop", 16.0, 15.0, 32.0, 20.0, "nvidia-smi")
-    assert laptop.vram_budget_gb == 11.25 and laptop.ram_budget_gb == 15.0
-    # everything fits: GPU, the big TTS model
+    # 15 free - max(2 GB, 8% of 16) = 13 GB; RAM stays at 75% of free
+    assert laptop.vram_budget_gb == 13.0 and laptop.ram_budget_gb == 15.0
+    assert R.TTS_ITEM_VRAM_GB == pytest.approx(1.2)
+    assert R.vram_allowance_gb(30.0, 40.0) == pytest.approx(26.8)   # 8% of 40 GB is 3.2, above the 2 GB floor
+    # everything fits: GPU, the big TTS model (5 + 0.5 + 1.2 = 6.7 <= 13)
     assert R.plan_stage("asr", laptop, "cuda").device == "cuda"
     assert R.plan_stage("tts", laptop, "cuda").tts_model == "tts_1_7b"
-    # busy card (2.5 GB free -> 1.9 GB budget): ASR goes to the CPU, TTS switches to the lighter model only if that fits
+    # busy card (2.5 GB free -> 0.5 GB budget): ASR and translation go to the CPU
     busy = R.Snapshot("RTX 4090 Laptop", 16.0, 2.5, 32.0, 20.0, "nvidia-smi")
+    assert busy.vram_budget_gb == 0.5
     assert R.plan_stage("asr", busy, "cuda").device == "cpu"
-    assert R.plan_stage("translation", busy, "cuda").device == "cuda"
-    mid = R.Snapshot("x", 16.0, 6.5, 32.0, 20.0)                    # 4.9 GB budget: 1.7B does not fit, 0.6B does
+    assert R.plan_stage("translation", busy, "cuda").device == "cpu"
+    mid = R.Snapshot("x", 16.0, 6.5, 32.0, 20.0)                    # 4.5 GB budget: 1.7B needs 6.7, 0.6B needs 4.3
+    assert mid.vram_budget_gb == 4.5
     assert R.plan_stage("tts", mid, "cuda").tts_model == "tts_0_6b"
     assert R.plan_stage("tts", mid, "cuda", lighter_ok=False).tts_model == "tts_1_7b"
     # batch: what is left of the budget after the model; CUDA Graphs always 1; CPU limited by RAM
-    assert R.tts_batch("cuda", 11.25 - 5.0, 15.0) == 6
+    assert R.tts_batch("cuda", laptop.vram_budget_gb - 5.0, 15.0) == 6   # (13 - 5 - 0.5) // 1.2
     assert R.tts_batch("cuda", 30.0, 15.0) == R.MAX_BATCH
     assert R.tts_batch("cuda", 0.2, 15.0) == 1
-    assert R.tts_batch("cuda", 11.25 - 5.0, 15.0, graphs=True) == 1
-    assert R.tts_batch("cuda", 11.25 - 5.0, 1.0) <= 2                 # almost no free RAM
+    assert R.tts_batch("cuda", laptop.vram_budget_gb - 5.0, 15.0, graphs=True) == 1
+    assert R.tts_batch("cuda", laptop.vram_budget_gb - 5.0, 1.0) <= 2     # almost no free RAM
     assert R.tts_batch("cpu", 0.0, 1.5) == 1 and R.tts_batch("cpu", 0.0, 40.0) == R.MAX_CPU_BATCH
     # several voices stay loaded while there is room, else they are swapped
     assert R.keep_voices_loaded(6.0) and not R.keep_voices_loaded(1.0)
-    assert "budget 11.2 GB" in laptop.describe() or "budget 11.3 GB" in laptop.describe()
+    assert "budget 13.0 GB" in laptop.describe()
+
+
+def test_vram_fraction_cap_is_off_unless_set(monkeypatch):
+    from dubber.infra import resources as R
+    from dubber.infra import suite
+    monkeypatch.delenv("VOXPRINT_VRAM_FRACTION", raising=False)
+    monkeypatch.setattr(suite, "read_raw", lambda: {"gpu": "auto"})
+    assert R.vram_fraction() is None
+    assert R.Snapshot("RTX", 16.0, 15.0, 32.0, 20.0).vram_budget_gb == 13.0
+    monkeypatch.setenv("VOXPRINT_VRAM_FRACTION", "0.5")
+    assert R.vram_fraction() == pytest.approx(0.5)
+    assert R.vram_allowance_gb(15.0, 16.0, 0.5) == pytest.approx(8.0)     # min(13, 0.5 * 16)
+    assert R.Snapshot("RTX", 16.0, 15.0, 32.0, 20.0).vram_budget_gb == 8.0
+    monkeypatch.setenv("VOXPRINT_VRAM_FRACTION", "0")
+    assert R.vram_fraction() is None
+    monkeypatch.setenv("VOXPRINT_VRAM_FRACTION", "")
+    assert R.vram_fraction() is None
+    monkeypatch.delenv("VOXPRINT_VRAM_FRACTION")
+    monkeypatch.setattr(suite, "read_raw", lambda: {"gpu": {"device": "cuda:1", "vram_fraction": 0.25}})
+    assert suite.gpu() == "cuda:1" and suite.normalize_gpu("cuda:0") == "cuda:0"
+    assert R.vram_fraction() == pytest.approx(0.25)
+    monkeypatch.setattr(suite, "read_raw", lambda: {"gpu": "cpu", "vram_fraction": 0.4})
+    assert suite.gpu() == "cpu" and R.vram_fraction() == pytest.approx(0.4)
+    assert R.vram_fraction({"gpu": {"vram_fraction": 0.3}}) == pytest.approx(0.3)
+
+
+def test_vram_budget_remeasures_free_before_each_batch_group(monkeypatch):
+    from dubber.engines import tts as tts_mod
+    from dubber.infra import resources as R
+    free = {"gb": 15.0}
+    monkeypatch.setattr(R, "gpu_from_torch", lambda: ("Test", 16.0, free["gb"]))
+    monkeypatch.delenv("VOXPRINT_VRAM_FRACTION", raising=False)
+    budget = R.VramBudget()
+    assert budget.budget == pytest.approx(13.0)
+    free["gb"] = 9.0
+    assert budget.remeasure() == pytest.approx(7.0)
+    assert budget.left() == pytest.approx(7.0)
+
+    class Eng(tts_mod.MockTTS):
+        def max_batch(self) -> int:
+            return 2
+
+    engine = Eng()
+    engine.budget = budget
+    seen = []
+    real = budget.remeasure
+
+    def wrapped() -> float:
+        seen.append(free["gb"])
+        return real()
+
+    budget.remeasure = wrapped  # type: ignore[method-assign]
+    got: dict = {}
+    engine.run_queue([(i, "hi") for i in range(4)], tts_mod.VoiceSpec("v", "clone"), lambda i, w: got.__setitem__(i, w))
+    assert len(got) == 4 and len(seen) >= 2                          # one fresh reading before each group of 2
 
 
 def test_snapshot_reads_ram_and_gpu(monkeypatch):
     from dubber.infra import resources as R
     monkeypatch.setenv("VOXPRINT_FAKE_VRAM", "RTX 5090 Laptop,24,20")
     s = R.snapshot(use_torch=False)
-    assert s.gpu == "RTX 5090 Laptop" and s.vram_budget_gb == 15.0 and s.ram_total_gb > 0
+    assert s.gpu == "RTX 5090 Laptop" and s.vram_budget_gb == 18.0 and s.ram_total_gb > 0
 
 
 def test_runner_moves_a_stage_that_does_not_fit_to_the_cpu(tmp_path, monkeypatch):

@@ -1,11 +1,14 @@
 """Qwen3-TTS synthesis (logic taken from Voxprint AI Audiobook Builder ``core/tts_engine.py`` and ``core/narration.py``).
 
-Backend order on an NVIDIA GPU (research note 03/06): FlashAttention-2 (if the ``flash_attn`` package exists) -> CUDA Graphs via
-``faster-qwen3-tts`` (MIT) -> standard SDPA.  On the CPU: SDPA.  Every step falls back to the next one if loading fails.
-Batching: up to ``MAX_BATCH`` (12) lines per generate call, sized by the suite VRAM policy (``dubber.infra.resources``: at most 75 % of
-the VRAM that was free when the stage started, minus what the model took); lines of similar length are batched together (sorted inside
-a small look-ahead window so the output stays close to film order for Watch mode); out-of-memory halves the batch.  Library voices
-(LoRA adapters) stay loaded side by side while the budget allows, else they are swapped one after another.
+Backend order on an NVIDIA GPU for dialogue (no LoRA adapters): CUDA Graphs via ``faster-qwen3-tts`` (MIT) first, then
+FlashAttention-2 if that package exists, then standard SDPA.  ``auto`` tries Graphs first; the batched standard backend is used when
+``tts_backend`` is ``standard/sdpa`` (or ``standard/flash_attention_2``) and stays the fallback when Graphs cannot load.  Clip 3
+(16 short lines) measured graphs/sdpa at 67.5 s against batched standard/sdpa at 208.9 s.  On the CPU: SDPA.  Every step falls back
+to the next one if loading fails.
+Batching: up to ``MAX_BATCH`` (12) lines per generate call, sized by the VRAM budget in ``dubber.infra.resources`` (free memory minus
+a headroom, re-measured before each batch; about 1.2 GB per batched line).  Lines of similar length are batched together (sorted
+inside a small look-ahead window so the output stays close to film order for Watch mode); out-of-memory halves the batch.
+Library voices (LoRA adapters) stay loaded side by side while the budget allows, else they are swapped one after another.
 The CUDA-Graphs backend synthesises one line at a time (static shapes).
 
 Voices: ``clone`` = reference clip + its text (ICL; without a text the x-vector-only mode is used); ``library`` = a LoRA adapter
@@ -146,6 +149,11 @@ class BaseTTS:
         queue = [i for i, _ in items]
         limit = max(1, self.max_batch())
         while queue:
+            budget = getattr(self, "budget", None)
+            if budget is not None:
+                budget.remeasure()
+                # keep an out-of-memory halving; do not grow back past what the fresh measurement allows
+                limit = max(1, min(limit, self.max_batch()))
             group = next_group(queue, texts, limit)
             try:
                 wavs = self.synthesize_batch([texts[i] for i in group], voice)
@@ -202,7 +210,7 @@ class MockTTS(BaseTTS):
 
 
 class QwenTTS(BaseTTS):
-    """Qwen3-TTS Base (voice cloning) with the backend chain FA2 -> CUDA Graphs -> SDPA."""
+    """Qwen3-TTS Base (voice cloning). ``auto`` tries CUDA Graphs, then FA2, then SDPA."""
 
     def __init__(self, base_dir: Path, language: str, device: str = "auto", prefer: str = "auto", need_adapters: bool = False,
                  log_fn: Callable[[str], None] = lambda m: None) -> None:
@@ -222,7 +230,7 @@ class QwenTTS(BaseTTS):
         self.model = None
         from dubber.infra import resources
 
-        self.budget = resources.VramBudget() if self.use_cuda else None      # measured before our model takes any memory
+        self.budget = resources.VramBudget() if self.use_cuda else None      # re-measured before each batch; free memory already includes the model
         errors = []
         for kind, attn in self.candidates(self.use_cuda, prefer, need_adapters):
             try:
@@ -253,17 +261,21 @@ class QwenTTS(BaseTTS):
 
     @staticmethod
     def candidates(use_cuda: bool, prefer: str = "auto", need_adapters: bool = False) -> List[Tuple[str, str]]:
+        """Backends to try, first choice first.
+
+        ``auto`` on CUDA without LoRA adapters puts ``graphs/sdpa`` first. Clip 3 (16 short lines) took 67.5 s that way and
+        208.9 s on batched ``standard/sdpa``. The batched backend is selected when ``prefer`` is ``standard/sdpa`` (settings
+        and the engine combo still list it) and remains the last fallback when Graphs cannot load. Adapters cannot use Graphs."""
         if prefer and prefer != "auto":
             kind, _, attn = prefer.partition("/")
             first = [(kind, attn or "sdpa")]
         else:
             first = []
         out = list(first)
-        if use_cuda:
-            if importlib.util.find_spec("flash_attn") is not None:
-                out.append(("standard", "flash_attention_2"))
-            if not need_adapters and importlib.util.find_spec("faster_qwen3_tts") is not None:
-                out.append(("graphs", "sdpa"))
+        if use_cuda and not need_adapters and importlib.util.find_spec("faster_qwen3_tts") is not None:
+            out.append(("graphs", "sdpa"))
+        if use_cuda and importlib.util.find_spec("flash_attn") is not None:
+            out.append(("standard", "flash_attention_2"))
         out.append(("standard", "sdpa"))
         seen, uniq = set(), []
         for c in out:

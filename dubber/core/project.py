@@ -50,6 +50,7 @@ class Line:
     edited: bool = False
     tag: str = ""                     # speaker name from the subtitles ("JOHN: ...", SDH), if any
     softened: str = ""                # the translation before the profanity filter changed it ("" = unchanged)
+    review: str = ""                  # "ai" when the source says AI and the translation lost it
 
     @property
     def duration(self) -> float:

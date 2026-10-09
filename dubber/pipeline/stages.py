@@ -4,7 +4,8 @@ can run in the GUI process (light stages, tests) or in a worker process (models)
 
 Order (research note 06): probe -> extract -> subtitles -> vad -> separation -> asr -> script -> diarization -> translation ->
 voices -> tts (+ time fitting, block by block in film order) -> mix -> mux.  Models run one after another (one process each),
-so the peak VRAM is that of the largest model; every stage keeps to 75 % of the free VRAM (``dubber.infra.resources``).
+so the peak VRAM is that of the largest model; every stage keeps a headroom of max(2 GB, 8 % of the card)
+(``dubber.infra.resources``).
 """
 from __future__ import annotations
 
@@ -18,6 +19,8 @@ import numpy as np
 
 from dubber.core import audio, media, mixing, script, subtitles, timefit, voices
 from dubber.core.project import CHUNK_S, Line, Project, Speaker, hash_of, read_json, write_json
+from dubber.engines import translation as mt
+from dubber.engines.asr import transcribe_faster_whisper
 
 Emit = Callable[..., None]
 ORDER = ["probe", "extract", "subtitles", "vad", "separation", "asr", "script", "diarization", "translation", "voices", "tts", "mix", "mux"]
@@ -26,7 +29,7 @@ GPU = {"separation", "asr", "diarization", "translation", "tts"}                
 BLOCK_S = 60.0              # TTS + fitting work through the film in blocks of this length (Watch mode follows the blocks)
 TAKES = 3                   # best-of-N for lines that do not fit
 #: bumped when a stage's algorithm changes, so projects analysed by an older build redo that stage (and only the later ones)
-ASR_VERSION, SCRIPT_VERSION, MT_VERSION = 3, 3, 3
+ASR_VERSION, SCRIPT_VERSION, MT_VERSION, VOICES_VERSION = 3, 3, 6, 2
 
 DEFAULT_CFG: Dict[str, Any] = {
     "device": "auto", "allow_download": True, "inprocess": False,
@@ -87,7 +90,8 @@ def inputs_for(key: str, p: Project, cfg: Dict[str, Any], prev: str) -> str:
         "script": [SCRIPT_VERSION],
         "diarization": [s.get("multi_voice"), c.get("diarization")],
         "translation": [c.get("translation"), s.get("target_lang"), s.get("profanity"), MT_VERSION],
-        "voices": [s.get("multi_voice"), s.get("single_voice"), [(sp.id, sp.voice.kind, sp.voice.id) for sp in p.speakers]],
+        "voices": [VOICES_VERSION, s.get("multi_voice"), s.get("single_voice"),
+                   [(sp.id, sp.voice.kind, sp.voice.id) for sp in p.speakers]],
         "tts": [c.get("tts"), c.get("tts_model"), s.get("actor_weight") if s.get("multi_voice") else None,
                 [(sp.id, sp.voice.kind, sp.voice.id, p.is_key(sp)) for sp in p.speakers] if s.get("multi_voice") else None, [(ln.id, ln.translation, ln.speaker, ln.keep_original, ln.start, ln.end) for ln in p.lines]],
         "mix": [s.get("original_volume")],
@@ -223,21 +227,66 @@ def st_voices(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
         for sp in p.speakers:
             if sp.voice.kind not in ("clone", "actor", "auto"):
                 continue
-            chosen = voices.pick_reference_lines(p.lines, sp.id)
-            if chosen:
-                secs, text = voices.build_reference(chosen, src, p.path("voices", f"{sp.id}.wav"))
+            secs, text = _make_reference(p, cfg, emit, sp.id, src, p.path("voices", f"{sp.id}.wav"))
+            if secs > 0:
                 sp.ref_audio, sp.ref_text = p.rel(p.path("voices", f"{sp.id}.wav")), text
                 made.append(f"{sp.id} {secs:.0f} s")
     else:
         v = p.settings.get("single_voice") or {}
         if (v.get("kind") or "clone") == "clone":
             main = max(p.speakers, key=lambda s: s.seconds).id if p.speakers else None
-            chosen = voices.pick_reference_lines(p.lines, main) or voices.pick_reference_lines(p.lines, None)
-            if chosen:
-                secs, text = voices.build_reference(chosen, src, p.path("voices", "single.wav"))
+            secs, text = _make_reference(p, cfg, emit, main, src, p.path("voices", "single.wav"), fallback_any=True)
+            if secs > 0:
                 p.settings["single_ref"] = {"audio": p.rel(p.path("voices", "single.wav")), "text": text}
                 made.append(f"one voice {secs:.0f} s")
     return "reference clips: " + (", ".join(made) or "none needed (library voices)")
+
+
+def _make_reference(p: Project, cfg: Dict[str, Any], emit: Emit, speaker: Optional[str], src: Path, out: Path,
+                    fallback_any: bool = False) -> Tuple[float, str]:
+    """Build one reference clip and, when ASR is available, check it once against a re-transcription."""
+    if not src.is_file():
+        return 0.0, ""
+    chosen = voices.pick_reference_lines(p.lines, speaker, wav=src)
+    if not chosen and fallback_any and speaker is not None:
+        chosen = voices.pick_reference_lines(p.lines, None, wav=src)
+    if not chosen:
+        return 0.0, ""
+    secs, text = voices.build_reference(chosen, src, out, bounds=p.lines)
+    hyp = _reference_hypothesis(out, cfg, emit)
+    if hyp is None:
+        emit("log", text=voices.reference_log(len(chosen), secs, "skipped"))
+        return secs, text
+    ok, drop, ref_text = voices.assess_reference(chosen, text, hyp)
+    if ok:
+        emit("log", text=voices.reference_log(len(chosen), secs, "OK"))
+        return secs, ref_text
+    if drop is not None and len(chosen) > 1:
+        kept = [ln for i, ln in enumerate(chosen) if i != drop]
+        secs, text = voices.build_reference(kept, src, out, bounds=p.lines)
+        hyp2 = _reference_hypothesis(out, cfg, emit)
+        if hyp2 is None:
+            emit("log", text=voices.reference_log(len(kept), secs, "rebuilt"))
+            return secs, text
+        ok2, _, ref_text = voices.assess_reference(kept, text, hyp2)
+        emit("log", text=voices.reference_log(len(kept), secs, "OK" if ok2 else "rebuilt"))
+        return secs, ref_text
+    emit("log", text=voices.reference_log(len(chosen), secs, "warn"))
+    return secs, ref_text
+
+
+def _reference_hypothesis(wav: Path, cfg: Dict[str, Any], emit: Emit) -> Optional[str]:
+    """Re-transcription of a reference clip, or None in mock mode / when ASR cannot run."""
+    if cfg.get("asr") != "whisper":
+        return None
+    try:
+        res = transcribe_faster_whisper(str(wav), None, cfg.get("asr_repo"), _device(cfg), cfg.get("allow_download", True),
+                                        lambda m: emit("log", text=m))
+    except Exception as exc:  # noqa: BLE001 - no model in a test or a CPU trial: keep the joined text
+        emit("log", text=f"reference check skipped ({type(exc).__name__})")
+        return None
+    text = " ".join(str(s.get("text") or "") for s in (res.get("segments") or [])).strip()
+    return text or None
 
 
 # ---------------------------------------------------------------------------------------------- model stages
@@ -392,7 +441,8 @@ def st_translation(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
 _RU_ACRONYMS = [(re.compile(r"(?<![\w.])(?:A\.\s?I\.?|AI|Эй\.\s?И\.?|Эй-Ай)(?![\w])"), "ИИ")]
 #: the MT also writes the acronym in Cyrillic letters ("А.И. надрал задницу", real case); that looks like initials, so it is only
 #: replaced when the source line really says A.I. / AI
-_RU_ACRONYMS_IF_SOURCE = [(re.compile(r"(?<![\w.])(?:A\.I\.?|AI)(?![\w])"), re.compile(r"(?<![\w.])(?:А\.\s?И\.?|Ай-?Ий|Ай-?Ай)(?![\w])"), "ИИ")]
+_RU_ACRONYMS_IF_SOURCE = [(re.compile(r"(?<![\w.])(?:A\.I\.?|AI)(?![\w])"),
+                              re.compile(r"(?<![\w.])(?:А\.\s?И\.?|Ай-?Ий|Ай-?Ай|АИ|МА)(?![\w])"), "ИИ")]
 
 
 def tidy_translation(text: str, tgt: str, source: str = "") -> str:
@@ -413,18 +463,29 @@ def _translate(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
     if not todo:
         return "nothing to translate (subtitles in the dub language)"
     src, tgt = source_lang(p), p.settings["target_lang"]
-    texts = [ln.text for ln in todo]
-    if cfg.get("translation") == "mock":
-        from dubber.engines.translation import mock_translate
+    before = {ln.id: ln.translation for ln in p.lines}
 
-        out = mock_translate(texts, src, tgt)
-    else:
-        from dubber.engines.translation import opus_translate
+    def engine(texts: List[str]) -> List[str]:
+        if cfg.get("translation") == "mock":
+            prepared = [mt.prepare_mt(t) for t in texts]
+            raw = mt.mock_translate(prepared, src, tgt)
+            return [mt.finish_mt(o, s, tgt) for o, s in zip(raw, texts)]
+        return mt.opus_translate(texts, src, tgt, _device(cfg), cfg.get("allow_download", True), lambda m: emit("log", text=m))
 
-        out = opus_translate(texts, src, tgt, _device(cfg), cfg.get("allow_download", True), lambda m: emit("log", text=m))
-    for ln, t in zip(todo, out):
-        ln.translation = tidy_translation(t.strip(), tgt, ln.text)
+    p.lines = script.translate_with_context(p.lines, engine, {ln.id for ln in todo})
+    for ln in p.lines:
+        if ln.translation != before.get(ln.id, ""):
+            ln.translation = tidy_translation(ln.translation.strip(), tgt, ln.text)
+            note_ai_review(ln, tgt)
     return f"{len(todo)} lines translated {src}->{tgt} ({cfg.get('translation')})"
+
+
+def note_ai_review(line: Line, tgt: str) -> None:
+    """Mark a Russian line whose source says AI and whose translation still has no "ИИ"."""
+    if (tgt or "").lower()[:2] == "ru" and mt.source_has_ai(line.text) and "ИИ" not in (line.translation or ""):
+        line.review = "ai"
+    elif line.review == "ai":
+        line.review = ""
 
 
 # ---------------------------------------------------------------------------------------------- TTS + time fitting
@@ -566,6 +627,7 @@ def st_tts(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
             fp = fitdir / f"line_{ln.id}.wav"
             audio.write(fp, w, sr)
             ln.audio, ln.audio_s, ln.place_start, ln.stretch, ln.fit = p.rel(fp), round(len(w) / sr, 3), round(pl.start, 3), pl.stretch, pl.verdict
+            # Whoa! / Yes! / Ewwwww. (slot <= 1 s or <= 2 words) are "too long" only when they still overlap the next line
             stats[pl.verdict] += 1
             records.append({"id": ln.id, "audio": ln.audio, "start": ln.place_start, "end": ln.end, "keep": False})
         until = total if bi == len(blocks) - 1 else min(total, blocks[bi + 1][1][0].start - 0.05)
