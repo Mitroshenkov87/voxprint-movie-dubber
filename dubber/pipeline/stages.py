@@ -18,6 +18,7 @@ import numpy as np
 
 from dubber.core import audio, media, mixing, script, subtitles, timefit, voices
 from dubber.core.project import CHUNK_S, Line, Project, Speaker, hash_of, read_json, write_json
+from dubber.engines import translation as mt
 from dubber.engines.asr import transcribe_faster_whisper
 
 Emit = Callable[..., None]
@@ -27,7 +28,7 @@ GPU = {"separation", "asr", "diarization", "translation", "tts"}                
 BLOCK_S = 60.0              # TTS + fitting work through the film in blocks of this length (Watch mode follows the blocks)
 TAKES = 3                   # best-of-N for lines that do not fit
 #: bumped when a stage's algorithm changes, so projects analysed by an older build redo that stage (and only the later ones)
-ASR_VERSION, SCRIPT_VERSION, MT_VERSION, VOICES_VERSION = 3, 3, 4, 2
+ASR_VERSION, SCRIPT_VERSION, MT_VERSION, VOICES_VERSION = 3, 3, 5, 2
 
 DEFAULT_CFG: Dict[str, Any] = {
     "device": "auto", "allow_download": True, "inprocess": False,
@@ -439,7 +440,8 @@ def st_translation(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
 _RU_ACRONYMS = [(re.compile(r"(?<![\w.])(?:A\.\s?I\.?|AI|Эй\.\s?И\.?|Эй-Ай)(?![\w])"), "ИИ")]
 #: the MT also writes the acronym in Cyrillic letters ("А.И. надрал задницу", real case); that looks like initials, so it is only
 #: replaced when the source line really says A.I. / AI
-_RU_ACRONYMS_IF_SOURCE = [(re.compile(r"(?<![\w.])(?:A\.I\.?|AI)(?![\w])"), re.compile(r"(?<![\w.])(?:А\.\s?И\.?|Ай-?Ий|Ай-?Ай)(?![\w])"), "ИИ")]
+_RU_ACRONYMS_IF_SOURCE = [(re.compile(r"(?<![\w.])(?:A\.I\.?|AI)(?![\w])"),
+                              re.compile(r"(?<![\w.])(?:А\.\s?И\.?|Ай-?Ий|Ай-?Ай|АИ|МА)(?![\w])"), "ИИ")]
 
 
 def tidy_translation(text: str, tgt: str, source: str = "") -> str:
@@ -464,18 +466,25 @@ def _translate(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
 
     def engine(texts: List[str]) -> List[str]:
         if cfg.get("translation") == "mock":
-            from dubber.engines.translation import mock_translate
-
-            return mock_translate(texts, src, tgt)
-        from dubber.engines.translation import opus_translate
-
-        return opus_translate(texts, src, tgt, _device(cfg), cfg.get("allow_download", True), lambda m: emit("log", text=m))
+            prepared = [mt.prepare_mt(t) for t in texts]
+            raw = mt.mock_translate(prepared, src, tgt)
+            return [mt.finish_mt(o, s, tgt) for o, s in zip(raw, texts)]
+        return mt.opus_translate(texts, src, tgt, _device(cfg), cfg.get("allow_download", True), lambda m: emit("log", text=m))
 
     p.lines = script.translate_with_context(p.lines, engine, {ln.id for ln in todo})
     for ln in p.lines:
         if ln.translation != before.get(ln.id, ""):
             ln.translation = tidy_translation(ln.translation.strip(), tgt, ln.text)
+            note_ai_review(ln, tgt)
     return f"{len(todo)} lines translated {src}->{tgt} ({cfg.get('translation')})"
+
+
+def note_ai_review(line: Line, tgt: str) -> None:
+    """Mark a Russian line whose source says AI and whose translation still has no "ИИ"."""
+    if (tgt or "").lower()[:2] == "ru" and mt.source_has_ai(line.text) and "ИИ" not in (line.translation or ""):
+        line.review = "ai"
+    elif line.review == "ai":
+        line.review = ""
 
 
 # ---------------------------------------------------------------------------------------------- TTS + time fitting

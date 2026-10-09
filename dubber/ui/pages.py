@@ -729,6 +729,8 @@ class LinesPage(QWidget):
             return tr("lines.flag_kept")
         if ln.softened:
             return tr("lines.flag_softened")
+        if ln.review == "ai":
+            return tr("lines.flag_ai")
         nxt = p.lines[i + 1].start if i + 1 < len(p.lines) else None
         if ln.fit == "too_long" or script.too_long(ln, p.settings.get("target_lang", "ru"), next_start=nxt):
             return tr("lines.flag_long")

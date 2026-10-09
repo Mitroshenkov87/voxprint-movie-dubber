@@ -402,6 +402,38 @@ def test_stray_marks_are_tidied():
     assert t("Wait... what?") == "Wait... what?" and t("Hello , world.") == "Hello, world." and t("Yes, (really) fine.") == "Yes, (really) fine."
 
 
+def test_ai_placeholder_and_mid_sentence_capitals():
+    src = "AI stands for Artificial Intelligence, butthead."
+    assert T.prepare_mt(src) == "XQZ1 stands for artificial intelligence, butthead."
+    assert T.finish_mt("XQZ1 означает искусственный интеллект, тупица.", src, "ru") == \
+        "ИИ означает искусственный интеллект, тупица."
+    assert T.finish_mt("xqz1а could do it.", src, "de") == "AI could do it."
+    assert T.prepare_mt("The AIM report is ready.") == "The AIM report is ready."
+    assert T.prepare_mt("using A.I. to do your homework") == "using XQZ1 to do your homework"
+    assert T.prepare_mt("using A. I. to do it") == "using XQZ1 to do it"
+    assert T.prepare_mt("A. I. Pushkin wrote it.") == "A. I. Pushkin wrote it."
+    assert T.prepare_mt("We need to get us some of this AI.").endswith("XQZ1.")
+    destroy = "if we're not careful, AI could destroy humanity itself."
+    assert "XQZ1" in T.prepare_mt(destroy) and "artificial" not in T.prepare_mt(destroy)
+
+
+def test_tidy_fixes_ma_ai_cyrillic_and_flags_a_missing_ii():
+    src = "No. What I'm saying is, if we're not careful, AI could destroy humanity itself."
+    assert S.tidy_translation("если МА могло уничтожить само человечество.", "ru", src) == \
+        "если ИИ могло уничтожить само человечество."
+    assert S.tidy_translation("АИ надрал задницу.", "ru", "AI kicks ass.") == "ИИ надрал задницу."
+    assert S.tidy_translation("We need some of this AI.", "en", "We need to get us some of this AI.") == \
+        "We need some of this AI."
+    missed = Line(1, 0, 5, "We need to get us some of this AI.", translation="Нам нужно достать кое-что из этого.")
+    S.note_ai_review(missed, "ru")
+    assert missed.review == "ai"
+    kept = Line(2, 0, 5, "We need to get us some of this AI.", translation="Нам нужно достать этот ИИ.")
+    S.note_ai_review(kept, "ru")
+    assert kept.review == ""
+    # capitals lowered before MT is what turns "Искусственная Разведка" into a normal noun for the model
+    assert "artificial intelligence" in T.prepare_mt("AI stands for Artificial Intelligence, butthead.")
+
+
 def test_cyrillic_acronym_only_when_the_source_says_ai():
     t = S.tidy_translation
     assert t("А.И. надрал задницу.", "ru", "A.I. kicks ass.") == "ИИ надрал задницу."
