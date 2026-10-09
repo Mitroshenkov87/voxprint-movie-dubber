@@ -92,7 +92,44 @@ try {
     Run "Installing the other packages" $uv @("pip", "install", "--python", $py, "--compile-bytecode", "-r", $Requirements)
     Run "Checking the installation" $py @("-c", "import torch, transformers, PySide6, faster_qwen3_tts; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())")
 
-    # 4. cleanup of the download cache; the marker is written last
+    # 4. LGPL ffmpeg + ffprobe (BtbN FFmpeg-Builds, release 8.1 line, SHA-256 checked against the release's checksums.sha256)
+    #    into <AppDir>\bin, where dubber.ffmpeg looks first.  Not fatal: without it the GPL imageio-ffmpeg fallback still works.
+    $binDir = Join-Path $AppDir "bin"
+    if (-not (Test-Path (Join-Path $binDir "ffprobe.exe"))) {
+        try {
+            $base = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest"
+            $name = "ffmpeg-n8.1-latest-win64-lgpl-8.1.zip"
+            $tmpZip = Join-Path $env:TEMP $name
+            Say "Downloading ffmpeg (LGPL build, about 170 MB)"
+            Invoke-WebRequest -UseBasicParsing -Uri "$base/$name" -OutFile $tmpZip
+            $sums = (Invoke-WebRequest -UseBasicParsing -Uri "$base/checksums.sha256").Content
+            if ($sums -is [byte[]]) { $sums = [Text.Encoding]::ASCII.GetString($sums) }
+            $line = ($sums -split "`n") | Where-Object { $_ -match [regex]::Escape($name) } | Select-Object -First 1
+            if (-not $line) { throw "no checksum for $name" }
+            $want = ($line.Trim() -split '\s+')[0].ToLower()
+            $have = (Get-FileHash -LiteralPath $tmpZip -Algorithm SHA256).Hash.ToLower()
+            if ($want -ne $have) { throw "ffmpeg download is corrupt (SHA-256 mismatch)" }
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            New-Item -ItemType Directory -Force -Path $binDir | Out-Null
+            $zipObj = [IO.Compression.ZipFile]::OpenRead($tmpZip)
+            try {
+                foreach ($e in $zipObj.Entries) {
+                    if ($e.FullName -match '/bin/(ffmpeg|ffprobe)\.exe$') {
+                        [IO.Compression.ZipFileExtensions]::ExtractToFile($e, (Join-Path $binDir $e.Name), $true)
+                    }
+                    if ($e.FullName -match '/LICENSE\.txt$') {
+                        [IO.Compression.ZipFileExtensions]::ExtractToFile($e, (Join-Path $binDir "FFMPEG-LICENSE.txt"), $true)
+                    }
+                }
+            } finally { $zipObj.Dispose() }
+            Remove-Item -LiteralPath $tmpZip -Force -ErrorAction SilentlyContinue
+            Say "ffmpeg (LGPL) installed into $binDir"
+        } catch {
+            Say ("WARNING: LGPL ffmpeg not installed (" + $_.Exception.Message + "); the bundled fallback build will be used")
+        }
+    }
+
+    # 5. cleanup of the download cache; the marker is written last
     Remove-Item -LiteralPath $env:UV_CACHE_DIR -Recurse -Force -ErrorAction SilentlyContinue
     Set-Content -LiteralPath (Join-Path $runtime ".install-complete") -Value (Get-Date -Format s) -Encoding ASCII
     Say "Python environment is ready."

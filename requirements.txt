@@ -28,5 +28,6 @@ imageio-ffmpeg>=0.5
 # time stretching of dub lines (Signalsmith Stretch, MIT)
 python-stretch>=0.3
 
-# diarization (gated model, needs a Hugging Face token + accepted licence); optional, the diagnostics SKIP the step without it
-# pyannote.audio>=4.0
+# diarization for the multi-voice mode (the model is gated: it needs a Hugging Face token + accepted licence; without the token
+# the step is skipped).  Checked: resolves with torch 2.14.1 / torchaudio 2.11 / transformers 5.19 without changing them.
+pyannote.audio>=4.0
