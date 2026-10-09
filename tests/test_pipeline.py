@@ -581,3 +581,12 @@ def test_mp4_export_remuxes_video_and_converts_only_unsupported_audio(tmp_path, 
     media.mux_dub(clip, tmp_path / "d.wav", tmp_path / "out.mkv", "ru", "AI dub")
     b = calls[-1]
     assert b[b.index("-map") + 1] == "0" and "-c:a:0" not in b          # MKV: every stream copied as it is
+
+
+def test_tidy_translation_russian_acronyms():
+    from dubber.pipeline.stages import tidy_translation as t
+
+    assert t("Бивис, нам нужно достать кое-что из этого A.I.", "ru") == "Бивис, нам нужно достать кое-что из этого ИИ."
+    assert t("Что такое AI?", "ru") == "Что такое ИИ?"
+    assert t("если мы не будем осторожны, Эй.И. может уничтожить", "ru") == "если мы не будем осторожны, ИИ может уничтожить"
+    assert t("AIR и SAID", "ru") == "AIR и SAID" and t("What is AI?", "en") == "What is AI?"

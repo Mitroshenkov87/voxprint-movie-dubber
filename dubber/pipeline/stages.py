@@ -9,6 +9,7 @@ so the peak VRAM is that of the largest model; every stage keeps to 75 % of the 
 from __future__ import annotations
 
 import os
+import re
 import shutil
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -350,6 +351,21 @@ def st_translation(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
     return summary
 
 
+_RU_ACRONYMS = [(re.compile(r"(?<![\w.])(?:A\.\s?I\.?|AI|Эй\.\s?И\.?|Эй-Ай)(?![\w])"), "ИИ")]
+
+
+def tidy_translation(text: str, tgt: str) -> str:
+    """Fix machine-translation leftovers the voice cannot read: Latin acronyms in a Russian line ("A.I." / "AI" / "Эй.И." -> "ИИ")."""
+    if tgt == "ru":
+        for rx, rep in _RU_ACRONYMS:
+            def sub(m: "re.Match[str]", rep: str = rep) -> str:
+                rest = m.string[m.end():].lstrip()
+                ends_sentence = m.group(0).endswith(".") and (not rest or rest[:1].isupper())
+                return rep + ("." if ends_sentence else "")
+            text = rx.sub(sub, text)
+    return text
+
+
 def _translate(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
     todo = [ln for ln in p.lines if not ln.keep_original and not ln.translation.strip() and ln.text.strip()]
     if not todo:
@@ -365,7 +381,7 @@ def _translate(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
 
         out = opus_translate(texts, src, tgt, _device(cfg), cfg.get("allow_download", True), lambda m: emit("log", text=m))
     for ln, t in zip(todo, out):
-        ln.translation = t.strip()
+        ln.translation = tidy_translation(t.strip(), tgt)
     return f"{len(todo)} lines translated {src}->{tgt} ({cfg.get('translation')})"
 
 
