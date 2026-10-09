@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel,
                                QLineEdit, QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QSlider, QTableWidget,
                                QTableWidgetItem, QVBoxLayout, QWidget)
@@ -125,6 +126,10 @@ class FilmPage(QWidget):
         self.btn_subs_file = QPushButton()
         self.btn_subs_file.clicked.connect(self.choose_subtitles.emit)
         self.lbl_subs_status = label("hint")
+        self.lbl_profanity = label("fileLabel", False)
+        self.cmb_profanity = QComboBox()
+        self.cmb_profanity.addItem("", "keep")
+        self.cmb_profanity.addItem("", "soften")
         g.addWidget(self.lbl_target, 0, 0)
         g.addWidget(self.cmb_target, 0, 1)
         g.addWidget(self.lbl_audio, 1, 0)
@@ -133,6 +138,8 @@ class FilmPage(QWidget):
         g.addWidget(self.cmb_subs, 2, 1)
         g.addWidget(self.btn_subs_file, 2, 2)
         g.addWidget(self.lbl_subs_status, 3, 0, 1, 3)
+        g.addWidget(self.lbl_profanity, 4, 0)
+        g.addWidget(self.cmb_profanity, 4, 1)
         g.setColumnStretch(2, 1)
         lay.addWidget(c)
 
@@ -169,6 +176,9 @@ class FilmPage(QWidget):
         if self.cmb_subs.count() > 2:
             self.cmb_subs.setItemText(2, tr("film.subs_file", name=Path(self.subs_file).name))
         self.btn_subs_file.setText(tr("film.subs_choose"))
+        self.lbl_profanity.setText(tr("film.profanity"))
+        self.cmb_profanity.setItemText(0, tr("film.profanity_keep"))
+        self.cmb_profanity.setItemText(1, tr("film.profanity_soften"))
         self.btn_prepare.setText(tr("film.prepare"))
 
     def target_lang(self) -> str:
@@ -203,6 +213,9 @@ class FilmPage(QWidget):
         self.cmb_target.setCurrentIndex(max(0, i))
         i = self.cmb_audio.findData(int(p.settings.get("audio_track") or 0))
         self.cmb_audio.setCurrentIndex(max(0, i))
+        self.cmb_profanity.blockSignals(True)
+        self.cmb_profanity.setCurrentIndex(max(0, self.cmb_profanity.findData(p.settings.get("profanity", "keep"))))
+        self.cmb_profanity.blockSignals(False)
         ch = str(p.settings.get("subtitle_choice") or "auto")
         if ch not in ("auto", "none"):
             self.set_subs_file(ch)
@@ -214,6 +227,7 @@ class FilmPage(QWidget):
         p.settings["target_lang"] = self.target_lang()
         p.settings["audio_track"] = int(self.cmb_audio.currentData() or 0)
         p.settings["subtitle_choice"] = self.subtitle_choice()
+        p.settings["profanity"] = self.cmb_profanity.currentData() or "keep"
 
     def show_subtitle_status(self, p: Project, online_keys: bool = False) -> None:
         """Where the translation will come from (before the run: a local look; after: what the subtitles stage found)."""
@@ -274,6 +288,7 @@ class CharactersPage(QWidget):
     changed = Signal(str)                  # what changed: voice | multi | merge | name
     listen = Signal(str)                   # speaker id ('' = the single voice)
     find_speakers = Signal()
+    open_catalog = Signal()
     next_step = Signal()
 
     def __init__(self) -> None:
@@ -293,6 +308,9 @@ class CharactersPage(QWidget):
         cl.addWidget(self.lbl_title)
         cl.addWidget(self.chk_multi)
         cl.addWidget(self.lbl_multi_hint)
+        self.btn_catalog = QPushButton()
+        self.btn_catalog.clicked.connect(self.open_catalog.emit)
+        cl.addWidget(self.btn_catalog, 0, Qt.AlignmentFlag.AlignLeft)
         lay.addWidget(c)
 
         self.box_single = card()
@@ -345,6 +363,7 @@ class CharactersPage(QWidget):
         self.btn_find.setText(tr("chars.find"))
         self.btn_merge.setText(tr("chars.merge"))
         self.btn_next.setText(tr("chars.next"))
+        self.btn_catalog.setText(tr("chars.catalog"))
         if self.project is not None:
             self.load(self.project)
 
@@ -429,6 +448,7 @@ class CharactersPage(QWidget):
 
 # ================================================================================================ 3. Script
 COL_TIME, COL_SPEAKER, COL_ORIG, COL_TRANS, COL_FLAG, COL_KEEP = range(6)
+SOFTENED_BG = "#4a3a12"            # amber tint: the profanity filter changed this line (text stays >= 4.5:1, see theme tests)
 
 
 class ScriptPage(QWidget):
@@ -483,6 +503,8 @@ class ScriptPage(QWidget):
         ln = p.lines[i]
         if ln.keep_original:
             return tr("script.flag_kept")
+        if ln.softened:
+            return tr("script.flag_softened")
         nxt = p.lines[i + 1].start if i + 1 < len(p.lines) else None
         if ln.fit == "too_long" or script.too_long(ln, p.settings.get("target_lang", "ru"), next_start=nxt):
             return tr("script.flag_long")
@@ -504,6 +526,9 @@ class ScriptPage(QWidget):
                 cells[col].setFlags(ro)
             if not multi:
                 cells[COL_SPEAKER].setFlags(ro)
+            if ln.softened:
+                cells[COL_TRANS].setBackground(QColor(SOFTENED_BG))
+                cells[COL_TRANS].setToolTip(tr("script.softened_tip", text=ln.softened))
             cells[COL_KEEP].setFlags(ro | Qt.ItemFlag.ItemIsUserCheckable)
             cells[COL_KEEP].setCheckState(Qt.CheckState.Checked if ln.keep_original else Qt.CheckState.Unchecked)
             for col, it in enumerate(cells):
@@ -530,7 +555,11 @@ class ScriptPage(QWidget):
         col = it.column()
         if col == COL_TRANS and it.text() != ln.translation:
             ln.translation, ln.spoken, ln.edited = it.text().strip(), "", True
-            ln.audio, ln.fit = "", ""
+            ln.audio, ln.fit, ln.softened = "", "", ""
+            self._loading = True
+            it.setBackground(QColor(0, 0, 0, 0))
+            it.setToolTip("")
+            self._loading = False
         elif col == COL_KEEP:
             ln.keep_original = it.checkState() == Qt.CheckState.Checked
         elif col == COL_SPEAKER:

@@ -379,3 +379,70 @@ def test_failing_stage_reports_clearly(tmp_path, film):
     p = Project.create(tmp_path / "proj", film, target_lang="ru", source_lang="en")
     res = R.Runner(p, S.MOCK_CFG).run()
     assert not res.ok and res.message.startswith("script:")
+
+
+# ------------------------------------------------------------------ profanity filter
+def test_profanity_soften_ru_and_restore():
+    from dubber.core import profanity
+    from dubber.core.project import Line
+    f = profanity.soften_ru
+    assert f("Блядь, какой пиздец!") == "Чёрт, какой капец!"
+    assert f("Иди на хуй, понял?") == "Иди к чёрту, понял?"
+    assert f("Ни хуя себе, он охуел.") == "Ни фига себе, он обалдел."
+    assert f("ЭТО ПИЗДЕЦ") == "ЭТО КАПЕЦ"
+    clean = "Небо голубое, хлеба нет, себе веб-сайт. Сука, мудак! Хулиган, ребята, бляха-муха, Ебола."
+    assert f(clean) == clean                       # rude but not mat, and look-alike words stay
+    lines = [Line(1, 0, 1, translation="Это пиздец."), Line(2, 1, 2, translation="Привет."),
+             Line(3, 2, 3, translation="Охуеть.", edited=True)]
+    assert profanity.apply_to_lines(lines, "soften", "ru") == 1
+    assert lines[0].translation == "Это капец." and lines[0].softened == "Это пиздец." and lines[2].translation == "Охуеть."
+    assert profanity.apply_to_lines(lines, "keep", "ru") == 0
+    assert lines[0].translation == "Это пиздец." and not lines[0].softened
+    assert profanity.soften("fuck", "de") == "fuck" and not profanity.supported("de")
+
+
+def test_profanity_mode_runs_in_translation_stage(tmp_path, film):
+    srt = SRT.replace("Good evening. I was hoping you would come tonight.", "Какой пиздец, опять дождь.")
+    (film.parent / "clip.ru.srt").write_text(srt, encoding="utf-8")
+    p = Project.create(tmp_path / "proj", film, target_lang="ru", source_lang="en", profanity="soften")
+    res = R.Runner(p, S.MOCK_CFG).run(until_stage="translation")
+    assert res.ok, res
+    q = Project(p.folder)
+    assert q.lines[0].translation == "Какой капец, опять дождь." and q.lines[0].softened
+    assert "softened in 1" in q.stages["translation"]["summary"]
+
+
+# ------------------------------------------------------------------ voice catalog (fake network)
+def test_voice_catalog_lists_and_installs_into_shared_library(tmp_path):
+    import hashlib
+    import io
+    import zipfile
+    from dubber.core import voice_catalog as vc, voices
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for n in ("adapter_model.safetensors", "adapter_config.json", "ref_sample.wav", "speaker_centroid.safetensors"):
+            z.writestr(f"levi/{n}", b"x")
+        z.writestr("levi/voice.json", json.dumps({"name": "Levi", "language": "ru", "adapter_scale": 0.5}))
+        z.writestr("levi/training_meta.json", json.dumps({"ref_sample_text": "привет"}))
+        z.writestr("../evil.txt", b"no")
+    data = buf.getvalue()
+    sha = hashlib.sha256(data).hexdigest()
+    pages = {"https://huggingface.co/R/v/resolve/main/SHA256SUMS.txt": f"{sha}  levi.zip\n".encode(),
+             "https://huggingface.co/api/models/R/v?blobs=true": json.dumps({"siblings": [{"rfilename": "levi.zip", "size": len(data)}]}).encode(),
+             "https://huggingface.co/R/v/resolve/main/levi/voice.json": json.dumps({"name": "Levi", "gender": "male", "license": "CC0-1.0"}).encode()}
+    found = vc.list_remote("R/v", fetch=lambda u: pages[u])
+    assert [(v.id, v.name, v.gender, v.size_bytes) for v in found] == [("levi", "Levi", "male", len(data))]
+
+    def dl(url, dest, size, progress, cancel):
+        assert url.endswith("/levi.zip")
+        dest.write_bytes(data)
+    root = tmp_path / "voices"
+    path = vc.install(found[0], root=root, downloader=dl)
+    assert path == root / "levi" and not (root / "evil.txt").exists() and not (tmp_path / "evil.txt").exists()
+    lib = voices.list_library(root)
+    assert lib[0].id == "levi" and lib[0].repo_id == "levi" and lib[0].adapter_scale == 0.5 and lib[0].ref_text == "привет"
+    assert vc.install(found[0], root=root, downloader=lambda *a: (_ for _ in ()).throw(AssertionError("again"))) == path
+    bad = vc.RemoteVoice("noa", "Noa", "R/v", "0" * 64)
+    with pytest.raises(vc.VoiceCatalogError):
+        vc.install(bad, root=root, downloader=lambda u, d, *a: d.write_bytes(b"zz"))
+    assert not (root / "noa").exists()

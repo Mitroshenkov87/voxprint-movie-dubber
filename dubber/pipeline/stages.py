@@ -61,7 +61,7 @@ def inputs_for(key: str, p: Project, cfg: Dict[str, Any], prev: str) -> str:
         "asr": [c.get("asr"), c.get("asr_repo"), s.get("source_lang")],
         "script": [],
         "diarization": [s.get("multi_voice"), c.get("diarization")],
-        "translation": [c.get("translation"), s.get("target_lang")],
+        "translation": [c.get("translation"), s.get("target_lang"), s.get("profanity")],
         "voices": [s.get("multi_voice"), s.get("single_voice"), [(sp.id, sp.voice.kind, sp.voice.id) for sp in p.speakers]],
         "tts": [c.get("tts"), c.get("tts_model"), [(ln.id, ln.translation, ln.speaker, ln.keep_original, ln.start, ln.end) for ln in p.lines]],
         "mix": [s.get("original_volume")],
@@ -329,6 +329,18 @@ def _renumber(p: Project, mapping: Dict[int, str]) -> None:
 
 
 def st_translation(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
+    summary = _translate(p, cfg, emit)
+    from dubber.core import profanity
+
+    mode = p.settings.get("profanity", profanity.DEFAULT_MODE)
+    n = profanity.apply_to_lines(p.lines, mode, p.settings["target_lang"])
+    if mode == "soften":
+        summary += f"; profanity softened in {n} lines" if profanity.supported(p.settings["target_lang"]) else \
+            f"; no profanity filter for '{p.settings['target_lang']}' yet"
+    return summary
+
+
+def _translate(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
     todo = [ln for ln in p.lines if not ln.keep_original and not ln.translation.strip() and ln.text.strip()]
     if not todo:
         return "nothing to translate (subtitles in the dub language)"
@@ -355,7 +367,7 @@ def voice_spec(p: Project, ln: Line):
     if v.kind == "library" and v.id:
         lv = voices.get_library_voice(v.id)
         if lv and lv.ref_audio:
-            return VoiceSpec(f"lib:{lv.id}", "library", str(lv.ref_audio), lv.ref_text, str(lv.path))
+            return VoiceSpec(f"lib:{lv.id}", "library", str(lv.ref_audio), lv.ref_text, str(lv.path), lv.adapter_scale)
     if p.settings.get("multi_voice"):
         sp = p.speaker(ln.speaker)
         if sp and sp.ref_audio:

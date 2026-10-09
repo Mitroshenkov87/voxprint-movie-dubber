@@ -6,10 +6,11 @@ import sys
 from pathlib import Path
 from typing import Callable, Optional
 
-from PySide6.QtCore import QThread, QUrl, Signal
+from PySide6.QtCore import Qt, QThread, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel,
-                               QLineEdit, QPlainTextEdit, QProgressBar, QPushButton, QVBoxLayout, QWidget)
+                               QLineEdit, QListWidget, QListWidgetItem, QPlainTextEdit, QProgressBar, QPushButton, QVBoxLayout,
+                               QWidget)
 
 from dubber import models, settings
 from dubber.diag.runner import DiagnosticRunner, DiagOptions
@@ -296,3 +297,129 @@ def show_in_folder(path: Path) -> None:
         except OSError:
             pass
     QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(path).parent)))
+
+
+class CatalogThread(QThread):
+    """Lists (``ids`` empty) or installs voices of the Voxprint voice repositories off the GUI thread."""
+    listed = Signal(list, str)              # voices, error
+    progress = Signal(float, str)
+    installed = Signal(str, str)            # voice id, error ("" = ok)
+    finished_all = Signal()
+
+    def __init__(self, voices_to_install=None) -> None:
+        super().__init__()
+        self.todo = list(voices_to_install or [])
+        self.cancelled = False
+
+    def run(self) -> None:
+        from dubber.core import voice_catalog as vc
+
+        if not self.todo:
+            found, errors = [], []
+            for repo in vc.repos():
+                try:
+                    found += vc.list_remote(repo)
+                except vc.VoiceCatalogError as exc:
+                    errors.append(str(exc))
+            self.listed.emit(found, "; ".join(errors))
+            return
+        for v in self.todo:
+            if self.cancelled:
+                break
+            try:
+                vc.install(v, progress=lambda f, n=v.name: self.progress.emit(f, n), cancel=lambda: self.cancelled)
+                self.installed.emit(v.id, "")
+            except Exception as exc:  # noqa: BLE001 - shown in the dialog, the next voice is tried
+                self.installed.emit(v.id, str(exc))
+        self.finished_all.emit()
+
+
+class VoiceCatalogDialog(QDialog):
+    """Open voices published by Voxprint (CC0) - downloaded once into the shared voice library."""
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(tr("catalog.title"))
+        self.setMinimumWidth(560)
+        self.voices: list = []
+        self.job: Optional[CatalogThread] = None
+        self.changed = False
+        lay = QVBoxLayout(self)
+        self.lbl = QLabel(tr("catalog.loading"))
+        self.lbl.setObjectName("status")
+        self.lbl.setWordWrap(True)
+        self.list = QListWidget()
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 1000)
+        self.progress.hide()
+        row = QHBoxLayout()
+        self.btn_install = QPushButton(tr("catalog.download"))
+        self.btn_install.setObjectName("primary")
+        self.btn_install.setEnabled(False)
+        self.btn_install.clicked.connect(self.install)
+        self.btn_close = QPushButton(tr("catalog.close"))
+        self.btn_close.clicked.connect(self.close)
+        row.addWidget(self.btn_install, 1)
+        row.addWidget(self.btn_close)
+        hint = QLabel(tr("catalog.hint"))
+        hint.setObjectName("hint")
+        hint.setWordWrap(True)
+        for w in (self.lbl, self.list, self.progress):
+            lay.addWidget(w)
+        lay.addLayout(row)
+        lay.addWidget(hint)
+        self.job = CatalogThread()
+        self.job.listed.connect(self._on_listed)
+        self.job.start()
+
+    def _on_listed(self, voices: list, error: str) -> None:
+        from dubber.core import voice_catalog as vc
+
+        self.voices = voices
+        have = vc.installed_ids()
+        self.list.clear()
+        for v in voices:
+            mb = f", {v.size_bytes / 1e6:.0f} MB" if v.size_bytes else ""
+            it = QListWidgetItem(f"{v.name} — {v.language or '?'}, {v.gender or '?'}, {v.license or '?'}{mb}")
+            it.setData(Qt.ItemDataRole.UserRole, v.id)
+            if v.id in have:
+                it.setText(it.text() + "  ✓ " + tr("catalog.installed"))
+                it.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            else:
+                it.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable)
+                it.setCheckState(Qt.CheckState.Checked)
+            self.list.addItem(it)
+        self.lbl.setText(tr("catalog.error", error=error) if error and not voices else tr("catalog.found", n=len(voices)))
+        self.btn_install.setEnabled(any(self.list.item(i).flags() & Qt.ItemFlag.ItemIsUserCheckable for i in range(self.list.count())))
+
+    def selected(self) -> list:
+        ids = {self.list.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.list.count())
+               if self.list.item(i).flags() & Qt.ItemFlag.ItemIsUserCheckable and self.list.item(i).checkState() == Qt.CheckState.Checked}
+        return [v for v in self.voices if v.id in ids]
+
+    def install(self) -> None:
+        todo = self.selected()
+        if not todo or (self.job is not None and self.job.isRunning()):
+            return
+        self.btn_install.setEnabled(False)
+        self.progress.show()
+        self.job = CatalogThread(todo)
+        self.job.progress.connect(lambda f, n: (self.progress.setValue(int(f * 1000)), self.lbl.setText(tr("catalog.downloading", name=n))))
+        self.job.installed.connect(self._on_installed)
+        self.job.finished_all.connect(self._on_done)
+        self.job.start()
+
+    def _on_installed(self, vid: str, error: str) -> None:
+        self.changed = self.changed or not error
+        if error:
+            self.lbl.setText(tr("catalog.error", error=error))
+
+    def _on_done(self) -> None:
+        self.progress.hide()
+        self._on_listed(self.voices, "")
+
+    def closeEvent(self, e) -> None:  # noqa: N802
+        if self.job is not None and self.job.isRunning():
+            self.job.cancelled = True
+            self.job.wait(30000)
+        super().closeEvent(e)

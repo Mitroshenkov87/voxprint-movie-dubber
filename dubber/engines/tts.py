@@ -46,6 +46,7 @@ class VoiceSpec:
     ref_audio: str = ""
     ref_text: str = ""
     adapter_dir: str = ""          # library voice folder
+    adapter_scale: float = 1.0     # LoRA strength from the voice's voice.json (Audiobook Builder: new voices 0.5, old ones 1.0)
 
     def tag(self) -> str:
         fp = ""
@@ -55,7 +56,7 @@ class VoiceSpec:
                 fp += f"{st.st_size}:{int(st.st_mtime)};" if st else ""
             except OSError:
                 pass
-        return hashlib.sha1(f"{self.kind}|{self.key}|{self.ref_text}|{fp}".encode("utf-8")).hexdigest()[:12]
+        return hashlib.sha1(f"{self.kind}|{self.key}|{self.ref_text}|{fp}|{self.adapter_scale}".encode("utf-8")).hexdigest()[:12]
 
 
 # ---------------------------------------------------------------------------------------------- batching (from the audiobook narrator)
@@ -252,6 +253,7 @@ class QwenTTS(BaseTTS):
             self._adapters[voice.key] = voice.adapter_dir
         self._peft.base_model.enable_adapter_layers()
         self._peft.set_adapter(voice.key)
+        set_lora_scale(self._peft, voice.key, voice.adapter_scale)
 
     def _prompt(self, voice: VoiceSpec):
         key = voice.tag()
@@ -261,7 +263,10 @@ class QwenTTS(BaseTTS):
                 kw["ref_text"] = voice.ref_text
             else:
                 kw["x_vector_only_mode"] = True
-            self._prompts[key] = self._inner().create_voice_clone_prompt(**kw)
+            prompt = self._inner().create_voice_clone_prompt(**kw)
+            if voice.kind == "library" and voice.adapter_dir:
+                use_centroid(prompt, load_centroid(Path(voice.adapter_dir)))
+            self._prompts[key] = prompt
         return self._prompts[key]
 
     def synthesize_batch(self, texts: Sequence[str], voice: VoiceSpec, seed: Optional[int] = None) -> List[np.ndarray]:
@@ -291,3 +296,48 @@ class QwenTTS(BaseTTS):
 
         gc.collect()
         self._free()
+
+
+# ---------------------------------------------------------------------------------------------- library voice details
+CENTROID_FILE = "speaker_centroid.safetensors"
+
+
+def set_lora_scale(peft_model: Any, adapter: str, scale: float) -> int:
+    """Strength of one LoRA adapter on every layer (peft ``LoraLayer.set_scale``: scaling = scale x alpha / r)."""
+    from peft.tuners.lora import LoraLayer
+
+    n = 0
+    for module in peft_model.modules():
+        if isinstance(module, LoraLayer) and adapter in getattr(module, "scaling", {}):
+            module.set_scale(adapter, float(scale))
+            n += 1
+    return n
+
+
+def load_centroid(folder: Path) -> Optional[np.ndarray]:
+    """The voice's averaged speaker embedding (``speaker_centroid.safetensors`` from the Audiobook Builder) or None."""
+    path = Path(folder) / CENTROID_FILE
+    if not path.is_file():
+        return None
+    try:
+        from safetensors.numpy import load_file
+
+        return np.asarray(load_file(str(path))["speaker_embedding"], dtype=np.float32).reshape(-1)
+    except Exception:  # noqa: BLE001 - then the reference clip's own embedding is used
+        return None
+
+
+def use_centroid(prompt: Any, centroid: Optional[np.ndarray]) -> bool:
+    """Replace the x-vector of every voice-clone prompt item by the voice's centroid (the reference codes + text stay)."""
+    if centroid is None:
+        return False
+    import torch
+
+    items = list(prompt or [])
+    if not items or any(int(getattr(it, "ref_spk_embedding").numel()) != int(centroid.size) for it in items):
+        return False
+    for it in items:
+        t = it.ref_spk_embedding
+        it.ref_spk_embedding = torch.from_numpy(np.asarray(centroid, dtype=np.float32)).to(device=t.device, dtype=t.dtype).reshape(t.shape)
+    return True
+

@@ -127,9 +127,11 @@ class MainWindow(QWidget):
         self.film.prepare.connect(self.prepare)
         self.film.cmb_target.currentIndexChanged.connect(lambda _i: self._film_changed())
         self.film.cmb_subs.currentIndexChanged.connect(lambda _i: self._film_changed())
+        self.film.cmb_profanity.currentIndexChanged.connect(lambda _i: self._profanity_changed())
         self.chars.changed.connect(self._chars_changed)
         self.chars.find_speakers.connect(lambda: self.run_pipeline("find", PREPARE_UNTIL))
         self.chars.listen.connect(self.listen)
+        self.chars.open_catalog.connect(self.open_voice_catalog)
         self.chars.next_step.connect(lambda: self.go(2))
         self.script.next_step.connect(lambda: self.go(3))
         self.dubp.dub.connect(lambda: self.run_pipeline("dub", "mux"))
@@ -277,6 +279,19 @@ class MainWindow(QWidget):
         self.project.save()
         s = settings.load()
         self.film.show_subtitle_status(self.project, bool(s.get("subdl_key") or s.get("opensubtitles_key")))
+
+    def _profanity_changed(self) -> None:
+        """Apply the profanity mode to the prepared script at once (the pipeline does the same on its next run)."""
+        if self.project is None or (self.job is not None and self.job.isRunning()):
+            return
+        from dubber.core import profanity
+
+        self._film_changed()
+        if self._prepared():
+            n = profanity.apply_to_lines(self.project.lines, self.project.settings["profanity"], self.project.settings["target_lang"])
+            self.project.save()
+            self.script.load(self.project)
+            self.film.lbl_prepare.setText(tr("film.softened", n=n) if self.project.settings["profanity"] == "soften" else "")
 
     def prepare(self) -> None:
         if self.project is None:
@@ -507,6 +522,13 @@ class MainWindow(QWidget):
         self.dubp.btn_external.setEnabled(True)
 
     # ------------------------------------------------------------------ settings / diagnostics
+    def open_voice_catalog(self) -> None:
+        dlg = dialogs.VoiceCatalogDialog(self)
+        dlg.setStyleSheet(build_style(False))
+        dlg.exec()
+        if dlg.changed and self.project is not None:
+            self.chars.load(self.project)
+
     def open_settings(self) -> None:
         dlg = dialogs.SettingsDialog(self)
         dlg.setStyleSheet(build_style(False))

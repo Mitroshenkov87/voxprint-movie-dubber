@@ -83,7 +83,7 @@ QMenu::item:selected {{{{ background: {strong}; }}}}
 CONTRAST_PAIRS = [(TEXT, ROOT_PLAIN), (TEXT, CARD_PLAIN), (TEXT, CONTROL_BG), (TEXT, CONTROL_HOVER), (TEXT_MUTED, ROOT_PLAIN),
                   (TEXT_MUTED, CARD_PLAIN), (TEXT_FAINT, ROOT_PLAIN), (TEXT_FAINT, CARD_PLAIN), (TEXT_ON_ACCENT, ACCENT),
                   (TEXT_ON_ACCENT, ACCENT_HOVER), (TEXT_ON_ACCENT, ACCENT_SOFT), (TEXT, ACCENT_STRONG), (GREEN, CARD_PLAIN),
-                  (AMBER, CARD_PLAIN), (RED, CARD_PLAIN), (TEXT_FAINT, "#2a2a35"), ("#ffffff", ACCENT_STRONG)]
+                  (AMBER, CARD_PLAIN), (RED, CARD_PLAIN), (TEXT_FAINT, "#2a2a35"), ("#ffffff", ACCENT_STRONG), (TEXT, "#4a3a12")]
 
 
 def build_style(glass: bool) -> str:

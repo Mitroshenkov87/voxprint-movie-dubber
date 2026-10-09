@@ -32,6 +32,8 @@ class LibraryVoice:
     base_model: str = ""
     license: str = ""
     ref_text: str = ""
+    adapter_scale: float = 1.0
+    repo_id: str = ""
 
     @property
     def ref_audio(self) -> Optional[Path]:
@@ -54,6 +56,15 @@ def _read(p: Path) -> Dict:
         return {}
 
 
+def _scale(value) -> float:
+    """``adapter_scale`` of voice.json clamped to 0.1..1.0; voices without it keep full strength (as in the Audiobook Builder)."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return 1.0
+    return 1.0 if v != v else round(min(1.0, max(0.1, v)), 2)
+
+
 def list_library(root: Optional[Path] = None) -> List[LibraryVoice]:
     """Usable voices of the shared library (complete adapter + reference clip), sorted by name.  Missing folder -> []."""
     root = Path(root) if root is not None else shared_paths.voices_dir()
@@ -69,7 +80,8 @@ def list_library(root: Optional[Path] = None) -> List[LibraryVoice]:
         out.append(LibraryVoice(id=d.name, name=str(info.get("name") or info.get("voice_name") or d.name), path=d,
                                 language=str(info.get("language") or ""), gender=str(info.get("gender") or info.get("voice_type") or ""),
                                 base_model=str(info.get("base_model") or ""), license=str(info.get("license") or ""),
-                                ref_text=str(meta.get("ref_sample_text") or "")))
+                                ref_text=str(meta.get("ref_sample_text") or ""), adapter_scale=_scale(info.get("adapter_scale")),
+                                repo_id=str(info.get("repo_id") or "")))
     out.sort(key=lambda v: v.name.lower())
     return out
 

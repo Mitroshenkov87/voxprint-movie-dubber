@@ -48,6 +48,7 @@ class Line:
     stretch: float = 1.0              # time factor applied (>1 = faster)
     fit: str = ""                     # fits | shifted | stretched | too_long | kept
     edited: bool = False
+    softened: str = ""                # the translation before the profanity filter changed it ("" = unchanged)
 
     @property
     def duration(self) -> float:
@@ -95,6 +96,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "audio_track": 0,
     "subtitle_choice": "auto",        # auto | none | <path>
     "output_format": "same",          # same | mkv | mp4
+    "profanity": "keep",              # keep (as in the original) | soften (no mat; see dubber.core.profanity)
 }
 
 
