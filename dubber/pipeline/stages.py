@@ -28,7 +28,7 @@ GPU = {"separation", "asr", "diarization", "translation", "tts"}                
 BLOCK_S = 60.0              # TTS + fitting work through the film in blocks of this length (Watch mode follows the blocks)
 TAKES = 3                   # best-of-N for lines that do not fit
 #: bumped when a stage's algorithm changes, so projects analysed by an older build redo that stage (and only the later ones)
-ASR_VERSION, SCRIPT_VERSION, MT_VERSION, VOICES_VERSION = 3, 3, 5, 2
+ASR_VERSION, SCRIPT_VERSION, MT_VERSION, VOICES_VERSION = 3, 3, 6, 2
 
 DEFAULT_CFG: Dict[str, Any] = {
     "device": "auto", "allow_download": True, "inprocess": False,

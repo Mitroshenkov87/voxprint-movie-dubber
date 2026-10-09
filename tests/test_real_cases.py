@@ -434,6 +434,14 @@ def test_tidy_fixes_ma_ai_cyrillic_and_flags_a_missing_ii():
     assert "artificial intelligence" in T.prepare_mt("AI stands for Artificial Intelligence, butthead.")
 
 
+def test_letter_runs_collapse_and_latin_leftovers_drop():
+    assert T.collapse_letter_runs("Ewwwww.") == "Eww." and T.prepare_mt("Ewwwww.") == "Eww."
+    assert T.finish_mt("Фу, www.", "Ewwwww.", "ru") == "Фу."
+    assert T.drop_latin_leftovers("Фу, www.", "Ewwwww.", "uk") == "Фу."
+    assert T.drop_latin_leftovers("Бивис, Beavis, иди сюда.", "Beavis, come here.", "ru") == "Бивис, Beavis, иди сюда."
+    assert T.drop_latin_leftovers("Hello www.", "Hello.", "en") == "Hello www."
+
+
 def test_cyrillic_acronym_only_when_the_source_says_ai():
     t = S.tidy_translation
     assert t("А.И. надрал задницу.", "ru", "A.I. kicks ass.") == "ИИ надрал задницу."

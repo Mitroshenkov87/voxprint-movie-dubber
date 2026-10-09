@@ -26,6 +26,8 @@ _PROPER = {"Beavis", "Butthead", "Butt-Head", "I", "Monday", "Tuesday", "Wednesd
            "Sunday", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
            "November", "December", "English", "Russian", "American", "America", "God", "Christmas"}
 _WORD = re.compile(r"[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*")
+_CYRILLIC_TARGETS = {"ru", "uk", "be", "bg", "sr", "kk"}
+_LETTER_RUN = re.compile(r"([^\W\d_])\1{2,}")
 
 
 def split_sentences(text: str) -> List[str]:
@@ -182,14 +184,44 @@ def _lower_title(word: str) -> str:
     return re.sub(r"[A-Za-z]+", lambda m: m.group(0)[:1].lower() + m.group(0)[1:], word)
 
 
+def collapse_letter_runs(text: str) -> str:
+    """Collapse a run of 3 or more of the same letter to 2 ("Ewwwww." -> "Eww.") before MT sees it."""
+    return _LETTER_RUN.sub(r"\1\1", text or "")
+
+
+def _proper_names(source: str) -> set:
+    """Capitalised words and ALL-CAPS brands in the source, compared case-insensitively."""
+    names = {m.group(0).lower() for m in re.finditer(r"\b[A-Z][A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*\b", source or "")}
+    names |= {m.group(0).lower() for m in re.finditer(r"\b[A-Z]{2,}\b", source or "")}
+    return names
+
+
+def drop_latin_leftovers(text: str, source: str, tgt: str) -> str:
+    """Drop Latin-only tokens a Cyrillic translation kept ("Фу, www." -> "Фу."), except names and brands from the source."""
+    if (tgt or "").lower()[:2] not in _CYRILLIC_TARGETS:
+        return text or ""
+    keep = _proper_names(source)
+
+    def repl(m: "re.Match[str]") -> str:
+        return m.group(0) if m.group(0).lower() in keep else ""
+
+    cleaned = re.sub(r"\b[A-Za-z]+(?:'[A-Za-z]+)?\b", repl, text or "")
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    cleaned = re.sub(r"\s+([,.;:!?…])", r"\1", cleaned)
+    cleaned = re.sub(r",\s*(?=[.!?…])", "", cleaned)
+    cleaned = re.sub(r"\(\s*\)", "", cleaned)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    return cleaned.strip(" ,;")
+
+
 def prepare_mt(text: str) -> str:
-    """Source text as Opus-MT should see it: the AI acronym protected, mid-sentence capitals lowered."""
-    return lowercase_mid_title(protect_ai(text))
+    """Source text as Opus-MT should see it: letter runs collapsed, AI protected, mid-sentence capitals lowered."""
+    return lowercase_mid_title(protect_ai(collapse_letter_runs(text)))
 
 
 def finish_mt(text: str, source: str, tgt: str) -> str:
-    """Translation after Opus-MT: the AI placeholder restored. ``source`` is the original line."""
-    return restore_ai(text, tgt)
+    """Translation after Opus-MT: AI restored, then stray Latin tokens removed for a Cyrillic target."""
+    return drop_latin_leftovers(restore_ai(text, tgt), source, tgt)
 
 
 def opus_translate(texts: List[str], src: str, tgt: str, device: str, allow_download: bool, log: Callable[[str], None],
