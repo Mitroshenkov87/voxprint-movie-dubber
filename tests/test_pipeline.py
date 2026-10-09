@@ -348,7 +348,9 @@ def test_backend_order(monkeypatch):
     import importlib.util as iu
 
     monkeypatch.setattr(iu, "find_spec", lambda n: object() if n in ("flash_attn", "faster_qwen3_tts") else None)
-    assert tts_mod.QwenTTS.candidates(True) == [("standard", "flash_attention_2"), ("graphs", "sdpa"), ("standard", "sdpa")]
+    # auto, CUDA, no adapters: Graphs first (clip 3: 67.5 s vs 208.9 s batched). standard/sdpa only when asked, else last fallback.
+    assert tts_mod.QwenTTS.candidates(True) == [("graphs", "sdpa"), ("standard", "flash_attention_2"), ("standard", "sdpa")]
+    assert tts_mod.QwenTTS.candidates(True, "standard/sdpa")[0] == ("standard", "sdpa")
     assert ("graphs", "sdpa") not in tts_mod.QwenTTS.candidates(True, need_adapters=True)
     assert tts_mod.QwenTTS.candidates(False) == [("standard", "sdpa")]
 
