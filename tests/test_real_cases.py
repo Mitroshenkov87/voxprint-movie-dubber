@@ -157,6 +157,42 @@ def test_sentence_split():
     assert len(T.split_sentences("Yeah, yeah, yeah, cool. Destroy it all. Destroy.")) == 3
 
 
+def _opus_on_yes(texts):
+    """Real-case stand-in: isolated "Yes!" becomes "Есть!"; the same word beside "Jobs suck!" does not."""
+    out = []
+    for t in texts:
+        if t.strip() == "Yes!":
+            out.append("Есть!")
+        elif "Yes!" in t and "Jobs suck!" in t:
+            out.append("Да! Работа — отстой!")
+        else:
+            out.append(f"[ru] {t}")
+    return out
+
+
+def test_yes_next_to_jobs_is_not_translated_as_est():
+    lines = _lines("asr-user-clip1.json")
+    out = script.translate_with_context(lines, _opus_on_yes)
+    assert all(ln.translation != "Есть!" for ln in out)
+    yes = next(ln for ln in out if "Yes!" in ln.text)
+    assert yes.text == "Yes!" and yes.translation == "Да!"
+
+
+def test_short_line_merges_into_the_next_when_the_split_mismatches():
+    a = Line(1, 34.96, 35.58, "Yes!", speaker="S1")
+    b = Line(2, 36.70, 37.98, "Jobs suck!", speaker="S1")
+    assert b.start - a.end < script.BREATH_GAP_S
+
+    def one_sentence(texts):
+        assert texts == ["Yes! Jobs suck!"]
+        return ["Да, работа отстой!"]
+
+    out = script.translate_with_context([a, b], one_sentence)
+    assert len(out) == 1
+    assert out[0].start == pytest.approx(34.96) and out[0].end == pytest.approx(37.98)
+    assert out[0].text == "Yes! Jobs suck!" and out[0].translation == "Да, работа отстой!"
+
+
 def test_short_exclamations_survive_translation():
     src = ["Yeah, that sounds cool! Learning sucks!", "Yeah, yeah, yeah, cool. Destroy it all. Destroy."]
     whole = _marian_like(src)                                        # the old way: line by line

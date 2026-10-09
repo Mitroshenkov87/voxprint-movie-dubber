@@ -27,7 +27,7 @@ GPU = {"separation", "asr", "diarization", "translation", "tts"}                
 BLOCK_S = 60.0              # TTS + fitting work through the film in blocks of this length (Watch mode follows the blocks)
 TAKES = 3                   # best-of-N for lines that do not fit
 #: bumped when a stage's algorithm changes, so projects analysed by an older build redo that stage (and only the later ones)
-ASR_VERSION, SCRIPT_VERSION, MT_VERSION, VOICES_VERSION = 3, 3, 3, 2
+ASR_VERSION, SCRIPT_VERSION, MT_VERSION, VOICES_VERSION = 3, 3, 4, 2
 
 DEFAULT_CFG: Dict[str, Any] = {
     "device": "auto", "allow_download": True, "inprocess": False,
@@ -460,17 +460,21 @@ def _translate(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
     if not todo:
         return "nothing to translate (subtitles in the dub language)"
     src, tgt = source_lang(p), p.settings["target_lang"]
-    texts = [ln.text for ln in todo]
-    if cfg.get("translation") == "mock":
-        from dubber.engines.translation import mock_translate
+    before = {ln.id: ln.translation for ln in p.lines}
 
-        out = mock_translate(texts, src, tgt)
-    else:
+    def engine(texts: List[str]) -> List[str]:
+        if cfg.get("translation") == "mock":
+            from dubber.engines.translation import mock_translate
+
+            return mock_translate(texts, src, tgt)
         from dubber.engines.translation import opus_translate
 
-        out = opus_translate(texts, src, tgt, _device(cfg), cfg.get("allow_download", True), lambda m: emit("log", text=m))
-    for ln, t in zip(todo, out):
-        ln.translation = tidy_translation(t.strip(), tgt, ln.text)
+        return opus_translate(texts, src, tgt, _device(cfg), cfg.get("allow_download", True), lambda m: emit("log", text=m))
+
+    p.lines = script.translate_with_context(p.lines, engine, {ln.id for ln in todo})
+    for ln in p.lines:
+        if ln.translation != before.get(ln.id, ""):
+            ln.translation = tidy_translation(ln.translation.strip(), tgt, ln.text)
     return f"{len(todo)} lines translated {src}->{tgt} ({cfg.get('translation')})"
 
 

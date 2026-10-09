@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 import numpy as np
 
 from dubber.core.project import Line
 from dubber.core.subtitles import Cue, clean_text, is_music, sdh_speaker
+from dubber.engines.translation import split_sentences
 
 Window = Tuple[float, float]
 
@@ -229,3 +230,120 @@ def shorten(text: str, lang: str, min_keep: float = MIN_KEEP) -> List[str]:
     if len(parts) > 1:
         add(" ".join(parts[:-1]).rstrip(",;:") + ".")
     return out
+
+
+# ---------------------------------------------------------------------------------------------- context for short lines
+BREATH_GAP_S = 1.2            # consecutive lines of one speaker closer than this are one breath
+SHORT_LINE_S = 1.2            # a shorter line is translated with its neighbour
+SHORT_LINE_WORDS = 3
+
+
+def is_short_for_context(line: Line) -> bool:
+    """A line Opus-MT tends to mistranslate on its own: under ~1.2 s, or three words or fewer."""
+    return line.duration < SHORT_LINE_S + 1e-6 or len((line.text or "").split()) <= SHORT_LINE_WORDS
+
+
+def breath_groups(lines: Sequence[Line]) -> List[List[Line]]:
+    """Consecutive lines of the same speaker with a gap under ``BREATH_GAP_S``."""
+    groups: List[List[Line]] = []
+    for ln in sorted(lines, key=lambda x: (x.start, x.id)):
+        if ln.keep_original or not (ln.text or "").strip():
+            continue
+        if groups and groups[-1][-1].speaker == ln.speaker and ln.start - groups[-1][-1].end < BREATH_GAP_S:
+            groups[-1].append(ln)
+        else:
+            groups.append([ln])
+    return groups
+
+
+def context_units(lines: Sequence[Line], todo_ids: Optional[Set[int]] = None) -> List[List[Line]]:
+    """Translation units. A short line is joined with the next line of its breath group (the previous, if it is last)."""
+    units: List[List[Line]] = []
+    for group in breath_groups(lines):
+        i = 0
+        while i < len(group):
+            ln = group[i]
+            if todo_ids is not None and ln.id not in todo_ids:
+                i += 1
+                continue
+            nxt = group[i + 1] if i + 1 < len(group) else None
+            if is_short_for_context(ln) and nxt is not None and (todo_ids is None or nxt.id in todo_ids):
+                units.append([ln, nxt])
+                i += 2
+                continue
+            prev = group[i - 1] if i else None
+            if (is_short_for_context(ln) and prev is not None and units and len(units[-1]) == 1
+                    and units[-1][-1].id == prev.id and (todo_ids is None or prev.id in todo_ids)):
+                units[-1].append(ln)
+                i += 1
+                continue
+            units.append([ln])
+            i += 1
+    return units
+
+
+def split_translation(sources: Sequence[str], translated: str) -> Optional[List[str]]:
+    """Split ``translated`` back into one piece per source line, by sentence, in proportion to the sources.
+
+    None when the sentence counts do not match (the caller merges the short line into the next one)."""
+    sents = split_sentences(translated) or [translated.strip()]
+    counts = [max(1, len(split_sentences(src) or [src])) for src in sources]
+    if sum(counts) != len(sents):
+        return None
+    out: List[str] = []
+    k = 0
+    for c in counts:
+        out.append(" ".join(sents[k:k + c]).strip())
+        k += c
+    return out
+
+
+def merge_short_into_next(short: Line, nxt: Line, translation: str) -> Line:
+    """One line spanning both, texts joined. Used when a joint translation cannot be split back apart."""
+    return Line(id=short.id, start=min(short.start, nxt.start), end=max(short.end, nxt.end),
+                text=f"{short.text.strip()} {nxt.text.strip()}".strip(), translation=translation.strip(),
+                speaker=short.speaker or nxt.speaker, source=short.source or nxt.source, tag=short.tag or nxt.tag,
+                kind=short.kind)
+
+
+def translate_with_context(lines: Sequence[Line], translate: Callable[[List[str]], List[str]],
+                           todo_ids: Optional[Set[int]] = None) -> List[Line]:
+    """Translate lines that still need it. Short lines share one translation with their neighbour in the breath group.
+
+    ``translate`` receives source strings (a short line already joined with its neighbour) and returns one translation
+    each. When that translation does not split back into the same number of sentences, the short line is merged into
+    the next line."""
+    if todo_ids is None:
+        todo_ids = {ln.id for ln in lines if not ln.keep_original and not (ln.translation or "").strip() and (ln.text or "").strip()}
+    units = context_units(lines, todo_ids)
+    if not units:
+        return list(lines)
+    sources = [" ".join(ln.text.strip() for ln in unit) for unit in units]
+    outs = list(translate(sources))
+    if len(outs) != len(sources):
+        raise RuntimeError(f"translation returned {len(outs)} lines for {len(sources)}")
+    produced: Dict[int, Line] = {}
+    drop: Set[int] = set()
+    for unit, out in zip(units, outs):
+        text = (out or "").strip()
+        if len(unit) == 1:
+            unit[0].translation = text
+            produced[unit[0].id] = unit[0]
+            continue
+        parts = split_translation([ln.text for ln in unit], text)
+        if parts is not None:
+            for ln, part in zip(unit, parts):
+                ln.translation = part
+                produced[ln.id] = ln
+            continue
+        merged = merge_short_into_next(unit[0], unit[1], text)
+        produced[unit[0].id] = merged
+        drop.add(unit[1].id)
+        for extra in unit[2:]:
+            drop.add(extra.id)
+    new: List[Line] = []
+    for ln in lines:
+        if ln.id in drop:
+            continue
+        new.append(produced.get(ln.id, ln))
+    return new
