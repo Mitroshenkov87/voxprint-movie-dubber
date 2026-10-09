@@ -160,11 +160,11 @@ jobs:
           if ((Test-Path $users) -and ((Get-Content $users -Raw | ConvertFrom-Json).'movie-dubber')) { throw "movie-dubber is still registered in $users" }
           if (-not (Test-Path "$env:LOCALAPPDATA\Voxprint\models")) { throw "the shared models were deleted without asking" }
           $left = Get-ChildItem "$env:LOCALAPPDATA\Voxprint" -Directory -Filter "runtime-*" -ErrorAction SilentlyContinue
-        if ($left) {
-          if (Test-Path C:\vmd-uninstall.log) { Get-Content C:\vmd-uninstall.log | Select-String "runtime" }
-          foreach ($d in $left) { $d.FullName; Get-ChildItem $d.FullName | Format-Table Name; if (Test-Path "$($d.FullName)\.users.json") { Get-Content "$($d.FullName)\.users.json" } }
-          throw "the unused shared runtime was not removed"
-        }
+          if ($left) {
+            if (Test-Path C:\vmd-uninstall.log) { Get-Content C:\vmd-uninstall.log | Select-String "runtime" }
+            foreach ($d in $left) { $d.FullName; Get-ChildItem $d.FullName | Format-Table Name; if (Test-Path "$($d.FullName)\.users.json") { Get-Content "$($d.FullName)\.users.json" } }
+            throw "the unused shared runtime was not removed"
+          }
           "models kept: " + ((Get-ChildItem "$env:LOCALAPPDATA\Voxprint\models" -Directory | ForEach-Object Name) -join ", ")
           "uninstall OK"
 
