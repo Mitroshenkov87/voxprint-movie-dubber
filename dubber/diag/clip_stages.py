@@ -2,7 +2,6 @@
 ``dubber.pipeline`` (project folders, caching, Watch mode); this small set measures the same operations on a few seconds of audio."""
 from __future__ import annotations
 
-import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,22 +27,18 @@ class StageResult:
     ok: bool
     message: str = ""
     seconds: float = 0.0
-    implemented: bool = True
 
 
 class Stage:
     key = ""
     title_key = ""
-    implemented = False
 
     def run(self, ctx: StageContext) -> StageResult:
-        t = time.time()
-        ctx.log(f"[{self.key}] not available yet (in development)")
-        return StageResult(self.key, True, "coming soon", time.time() - t, implemented=False)
+        raise NotImplementedError
 
 
 class ExtractStage(Stage):
-    key, title_key, implemented = "extract", "stage.extract", True
+    key, title_key = "extract", "stage.extract"
 
     def run(self, ctx: StageContext) -> StageResult:
         t = time.time()
@@ -56,7 +51,7 @@ class ExtractStage(Stage):
 
 class FitStage(Stage):
     """Plan only: compares the length of each synthesised line with its slot and says which would need squeezing (no audio is changed)."""
-    key, title_key, implemented = "fit", "stage.fit", True
+    key, title_key = "fit", "stage.fit"
 
     def run(self, ctx: StageContext) -> StageResult:
         t = time.time()
@@ -67,7 +62,7 @@ class FitStage(Stage):
 
 
 class MixStage(Stage):
-    key, title_key, implemented = "mix", "stage.mix", True
+    key, title_key = "mix", "stage.mix"
 
     def run(self, ctx: StageContext) -> StageResult:
         t = time.time()
@@ -78,7 +73,7 @@ class MixStage(Stage):
 
 
 class MuxStage(Stage):
-    key, title_key, implemented = "mux", "stage.mux", True
+    key, title_key = "mux", "stage.mux"
 
     def run(self, ctx: StageContext) -> StageResult:
         t = time.time()
@@ -89,33 +84,6 @@ class MuxStage(Stage):
         streams = ffmpeg.probe(out)["streams"]
         n_a = sum(1 for s in streams if s["type"] == "audio")                 # type: ignore[index]
         return StageResult(self.key, True, f"{out.name}: {n_a} audio tracks (new track #{idx}), video copied", time.time() - t)
-
-
-def _planned(key: str, title_key: str) -> Stage:
-    s = Stage()
-    s.key, s.title_key = key, title_key
-    return s
-
-
-STAGES: List[Stage] = [ExtractStage(), _planned("vad", "stage.vad"), _planned("separation", "stage.separation"), _planned("asr", "stage.asr"),
-                       _planned("diarization", "stage.diarization"), _planned("translation", "stage.translation"),
-                       _planned("tts", "stage.tts"), FitStage(), MixStage(), MuxStage()]
-
-
-def run_all(ctx: StageContext, on_stage: Optional[Callable[[Stage, StageResult], None]] = None) -> List[StageResult]:
-    """Run every stage in order; a stage that needs missing data (e.g. mix without synthesised lines) reports an error and the run goes on."""
-    results = []
-    for st in STAGES:
-        try:
-            res = st.run(ctx)
-        except Exception as exc:  # noqa: BLE001 - one broken stage must not crash the UI
-            res = StageResult(st.key, False, f"{type(exc).__name__}: {exc}", 0.0, st.implemented)
-        results.append(res)
-        if on_stage:
-            on_stage(st, res)
-        if st.key == "extract" and not res.ok:
-            break
-    return results
 
 
 # ---------------------------------------------------------------------------------------------- pure helpers (tested)

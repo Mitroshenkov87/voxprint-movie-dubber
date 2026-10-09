@@ -1,282 +1,148 @@
-"""The main window: file picker, target language, pipeline steps and the diagnostics card.
+"""The main window: one dark glass window with four steps - Film, Characters, Script, Dub.
 
-Same shell as the Voxprint Audiobook Builder windows: translucent root + scroll area (content may be taller than a small screen),
-Acrylic backdrop on Windows 11, cards with rounded corners, an accent-bordered primary card, a gear menu for the UI language.
-Heavy work never runs in the GUI thread: diagnostics run in a QThread that starts worker *processes* (see ``dubber.diag``).
+Same shell as the Voxprint Audiobook Builder: translucent root, Acrylic backdrop on Windows 11, cards with rounded corners,
+a gear menu for the UI language.  Heavy work never runs in the GUI thread: the pipeline runs in a QThread that starts one worker
+*process* per model stage (``dubber.pipeline.runner``); diagnostics live in their own dialog.
 """
 from __future__ import annotations
 
-import subprocess
+import os
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, Optional
 
-from PySide6.QtCore import QThread, QTimer, Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QGuiApplication, QIcon
-from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
-                               QMenu, QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QVBoxLayout, QWidget)
+from PySide6.QtCore import QTimer, Qt, QUrl
+from PySide6.QtGui import QDesktopServices, QIcon
+from PySide6.QtWidgets import (QApplication, QFileDialog, QHBoxLayout, QLabel, QMenu, QPushButton, QStackedWidget, QVBoxLayout,
+                               QWidget)
 
-from dubber import i18n, models, paths, platform_win
+from dubber import i18n, paths, platform_win, settings
 from dubber.appinfo import APP_DISPLAY_NAME, APP_VERSION, resource_dir
-from dubber.diag.constants import LANG_NAMES
-from dubber.diag.report import Status
-from dubber.diag.runner import DiagnosticRunner, DiagOptions
+from dubber.core import audio, media, voices
+from dubber.core.project import Project, Voice
+from dubber.core.watch import WatchState
 from dubber.i18n import tr
-from dubber.pipeline import stages as pst
+from dubber.pipeline import runner as R
+from dubber.pipeline import stages as S
+from dubber.ui import dialogs
+from dubber.ui.dub_audio import ChunkSource, WavSource
+from dubber.ui.jobs import PipelineThread
+from dubber.ui.pages import CharactersPage, DubPage, FilmPage, ScriptPage, fmt_eta, fmt_time
+from dubber.ui.player import HAVE_MULTIMEDIA, Player
 from dubber.ui.theme import build_style
 
-MIN_W, MIN_H = 520, 360
-TARGET_LANGS = ("ru", "en", "de")
+MIN_W, MIN_H = 720, 520
+VIDEO_EXTS = {".mkv", ".mp4", ".avi", ".mov", ".webm", ".m4v", ".ts", ".m2ts"}
+SUB_EXTS = {".srt", ".vtt", ".ass", ".ssa"}
+PREPARE_UNTIL = "translation"
+PREVIEW_S = 60.0
+STEPS = ("film", "characters", "script", "dub")
 
 
-class DiagThread(QThread):
-    """Runs :class:`DiagnosticRunner` off the GUI thread."""
-    progress = Signal(float, str)
-    result = Signal(str, str, str)       # check id, status, summary
-    finished_path = Signal(str, bool)    # report path, cancelled
-    failed = Signal(str)
-
-    def __init__(self, options: DiagOptions) -> None:
-        super().__init__()
-        self.options = options
-        self.runner: Optional[DiagnosticRunner] = None
-
-    def run(self) -> None:
-        try:
-            self.runner = DiagnosticRunner(self.options, on_progress=lambda f, t: self.progress.emit(f, t),
-                                           on_result=lambda r: self.result.emit(r.id, r.status.value, r.summary))
-            path = self.runner.run()
-            self.finished_path.emit(str(path), self.runner.cancelled)
-        except Exception as exc:  # noqa: BLE001 - the runner already swallows its own errors; this is the last safety net
-            self.failed.emit(f"{type(exc).__name__}: {exc}")
-
-    def cancel(self) -> None:
-        if self.runner:
-            self.runner.cancel()
-
-
-class DubThread(QThread):
-    """Runs the dubbing stages (several are still in development) on the chosen movie."""
-    stage_done = Signal(str, bool, str, bool)      # key, ok, message, implemented
-    finished_ok = Signal()
-
-    def __init__(self, source: Path, target: str) -> None:
-        super().__init__()
-        self.source, self.target = source, target
-
-    def run(self) -> None:
-        work = paths.new_work_dir("vmd-dub-")
-        try:
-            ctx = pst.StageContext(self.source, self.target, work, out=self.source.with_name(self.source.stem + ".dub-preview.mkv"))
-            pst.run_all(ctx, lambda st, res: self.stage_done.emit(st.key, res.ok, res.message, res.implemented))
-        finally:
-            import shutil
-
-            shutil.rmtree(work, ignore_errors=True)
-            self.finished_ok.emit()
+def engine_cfg() -> Dict[str, Any]:
+    """Engines from Settings; ``VOXPRINT_ENGINES=mock`` runs the whole flow with the CPU stand-ins (no models needed)."""
+    if os.environ.get("VOXPRINT_ENGINES", "").strip().lower() == "mock":
+        return dict(S.MOCK_CFG)
+    return settings.engine_cfg()
 
 
 class MainWindow(QWidget):
-    """Single-window UI."""
-
-    def __init__(self, autorun: bool = False, options_hook=None) -> None:
+    def __init__(self, autorun: bool = False, options_hook=None, cfg: Optional[Dict[str, Any]] = None) -> None:
         super().__init__()
         self.backdrop = "plain"
-        self.source: Optional[Path] = None
-        self.report_path: Optional[Path] = None
-        self.diag: Optional[DiagThread] = None
-        self.dub: Optional[DubThread] = None
-        self._chips: dict = {}
-        self._counts = {"OK": 0, "WARN": 0, "FAIL": 0, "SKIP": 0, "INFO": 0}
-        self._options_hook = options_hook          # tests/CLI can adjust the DiagOptions before they run
+        self.project: Optional[Project] = None
+        self.info: Optional[media.MediaInfo] = None
+        self.job: Optional[PipelineThread] = None
+        self.job_kind = ""
+        self.watch_state: Optional[WatchState] = None
+        self.preview_start: Optional[float] = None
+        self.diag_dialog: Optional[dialogs.DiagnosticsDialog] = None
+        self._cfg = cfg
+        self._options_hook = options_hook
         self.setObjectName("root")
+        self.setAcceptDrops(True)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._build()
         self.setStyleSheet(build_style(False))
         self.retranslate()
+        self._update_steps()
         self._fit()
         if autorun:
-            QTimer.singleShot(500, self.start_diagnostics)
+            QTimer.singleShot(500, lambda: self.open_diagnostics(True))
 
     # ------------------------------------------------------------------ construction
-    def _card(self, primary: bool = False) -> QFrame:
-        f = QFrame()
-        f.setObjectName("card")
-        f.setProperty("primary", "true" if primary else "false")
-        return f
-
     def _build(self) -> None:
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self.content = QWidget()
-        self.content.setObjectName("content")
-        self.scroll.setWidget(self.content)
-        self.scroll.viewport().setAutoFillBackground(False)
-        outer.addWidget(self.scroll)
-        body = QVBoxLayout(self.content)
-        body.setContentsMargins(28, 24, 28, 24)
-        body.setSpacing(14)
-        self.body = body
-
+        body = QVBoxLayout(self)
+        body.setContentsMargins(24, 18, 24, 18)
+        body.setSpacing(12)
         head = QHBoxLayout()
         self.lbl_title = QLabel(APP_DISPLAY_NAME)
         self.lbl_title.setObjectName("title")
         head.addWidget(self.lbl_title)
         head.addStretch(1)
+        self.btn_settings = QPushButton()
+        self.btn_settings.clicked.connect(self.open_settings)
+        self.btn_diag = QPushButton()
+        self.btn_diag.clicked.connect(lambda: self.open_diagnostics(False))
         self.btn_gear = QPushButton("\u2699")
         self.btn_gear.setObjectName("gear")
         self.btn_gear.clicked.connect(self._language_menu)
-        head.addWidget(self.btn_gear)
+        for b in (self.btn_settings, self.btn_diag, self.btn_gear):
+            head.addWidget(b)
         body.addLayout(head)
         self.lbl_tagline = QLabel()
         self.lbl_tagline.setObjectName("subtitle")
         self.lbl_tagline.setWordWrap(True)
         body.addWidget(self.lbl_tagline)
-        self.lbl_note = QLabel()
-        self.lbl_note.setObjectName("warn")
-        self.lbl_note.setWordWrap(True)
-        body.addWidget(self.lbl_note)
 
-        # --- 1. movie
-        c = self._card()
-        lay = QVBoxLayout(c)
-        lay.setContentsMargins(18, 14, 18, 14)
-        self.lbl_movie = QLabel()
-        self.lbl_movie.setObjectName("sectiontitle")
-        row = QHBoxLayout()
-        self.btn_file = QPushButton()
-        self.btn_file.clicked.connect(self.choose_file)
-        self.lbl_file = QLabel()
-        self.lbl_file.setObjectName("fileLabel")
-        self.lbl_file.setWordWrap(True)
-        row.addWidget(self.btn_file)
-        row.addWidget(self.lbl_file, 1)
-        lay.addWidget(self.lbl_movie)
-        lay.addLayout(row)
-        body.addWidget(c)
+        bar = QHBoxLayout()
+        bar.setSpacing(6)
+        self.step_buttons = []
+        for i, key in enumerate(STEPS):
+            b = QPushButton()
+            b.setObjectName("step")
+            b.setCheckable(True)
+            b.clicked.connect(lambda _=False, n=i: self.go(n))
+            self.step_buttons.append(b)
+            bar.addWidget(b, 1)
+        body.addLayout(bar)
 
-        # --- 2. language
-        c = self._card()
-        lay = QVBoxLayout(c)
-        lay.setContentsMargins(18, 14, 18, 14)
-        self.lbl_lang = QLabel()
-        self.lbl_lang.setObjectName("sectiontitle")
-        row = QHBoxLayout()
-        self.lbl_target = QLabel()
-        self.lbl_target.setObjectName("fileLabel")
-        self.cmb_target = QComboBox()
-        for code in TARGET_LANGS:
-            self.cmb_target.addItem("", code)
-        row.addWidget(self.lbl_target)
-        row.addWidget(self.cmb_target)
-        row.addStretch(1)
-        self.lbl_source = QLabel()
-        self.lbl_source.setObjectName("hint")
-        lay.addWidget(self.lbl_lang)
-        lay.addLayout(row)
-        lay.addWidget(self.lbl_source)
-        body.addWidget(c)
-
-        # --- 3. steps
-        c = self._card()
-        lay = QVBoxLayout(c)
-        lay.setContentsMargins(18, 14, 18, 14)
-        self.lbl_steps = QLabel()
-        self.lbl_steps.setObjectName("sectiontitle")
-        lay.addWidget(self.lbl_steps)
-        grid = QGridLayout()
-        grid.setHorizontalSpacing(6)
-        grid.setVerticalSpacing(6)
-        for i, st in enumerate(pst.STAGES):
-            chip = QLabel()
-            chip.setObjectName("chip")
-            self._chips[st.key] = chip
-            grid.addWidget(chip, i // 5, i % 5)
-        lay.addLayout(grid)
-        row = QHBoxLayout()
-        self.btn_start = QPushButton()
-        self.btn_start.clicked.connect(self.start_dubbing)
-        self.lbl_start = QLabel()
-        self.lbl_start.setObjectName("status")
-        self.lbl_start.setWordWrap(True)
-        row.addWidget(self.btn_start)
-        row.addWidget(self.lbl_start, 1)
-        lay.addLayout(row)
-        body.addWidget(c)
-
-        # --- diagnostics (primary card)
-        c = self._card(primary=True)
-        lay = QVBoxLayout(c)
-        lay.setContentsMargins(18, 14, 18, 14)
-        lay.setSpacing(8)
-        self.lbl_diag = QLabel()
-        self.lbl_diag.setObjectName("sectiontitle")
-        self.lbl_diag_desc = QLabel()
-        self.lbl_diag_desc.setObjectName("fileLabel")
-        self.lbl_diag_desc.setWordWrap(True)
-        self.chk_download = QCheckBox()
-        self.chk_download.setChecked(True)
-        self.chk_quick = QCheckBox()
-        self.lbl_token = QLabel()
-        self.lbl_token.setObjectName("fileLabel")
-        self.lbl_token.setWordWrap(True)
-        self.edt_token = QLineEdit()
-        self.edt_token.setEchoMode(QLineEdit.EchoMode.Password)
-        self.lbl_token_hint = QLabel()
-        self.lbl_token_hint.setObjectName("hint")
-        self.lbl_token_hint.setWordWrap(True)
-        self.btn_diag = QPushButton()
-        self.btn_diag.setObjectName("primary")
-        self.btn_diag.clicked.connect(self.start_diagnostics)
-        self.btn_cancel = QPushButton()
-        self.btn_cancel.clicked.connect(self.cancel_diagnostics)
-        self.btn_cancel.hide()
-        self.progress = QProgressBar()
-        self.progress.setRange(0, 1000)
-        self.progress.hide()
-        self.lbl_status = QLabel()
-        self.lbl_status.setObjectName("status")
-        self.lbl_status.setWordWrap(True)
-        self.log = QPlainTextEdit()
-        self.log.setReadOnly(True)
-        self.log.setMaximumBlockCount(500)
-        self.log.setFixedHeight(130)
-        self.log.hide()
-        self.row_result = QHBoxLayout()
-        self.btn_open = QPushButton()
-        self.btn_folder = QPushButton()
-        self.btn_copy = QPushButton()
-        self.btn_open.clicked.connect(self.open_report)
-        self.btn_folder.clicked.connect(self.show_in_folder)
-        self.btn_copy.clicked.connect(self.copy_report)
-        for b in (self.btn_open, self.btn_folder, self.btn_copy):
-            self.row_result.addWidget(b)
-            b.hide()
-        self.row_result.addStretch(1)
-        for w in (self.lbl_diag, self.lbl_diag_desc, self.chk_download, self.chk_quick, self.lbl_token, self.edt_token, self.lbl_token_hint):
-            lay.addWidget(w)
-        lay.addWidget(self.btn_diag)
-        lay.addWidget(self.btn_cancel)
-        lay.addWidget(self.progress)
-        lay.addWidget(self.lbl_status)
-        lay.addWidget(self.log)
-        lay.addLayout(self.row_result)
-        body.addWidget(c)
-
-        body.addStretch(1)
+        self.player = Player()
+        self.player.failed.connect(self._on_player_failed)
+        self.film = FilmPage()
+        self.chars = CharactersPage()
+        self.script = ScriptPage()
+        self.dubp = DubPage(self.player)
+        self.stack = QStackedWidget()
+        for w in (self.film, self.chars, self.script, self.dubp):
+            self.stack.addWidget(w)
+        body.addWidget(self.stack, 1)
         self.lbl_footer = QLabel()
         self.lbl_footer.setObjectName("footer")
-        self.lbl_footer.setWordWrap(True)
         body.addWidget(self.lbl_footer)
 
+        self.film.choose_file.connect(self.choose_file)
+        self.film.choose_subtitles.connect(self.choose_subtitles)
+        self.film.prepare.connect(self.prepare)
+        self.film.cmb_target.currentIndexChanged.connect(lambda _i: self._film_changed())
+        self.film.cmb_subs.currentIndexChanged.connect(lambda _i: self._film_changed())
+        self.chars.changed.connect(self._chars_changed)
+        self.chars.find_speakers.connect(lambda: self.run_pipeline("find", PREPARE_UNTIL))
+        self.chars.listen.connect(self.listen)
+        self.chars.next_step.connect(lambda: self.go(2))
+        self.script.next_step.connect(lambda: self.go(3))
+        self.dubp.dub.connect(lambda: self.run_pipeline("dub", "mux"))
+        self.dubp.cancel.connect(self.cancel_job)
+        self.dubp.preview.connect(self.start_preview)
+        self.dubp.watch.connect(self.start_watch)
+        self.dubp.open_result.connect(self.show_result)
+        self.dubp.external.connect(self.open_external)
+        self.dubp.volume.connect(self.set_original_volume)
+        self._sample_player = None
+
     def _fit(self) -> None:
-        """Natural size, limited to ~94 % x ~90 % of the screen; the scroll area takes over on small screens."""
-        hint = self.content.sizeHint()
-        w, h = max(780, hint.width()), max(560, hint.height() + 8)
+        w, h = 1040, 760
         try:
             avail = (self.screen() or QApplication.primaryScreen()).availableGeometry()
             w, h = min(w, int(avail.width() * 0.94)), min(h, int(avail.height() * 0.90))
@@ -292,43 +158,13 @@ class MainWindow(QWidget):
         if icon.is_file():
             self.setWindowIcon(QIcon(str(icon)))
         self.lbl_tagline.setText(tr("ui.tagline"))
-        self.lbl_note.setText(tr("ui.preview_note") + f"  [{APP_VERSION}]")
-        self.lbl_movie.setText(tr("card.movie"))
-        self.btn_file.setText(tr("ui.choose_file"))
-        self.lbl_file.setText(str(self.source) if self.source else tr("ui.no_file"))
-        self.lbl_lang.setText(tr("card.lang"))
-        self.lbl_target.setText(tr("ui.lang_target"))
-        for i, code in enumerate(TARGET_LANGS):
-            self.cmb_target.setItemText(i, tr(f"lang.{code}"))
-        self.lbl_source.setText(tr("ui.lang_source"))
-        self.lbl_steps.setText(tr("card.steps"))
-        for st in pst.STAGES:
-            chip = self._chips[st.key]
-            chip.setText(f"{tr(st.title_key)} · {tr('ui.chip_ready') if st.implemented else tr('ui.chip_soon')}")
-            chip.setProperty("state", "ready" if st.implemented else "soon")
-            chip.style().unpolish(chip)
-            chip.style().polish(chip)
-        self.btn_start.setText(tr("ui.btn_start"))
-        self.lbl_diag.setText(tr("card.diag"))
-        self.lbl_diag_desc.setText(tr("ui.diag_desc"))
-        self._retranslate_download()
-        self.chk_quick.setText(tr("ui.diag_quick"))
-        self.lbl_token.setText(tr("ui.diag_token"))
-        self.lbl_token_hint.setText(tr("ui.diag_token_hint"))
+        self.btn_settings.setText(tr("ui.settings"))
         self.btn_diag.setText(tr("ui.btn_diag"))
-        self.btn_cancel.setText(tr("ui.btn_cancel"))
-        self.btn_open.setText(tr("ui.btn_open"))
-        self.btn_folder.setText(tr("ui.btn_folder"))
-        self.btn_copy.setText(tr("ui.btn_copy"))
-        self.lbl_footer.setText(tr("ui.footer"))
-
-    def _retranslate_download(self) -> None:
-        try:
-            keys = ["tts_1_7b", "asr", "sep", "mt_en_ru", "diar"]
-            gb = models.total_download_gb(keys)
-        except Exception:  # noqa: BLE001
-            gb = 8.0
-        self.chk_download.setText(tr("ui.diag_download", gb=gb) if gb > 0 else tr("ui.diag_download_none"))
+        for i, key in enumerate(STEPS):
+            self.step_buttons[i].setText(f"{i + 1}. {tr('step.' + key)}")
+        for page in (self.film, self.chars, self.script, self.dubp, self.player):
+            page.retranslate()
+        self.lbl_footer.setText(f"{tr('ui.footer_main')}  ·  {APP_VERSION}")
 
     def _language_menu(self) -> None:
         menu = QMenu(self)
@@ -343,6 +179,349 @@ class MainWindow(QWidget):
         i18n.set_language(code)
         self.retranslate()
 
+    # ------------------------------------------------------------------ steps
+    def _prepared(self) -> bool:
+        return bool(self.project and (self.project.stages.get(PREPARE_UNTIL) or {}).get("done") and self.project.lines)
+
+    def _update_steps(self) -> None:
+        busy = self.job is not None and self.job.isRunning()
+        ready = self._prepared()
+        allowed = [True, ready, ready, ready]
+        for i, b in enumerate(self.step_buttons):
+            b.setEnabled(allowed[i])
+            b.setChecked(self.stack.currentIndex() == i)
+        self.film.btn_prepare.setEnabled(bool(self.project) and not busy)
+        self.film.btn_file.setEnabled(not busy)
+        for w in (self.chars.chk_multi, self.chars.cmb_single, self.chars.btn_find, self.chars.btn_merge):
+            w.setEnabled(not busy)
+        for c in self.chars.cards.values():
+            c.setEnabled(not busy)
+        self.script.set_editable(not busy)
+        self.dubp.running(busy)
+        self.dubp.btn_dub.setEnabled(ready and not busy)
+        self.dubp.btn_preview.setEnabled(ready and not busy)
+
+    def go(self, index: int) -> None:
+        if index > 0 and not self._prepared():
+            index = 0
+        self.stack.setCurrentIndex(index)
+        self._update_steps()
+
+    def target_lang(self) -> str:
+        return self.film.target_lang()
+
+    # ------------------------------------------------------------------ film
+    def dragEnterEvent(self, e) -> None:  # noqa: N802
+        urls = e.mimeData().urls() if e.mimeData().hasUrls() else []
+        if any(Path(u.toLocalFile()).suffix.lower() in VIDEO_EXTS | SUB_EXTS for u in urls):
+            e.acceptProposedAction()
+
+    def dropEvent(self, e) -> None:  # noqa: N802
+        for u in e.mimeData().urls():
+            p = Path(u.toLocalFile())
+            if p.suffix.lower() in VIDEO_EXTS:
+                self.set_source(p)
+            elif p.suffix.lower() in SUB_EXTS and self.project is not None:
+                self.film.set_subs_file(str(p))
+                self._film_changed()
+
+    def choose_file(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, tr("ui.file_dialog"), str(Path.home()), tr("ui.file_filter"))
+        if path:
+            self.set_source(Path(path))
+
+    def choose_subtitles(self) -> None:
+        start = str(self.project.source.parent) if self.project else str(Path.home())
+        path, _ = QFileDialog.getOpenFileName(self, tr("film.subs_choose"), start, tr("film.subs_filter"))
+        if path:
+            self.film.set_subs_file(path)
+            self._film_changed()
+
+    def projects_root(self) -> Path:
+        custom = str(settings.load().get("projects_dir") or "").strip()
+        return Path(custom) if custom else paths.projects_dir()
+
+    def set_source(self, path: Path) -> None:
+        """Open a film: read what is inside, open (or resume) its project folder."""
+        if self.job is not None and self.job.isRunning():
+            return
+        self.player.stop()
+        path = Path(path)
+        try:
+            self.info = media.probe(path)
+            error = ""
+        except Exception as exc:  # noqa: BLE001 - shown on the page
+            self.info, error = None, str(exc)
+        self.film.set_media(path, self.info, error)
+        if self.info is None:
+            self.project = None
+            self._update_steps()
+            return
+        folder = Project.folder_for(path, self.projects_root())
+        if (folder / "project.json").exists():
+            self.project = Project(folder)
+        else:
+            self.project = Project.create(folder, path, target_lang=self.film.target_lang(),
+                                          output_format=settings.load().get("output_format", "same"))
+        self.film.load(self.project)
+        self.watch_state = WatchState(self.info.duration)
+        self._reload_pages()
+        self.dubp.lbl_stage.setText("")
+        self.dubp.lbl_watch.setText("")
+        self.go(0)
+
+    def _film_changed(self) -> None:
+        if self.project is None:
+            return
+        self.film.store(self.project)
+        self.project.save()
+        s = settings.load()
+        self.film.show_subtitle_status(self.project, bool(s.get("subdl_key") or s.get("opensubtitles_key")))
+
+    def prepare(self) -> None:
+        if self.project is None:
+            self.film.lbl_prepare.setText(tr("ui.start_need_file"))
+            return
+        self._film_changed()
+        self.run_pipeline("prepare", PREPARE_UNTIL)
+
+    # ------------------------------------------------------------------ characters / script
+    def _chars_changed(self, what: str) -> None:
+        if what in ("multi", "merge"):
+            self.script.load(self.project)
+        if what == "name":
+            self.script.load(self.project)
+
+    def listen(self, sid: str) -> None:
+        """Play what a voice will sound like: the library sample, the reference clip, or a few of the speaker's lines."""
+        p = self.project
+        if p is None:
+            return
+        v = Voice.from_dict(p.settings.get("single_voice")) if not sid else (p.speaker(sid).voice if p.speaker(sid) else Voice())
+        clip: Optional[Path] = None
+        if v.kind == "library":
+            lv = voices.get_library_voice(v.id)
+            clip = lv.preview if lv else None
+        else:
+            ref = p.speaker(sid).ref_audio if sid and p.speaker(sid) else (p.settings.get("single_ref") or {}).get("audio", "")
+            if ref and p.abs(ref).exists():
+                clip = p.abs(ref)
+            else:
+                clip = self._speaker_sample(sid)
+        if clip is None:
+            self.chars.lbl_multi_status.setText(tr("chars.no_sample"))
+            return
+        self._play_clip(clip)
+
+    def _speaker_sample(self, sid: str) -> Optional[Path]:
+        p = self.project
+        src = p.folder / "audio" / "mix44.wav"
+        if not src.exists():
+            return None
+        chosen = voices.pick_reference_lines(p.lines, sid or None, max_s=10.0) or [ln for ln in p.lines if not sid or ln.speaker == sid][:3]
+        if not chosen:
+            return None
+        import numpy as np
+
+        parts, sr = [], 44100
+        for ln in chosen:
+            x, sr = audio.read_range(src, ln.start, ln.end)
+            parts += [x, np.zeros((int(0.3 * sr),) + x.shape[1:], x.dtype)]
+        out = p.path("voices", f"sample_{sid or 'single'}.wav")
+        audio.write(out, np.concatenate(parts), sr)
+        return out
+
+    def _play_clip(self, path: Path) -> None:
+        if not HAVE_MULTIMEDIA:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+            return
+        from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+
+        if self._sample_player is None:
+            self._sample_player = QMediaPlayer(self)
+            self._sample_out = QAudioOutput(self)
+            self._sample_player.setAudioOutput(self._sample_out)
+        self._sample_player.stop()
+        self._sample_player.setSource(QUrl.fromLocalFile(str(path)))
+        self._sample_player.play()
+
+    # ------------------------------------------------------------------ pipeline
+    def cfg(self) -> Dict[str, Any]:
+        return dict(self._cfg) if self._cfg is not None else engine_cfg()
+
+    def run_pipeline(self, kind: str, until: str, preview: Optional[float] = None) -> bool:
+        if self.project is None or (self.job is not None and self.job.isRunning()):
+            return False
+        self.project.save()
+        self.job_kind = kind
+        self.job = PipelineThread(self.project.folder, self.cfg(), until, preview, PREVIEW_S)
+        self.job.stage.connect(self._on_stage)
+        self.job.log.connect(self.dubp.log.appendPlainText)
+        self.job.progress.connect(self._on_progress)
+        self.job.until.connect(self._on_until)
+        self.job.done.connect(self._on_done)
+        if kind in ("prepare", "find"):
+            self.film.progress.setValue(0)
+            self.film.progress.show()
+            self.film.lbl_prepare.setText(tr("film.preparing"))
+            if kind == "find":
+                self.chars.lbl_multi_status.setText(tr("chars.finding"))
+        else:
+            self.dubp.progress.setValue(0)
+            self.dubp.lbl_stage.setText(tr("dub.starting"))
+            if kind == "dub" and self.watch_state is not None:
+                self.watch_state.finished = False
+        self.job.start()
+        self._update_steps()
+        return True
+
+    def cancel_job(self) -> None:
+        if self.job is not None:
+            self.job.cancel()
+
+    def _on_stage(self, key: str, status: str, msg: str) -> None:
+        text = tr("run.stage", stage=tr(f"stage.{key}"), status=tr(f"run.{status}")) + (f" — {msg}" if msg and status != "running" else "")
+        self.dubp.log.appendPlainText(text)
+        if self.job_kind in ("prepare", "find"):
+            self.film.lbl_prepare.setText(text)
+            if self.job_kind == "find":
+                self.chars.lbl_multi_status.setText(text)
+        else:
+            self.dubp.lbl_stage.setText(text)
+
+    def _on_progress(self, frac: float, eta: float) -> None:
+        bar = self.film.progress if self.job_kind in ("prepare", "find") else self.dubp.progress
+        bar.setValue(int(frac * 1000))
+        if self.job_kind == "dub":
+            self.dubp.lbl_eta.setText(fmt_eta(eta))
+
+    def _on_until(self, seconds: float) -> None:
+        if self.job_kind != "dub" or self.watch_state is None:
+            return
+        total = self.watch_state.total
+        finished = seconds >= total - 0.5
+        self.watch_state.update(self.player.position(), seconds, finished)
+        self.player.dubbed_until(seconds, finished)
+        self.dubp.btn_watch.setEnabled(self.watch_state.ready)
+        self.dubp.lbl_watch.setText(tr("dub.dubbed_until", t=fmt_time(seconds), total=fmt_time(total))
+                                    + ("" if self.watch_state.ready else "  " + tr("dub.watch_wait")))
+
+    def _on_done(self, ok: bool, message: str) -> None:
+        kind = self.job_kind
+        folder = self.job.result_folder if self.job else None
+        self.job_kind = ""
+        if self.project is not None:
+            self.project = Project(self.project.folder)
+        self._reload_pages()
+        if kind in ("prepare", "find"):
+            self.film.progress.hide()
+            self.film.lbl_prepare.setText(tr("film.prepared", n=len(self.project.lines)) if ok else tr("run.failed", error=message))
+            if ok and kind == "prepare":
+                self.go(1)
+        elif kind == "dub":
+            self.dubp.lbl_stage.setText(tr("dub.done", path=message) if ok else tr("run.failed", error=message))
+            if ok and self.watch_state is not None:
+                self.watch_state.finished = True
+                self.player.dubbed_until(self.watch_state.total, True)
+                self.dubp.btn_watch.setEnabled(True)
+                self.dubp.lbl_eta.setText("")
+        elif kind == "preview":
+            if ok and folder is not None:
+                self.dubp.lbl_stage.setText(tr("dub.preview_ready"))
+                self._play_preview(folder)
+            else:
+                self.dubp.lbl_stage.setText(tr("run.failed", error=message))
+        self._update_steps()
+
+    def _reload_pages(self) -> None:
+        if self.project is None:
+            return
+        self.chars.load(self.project)
+        self.script.load(self.project)
+        self.dubp.load(self.project)
+        s = settings.load()
+        self.film.show_subtitle_status(self.project, bool(s.get("subdl_key") or s.get("opensubtitles_key")))
+
+    def set_original_volume(self, value: float) -> None:
+        if self.project is not None:
+            self.project.settings["original_volume"] = round(value, 2)
+            self.project.save()
+
+    # ------------------------------------------------------------------ preview / watch / result
+    def start_preview(self) -> None:
+        if self.project is None:
+            return
+        self.player.stop()
+        self.preview_start = R.best_preview_start(self.project, PREVIEW_S)
+        self.run_pipeline("preview", "mix", preview=self.preview_start)
+
+    def _play_preview(self, folder: Path) -> None:
+        wav = Path(folder) / "out" / "dub_track.wav"
+        if not wav.exists() or self.project is None:
+            return
+        start = float(self.preview_start or 0.0)
+        if self.player.open(self.project.source, WavSource(wav, start), start, start + PREVIEW_S):
+            self.player.play()
+        self.dubp.btn_external.setEnabled(True)
+
+    def watch_source(self):
+        """Finished dub -> the whole dub track; while dubbing -> the Watch chunks."""
+        p = self.project
+        track = p.folder / "out" / "dub_track.wav"
+        if (p.stages.get("mix") or {}).get("done") and track.exists():
+            return WavSource(track, 0.0)
+        return ChunkSource(p.folder / "watch")
+
+    def start_watch(self) -> None:
+        if self.project is None or self.watch_state is None or not self.watch_state.ready:
+            return
+        if self.player.open(self.project.source, self.watch_source(), 0.0, None, self.watch_state):
+            self.watch_state.start()
+            self.player.play()
+
+    def show_result(self) -> None:
+        out = (self.project.settings.get("output_file") or "") if self.project else ""
+        if out and Path(out).exists():
+            dialogs.show_in_folder(Path(out))
+
+    def open_external(self) -> None:
+        """External player fallback: the finished file, else a short clip of the preview fragment."""
+        if self.project is None:
+            return
+        out = self.project.settings.get("output_file") or ""
+        if out and Path(out).exists():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(out))
+            return
+        wav = self.project.folder / "preview" / "out" / "dub_track.wav"
+        if wav.exists() and self.preview_start is not None:
+            clip = self.project.folder / "preview" / "out" / "preview.mp4"
+            try:
+                media.preview_clip(self.project.source, self.preview_start, PREVIEW_S, wav, clip)
+            except Exception as exc:  # noqa: BLE001
+                self.dubp.lbl_stage.setText(tr("run.failed", error=str(exc)))
+                return
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(clip)))
+
+    def _on_player_failed(self, msg: str) -> None:
+        self.dubp.lbl_watch.setText(tr("player.failed", error=msg))
+        self.dubp.btn_external.setEnabled(True)
+
+    # ------------------------------------------------------------------ settings / diagnostics
+    def open_settings(self) -> None:
+        dlg = dialogs.SettingsDialog(self)
+        dlg.setStyleSheet(build_style(False))
+        if dlg.exec() and self.project is not None:
+            self._film_changed()
+
+    def open_diagnostics(self, start: bool = False) -> None:
+        if self.diag_dialog is None:
+            self.diag_dialog = dialogs.DiagnosticsDialog(self, self.target_lang, self._options_hook)
+            self.diag_dialog.setStyleSheet(build_style(False))
+        self.diag_dialog.show()
+        self.diag_dialog.raise_()
+        if start and not self.diag_dialog.running():
+            self.diag_dialog.start()
+
     # ------------------------------------------------------------------ window effects
     def showEvent(self, e) -> None:  # noqa: N802
         """Acrylic backdrop once the native window exists (Windows 11), else the plain dark look."""
@@ -354,129 +533,10 @@ class MainWindow(QWidget):
                 self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
 
     def closeEvent(self, e) -> None:  # noqa: N802
-        for th in (self.diag, self.dub):
-            if th is not None and th.isRunning():
-                if isinstance(th, DiagThread):
-                    th.cancel()
-                th.wait(15000)
+        self.player.stop()
+        if self.job is not None and self.job.isRunning():
+            self.job.cancel()
+            self.job.wait(30000)
+        if self.diag_dialog is not None:
+            self.diag_dialog.close()
         super().closeEvent(e)
-
-    # ------------------------------------------------------------------ actions
-    def choose_file(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, tr("ui.file_dialog"), str(Path.home()), tr("ui.file_filter"))
-        if path:
-            self.set_source(Path(path))
-
-    def set_source(self, path: Path) -> None:
-        self.source = path
-        self.lbl_file.setText(str(path))
-
-    def target_lang(self) -> str:
-        return self.cmb_target.currentData() or "ru"
-
-    def start_dubbing(self) -> None:
-        if not self.source:
-            self.lbl_start.setText(tr("ui.start_need_file"))
-            return
-        self.btn_start.setEnabled(False)
-        self.lbl_start.setText(tr("ui.start_running"))
-        for st in pst.STAGES:
-            self._chips[st.key].setToolTip("")
-        self.dub = DubThread(self.source, self.target_lang())
-        self.dub.stage_done.connect(self._on_stage_done)
-        self.dub.finished_ok.connect(self._on_dub_finished)
-        self.dub.start()
-
-    def _on_stage_done(self, key: str, ok: bool, message: str, implemented: bool) -> None:
-        self._chips[key].setToolTip(message)
-        self.lbl_start.setText(f"{key}: {message}")
-
-    def _on_dub_finished(self) -> None:
-        self.btn_start.setEnabled(True)
-        self.lbl_start.setText(tr("ui.start_done"))
-
-    def build_options(self) -> DiagOptions:
-        opt = DiagOptions(allow_download=self.chk_download.isChecked(), quick=self.chk_quick.isChecked(), target_lang=self.target_lang(),
-                          hf_token=self.edt_token.text().strip())
-        if self._options_hook:
-            self._options_hook(opt)
-        return opt
-
-    def start_diagnostics(self) -> None:
-        if self.diag is not None and self.diag.isRunning():
-            return
-        self.btn_diag.setEnabled(False)
-        self.btn_cancel.show()
-        for b in (self.btn_open, self.btn_folder, self.btn_copy):
-            b.hide()
-        self.log.clear()
-        self.log.show()
-        self.progress.setValue(0)
-        self.progress.show()
-        self._counts = {k: 0 for k in self._counts}
-        self.lbl_status.setText(tr("ui.diag_running"))
-        self.diag = DiagThread(self.build_options())
-        self.diag.progress.connect(self._on_progress)
-        self.diag.result.connect(self._on_result)
-        self.diag.finished_path.connect(self._on_finished)
-        self.diag.failed.connect(self._on_failed)
-        self.diag.start()
-
-    def cancel_diagnostics(self) -> None:
-        if self.diag is not None:
-            self.diag.cancel()
-            self.btn_cancel.setEnabled(False)
-
-    def _on_progress(self, frac: float, text: str) -> None:
-        if frac >= 0:
-            self.progress.setValue(int(frac * 1000))
-        self.lbl_status.setText(f"{tr('ui.diag_running')} {text}")
-
-    def _on_result(self, check_id: str, status: str, summary: str) -> None:
-        self._counts[status] = self._counts.get(status, 0) + 1
-        self.log.appendPlainText(f"[{status:<4}] {check_id}  {summary[:110]}")
-
-    def _finish_ui(self) -> None:
-        self.btn_diag.setEnabled(True)
-        self.btn_cancel.hide()
-        self.btn_cancel.setEnabled(True)
-        self.progress.hide()
-
-    def _on_finished(self, path: str, cancelled: bool) -> None:
-        self._finish_ui()
-        self.report_path = Path(path)
-        c = self._counts
-        counts = tr("ui.counts", ok=c.get("OK", 0), warn=c.get("WARN", 0), fail=c.get("FAIL", 0), skip=c.get("SKIP", 0))
-        self.lbl_status.setText(tr("ui.diag_cancelled" if cancelled else "ui.diag_done", path=path) + "\n" + counts)
-        for b in (self.btn_open, self.btn_folder, self.btn_copy):
-            b.show()
-        self._retranslate_download()
-
-    def _on_failed(self, error: str) -> None:
-        self._finish_ui()
-        self.lbl_status.setText(tr("ui.diag_failed", error=error))
-
-    # ------------------------------------------------------------------ report actions
-    def open_report(self) -> None:
-        if self.report_path:
-            QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.report_path)))
-
-    def show_in_folder(self) -> None:
-        if not self.report_path:
-            return
-        if sys.platform == "win32":
-            try:
-                subprocess.Popen(["explorer", "/select,", str(self.report_path)])
-                return
-            except OSError:
-                pass
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.report_path.parent)))
-
-    def copy_report(self) -> None:
-        if not self.report_path:
-            return
-        try:
-            QGuiApplication.clipboard().setText(self.report_path.read_text(encoding="utf-8", errors="replace"))
-            self.lbl_status.setText(tr("ui.copied"))
-        except OSError as exc:
-            self.lbl_status.setText(str(exc))

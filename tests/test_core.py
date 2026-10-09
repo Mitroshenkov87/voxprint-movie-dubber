@@ -99,12 +99,6 @@ def test_mix_track_survives_line_outside_audio(tmp_path):
     assert info["lines"] == 0
 
 
-def test_unavailable_stages_are_marked(tmp_path):
-    ctx = stages.StageContext(tmp_path / "x.mkv", "ru", tmp_path)
-    res = stages.Stage().run(ctx)
-    assert res.implemented is False and res.ok
-
-
 # ------------------------------------------------------------------ ffmpeg on the bundled clip
 @needs_ffmpeg
 def test_probe_extract_and_mux(clip, tmp_path):

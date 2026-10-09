@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 from dubber import ffmpeg
 from dubber.core import subtitles as subs
@@ -109,3 +109,11 @@ def mux_dub(src: Path, dub_wav: Path, out: Path, lang: str, title: str) -> int:
     args.append(out)
     ffmpeg.run(args, timeout=4 * 3600)
     return n_audio
+
+
+def preview_clip(src: Path, start: float, length: float, dub_wav: Path, out: Path) -> Path:
+    """A short file with the dubbed fragment for an external player (only used when the built-in player cannot play the film).
+    The video is re-encoded here (native mpeg4, no GPL encoder needed) so it starts exactly at ``start`` and stays in sync."""
+    ffmpeg.run(["-ss", f"{start:.3f}", "-t", f"{length:.3f}", "-i", src, "-i", dub_wav, "-map", "0:v:0", "-map", "1:a:0",
+                "-c:v", "mpeg4", "-q:v", "4", "-c:a", "aac", "-b:a", "192k", "-shortest", out], timeout=900)
+    return Path(out)

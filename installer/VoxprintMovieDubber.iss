@@ -155,7 +155,8 @@ begin
     end;
 end;
 
-{ User data is only removed when the user agrees; the shared models only when no other Voxprint program uses them (default: keep). }
+{ User data is only removed when the user agrees; the shared models only when no other Voxprint program uses them (default: keep).
+  SuppressibleMsgBox: a silent uninstall (/SUPPRESSMSGBOXES) takes the default answer - keep. }
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   DataDir: String;
@@ -166,12 +167,12 @@ begin
   begin
     DataDir := ExpandConstant('{localappdata}\{#AppName}');
     if DirExists(DataDir) then
-      if MsgBox(FmtMessage(CustomMessage('UninstallDataQuestion'), [DataDir]),
-         mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
+      if SuppressibleMsgBox(FmtMessage(CustomMessage('UninstallDataQuestion'), [DataDir]),
+         mbConfirmation, MB_YESNO or MB_DEFBUTTON2, IDNO) = IDYES then
         DelTree(DataDir, True, True, True);
     if (OtherUsers = 0) and (ModelsDir <> '') and DirExists(ModelsDir) then
-      if MsgBox(FmtMessage(CustomMessage('UninstallModelsQuestion'), [ModelsDir]),
-         mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
+      if SuppressibleMsgBox(FmtMessage(CustomMessage('UninstallModelsQuestion'), [ModelsDir]),
+         mbConfirmation, MB_YESNO or MB_DEFBUTTON2, IDNO) = IDYES then
         DelTree(ModelsDir, True, True, True);
   end;
 end;

@@ -15,6 +15,8 @@ faster-qwen3-tts>=0.5.3
 transformers>=5.15.1,<6
 huggingface_hub>=1.5,<2
 accelerate==1.12.0
+# voices from the shared Voxprint voice library are LoRA adapters (made by the Audiobook Builder)
+peft>=0.18
 
 # the other pipeline stages
 silero-vad>=5.1
@@ -23,6 +25,8 @@ sentencepiece>=0.2
 safetensors>=0.4
 einops
 imageio-ffmpeg>=0.5
+# time stretching of dub lines (Signalsmith Stretch, MIT)
+python-stretch>=0.3
 
 # diarization (gated model, needs a Hugging Face token + accepted licence); optional, the diagnostics SKIP the step without it
 # pyannote.audio>=4.0

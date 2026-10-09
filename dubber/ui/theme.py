@@ -51,6 +51,13 @@ QPushButton:disabled {{{{ color: {disabled}; background: #1f1f28; border-color: 
 QPushButton#primary {{{{ background: {accent}; border: 1px solid {soft}; font-size: 17px; font-weight: 600; padding: 14px 20px; color: {on_accent}; }}}}
 QPushButton#primary:hover {{{{ background: {accent_hover}; }}}}
 QPushButton#primary:disabled {{{{ background: #2a3a55; color: #9db0cc; border-color: #3a4d6e; }}}}
+QPushButton#step {{{{ padding: 10px 12px; font-weight: 600; }}}}
+QPushButton#step:checked {{{{ background: {strong}; border-color: {soft}; color: #ffffff; }}}}
+QTableWidget {{{{ background: #1b1b23; border: 1px solid {border}; border-radius: 8px; gridline-color: #34343f; selection-background-color: {strong}; }}}}
+QHeaderView::section {{{{ background: {control}; color: {text}; border: none; border-right: 1px solid {border}; padding: 6px; }}}}
+QSlider::groove:horizontal {{{{ height: 6px; background: {control}; border-radius: 3px; }}}}
+QSlider::handle:horizontal {{{{ background: {accent}; width: 16px; margin: -6px 0; border-radius: 8px; }}}}
+QDialog {{{{ background: {{root_bg}}; }}}}
 QPushButton#gear {{{{ padding: 6px 12px; font-size: 18px; }}}}
 QProgressBar {{{{ background: {control}; border: 1px solid {border}; border-radius: 8px; height: 16px; text-align: center; }}}}
 QProgressBar::chunk {{{{ background: {strong}; border-radius: 7px; }}}}

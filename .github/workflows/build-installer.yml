@@ -19,6 +19,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check the release tag (tag builds only)
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if ($tag -notmatch '^v\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$') { throw "not a release tag: '$tag' (expected v<major>.<minor>.<patch>[-label])" }
+          $ver = (Select-String -Path dubber\appinfo.py -Pattern '^APP_VERSION\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
+          if (-not $tag.StartsWith("v$ver")) { throw "tag $tag does not match APP_VERSION $ver" }
+          "release tag: $tag (APP_VERSION $ver)"
+
+      - name: Write the build stamp (build_info.json)
+        shell: pwsh
+        run: |
+          $info = [ordered]@{
+            commit = "${{ github.sha }}".Substring(0, 7)
+            built = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+            run = "${{ github.run_number }}"
+            ref = "${{ github.ref_name }}"
+            flavour = "online installer"
+          }
+          [IO.File]::WriteAllText("$PWD\build_info.json", ($info | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
+          Get-Content build_info.json
+
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup --no-progress -y
@@ -66,6 +89,11 @@ jobs:
           $reg = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*","HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like "Voxprint AI Movie Dubber*" }
           if (-not $reg) { throw "no Apps and features entry" }
           "apps and features: $($reg.DisplayName) $($reg.DisplayVersion)"
+          if (-not (Test-Path C:\vmd\build_info.json)) { throw "build_info.json was not installed" }
+          $users = "$env:LOCALAPPDATA\Voxprint\models\.users.json"
+          if (-not (Test-Path $users)) { throw "the shared models users file was not created: $users" }
+          "models users: " + (Get-Content $users -Raw)
+          if (-not ((Get-Content $users -Raw | ConvertFrom-Json).'movie-dubber')) { throw "movie-dubber is not registered in $users" }
           "installed size: {0:N0} MB" -f ((Get-ChildItem C:\vmd -Recurse -File | Measure-Object Length -Sum).Sum / 1MB)
 
       - name: Run the installed program (version, window self-test, test suite)
@@ -77,6 +105,8 @@ jobs:
           New-Item -ItemType Directory -Force C:\vmd-desktop | Out-Null
           $py = "C:\vmd\runtime\Scripts\python.exe"
           & $py C:\vmd\main.py --version; if ($LASTEXITCODE -ne 0) { throw "--version failed" }
+          & $py -c "import PySide6, os, glob; d = os.path.dirname(PySide6.__file__); print('Qt FFmpeg:', [os.path.basename(f) for f in glob.glob(os.path.join(d, 'av*.dll'))]); assert glob.glob(os.path.join(d, 'plugins', 'multimedia', 'ffmpegmediaplugin.dll'))"
+          if ($LASTEXITCODE -ne 0) { throw "Qt Multimedia FFmpeg backend missing" }
           & $py C:\vmd\main.py --selftest; if ($LASTEXITCODE -ne 0) { throw "window self-test failed" }
           & C:\vmd\tools\uv\uv.exe pip install --python $py pytest; if ($LASTEXITCODE -ne 0) { throw "pytest install failed" }
           & $py -m pytest tests -p no:cacheprovider; if ($LASTEXITCODE -ne 0) { throw "tests failed" }
@@ -114,6 +144,10 @@ jobs:
           if ($menu) { throw "Start menu shortcuts are still there" }
           $reg = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*","HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like "Voxprint AI Movie Dubber*" }
           if ($reg) { throw "the Apps and features entry is still there" }
+          $users = "$env:LOCALAPPDATA\Voxprint\models\.users.json"
+          if ((Test-Path $users) -and ((Get-Content $users -Raw | ConvertFrom-Json).'movie-dubber')) { throw "movie-dubber is still registered in $users" }
+          if (-not (Test-Path "$env:LOCALAPPDATA\Voxprint\models")) { throw "the shared models were deleted without asking" }
+          "models kept: " + ((Get-ChildItem "$env:LOCALAPPDATA\Voxprint\models" -Directory | ForEach-Object Name) -join ", ")
           "uninstall OK"
 
       - name: Setup logs
@@ -154,4 +188,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $notes = "Early pre-release of Voxprint AI Movie Dubber. Small online installer: it downloads Python, PyTorch and the other dependencies during the setup. Windows 10/11 x64; an NVIDIA GPU is needed for useful speed."
-          gh release create "${{ github.ref_name }}" --prerelease --title "Voxprint AI Movie Dubber ${{ github.ref_name }} (pre-release)" --notes "$notes" installer/Output/VoxprintMovieDubber-Setup.exe installer/Output/VoxprintMovieDubber-Setup.exe.sha256
+          $tag = "${{ github.ref_name }}"
+          gh release create "$tag" --prerelease --title "Voxprint AI Movie Dubber $tag (pre-release)" --verify-tag --notes "$notes" installer/Output/VoxprintMovieDubber-Setup.exe installer/Output/VoxprintMovieDubber-Setup.exe.sha256

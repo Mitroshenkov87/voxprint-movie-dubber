@@ -11,8 +11,12 @@
 | Opus-MT (Helsinki-NLP) | translation | CC-BY-4.0 |
 | pyannote speaker-diarization community-1 | speaker diarization (gated, optional) | CC-BY-4.0; needs a Hugging Face token and accepted terms |
 | PySide6 / Qt | user interface | LGPL-3.0 |
+| FFmpeg libraries inside PySide6 (Qt Multimedia FFmpeg backend, shared DLLs) | built-in video player for the preview and Watch mode | LGPL-2.1-or-later (dynamically linked, replaceable) |
+| python-stretch (Signalsmith Stretch) | time stretching of dub lines | MIT |
+| PEFT | loading voices of the shared Voxprint voice library (LoRA adapters) | Apache-2.0 |
+| SubDL / OpenSubtitles APIs | optional subtitle search with the user's own keys | service terms of each site |
 | PyTorch, transformers, numpy, scipy, librosa, soundfile | runtime | BSD / Apache-2.0 / ISC |
-| ffmpeg (from PATH or imageio-ffmpeg) | audio extraction and muxing, called as a separate program | LGPL/GPL, depending on the build |
+| ffmpeg program (an LGPL build is preferred; PATH or imageio-ffmpeg as a fallback) | audio extraction and muxing, called as a separate program | LGPL/GPL, depending on the build |
 | espeak-ng (only to generate the synthetic test clip, `tools/make_test_clip.py`) | not shipped | GPL-3.0 (the generated audio is synthetic) |
 
 Project licence: "all rights reserved" for now (see `LICENSE`); no open-source licence chosen yet.
