@@ -367,3 +367,11 @@ def test_driver_cuda_is_read_from_new_nvidia_smi_headers():
     assert "driver_version" in ps1
     src = (Path(__file__).resolve().parents[1] / "dubber" / "diag" / "checks_system.py").read_text(encoding="utf-8")
     assert "UMD" in src
+
+
+def test_other_packages_step_keeps_the_torch_build_and_uses_pypi():
+    # PC run 3 (pre.4): "torchcodec==0.11.1+cu128 has no wheels with a matching platform tag (win_amd64)" with --torch-backend
+    ps1 = (Path(__file__).resolve().parents[1] / "installer" / "install-runtime.ps1").read_text(encoding="utf-8")
+    step = [ln for ln in ps1.splitlines() if "Installing the other packages" in ln and "Run " in ln][0]
+    assert "--torch-backend" not in step and '"-c", $pins' in step
+    assert 'torch==$tv+$flavor' in ps1 and 'torchaudio==$tv+$flavor' in ps1

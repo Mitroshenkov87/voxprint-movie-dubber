@@ -187,10 +187,12 @@ try {
         Remove-Item -LiteralPath (Join-Path $rt ".install-complete") -Force -ErrorAction SilentlyContinue
         Run "Creating the Python $($lockObj.python) environment" $uv @("venv", $envDir, "--python", $lockObj.python, "--allow-existing")
         $pins = Join-Path $env:TEMP "vmd-constraints-$key.txt"
-        $pinText = "torch==$tv`r`ntorchaudio==$tv`r`n" + ((Get-Content -LiteralPath $Constraints -Encoding UTF8) -join "`r`n")
+        # the exact local build ("2.11.0+cu128") so the second step keeps the torch installed by the first
+        $pinText = "torch==$tv+$flavor`r`ntorchaudio==$tv+$flavor`r`n" + ((Get-Content -LiteralPath $Constraints -Encoding UTF8) -join "`r`n")
         [IO.File]::WriteAllText($pins, $pinText, (New-Object Text.UTF8Encoding $false))
         Run "Installing PyTorch $tv ($flavor build) - this is the largest download" $uv @("pip", "install", "--python", $py, "--compile-bytecode", "torch==$tv", "torchaudio==$tv", "--torch-backend=$flavor")
-        Run "Installing the other packages" $uv @("pip", "install", "--python", $py, "--compile-bytecode", "-r", $Requirements, "-c", $pins, "--torch-backend=$flavor")
+        Run "Installing the other packages" $uv @("pip", "install", "--python", $py, "--compile-bytecode", "-r", $Requirements, "-c", $pins)
+        # no --torch-backend here: with it uv takes torchcodec from the PyTorch index, which has no win_amd64 cu128 wheel (real case)
         Run "Checking the installation" $py $check
         $info = [ordered]@{ key = $key; python = $lockObj.python; platform = $lockObj.platform; torch = "$tv+$flavor"; flavor = $flavor
                             requirements = (Sha256Hex (NormalizeReq $Requirements)); constraints = (Sha256Hex (NormalizeReq $Constraints))
