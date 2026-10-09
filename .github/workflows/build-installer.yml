@@ -159,7 +159,12 @@ jobs:
           $users = "$env:LOCALAPPDATA\Voxprint\models\.users.json"
           if ((Test-Path $users) -and ((Get-Content $users -Raw | ConvertFrom-Json).'movie-dubber')) { throw "movie-dubber is still registered in $users" }
           if (-not (Test-Path "$env:LOCALAPPDATA\Voxprint\models")) { throw "the shared models were deleted without asking" }
-          $left = Get-ChildItem "$env:LOCALAPPDATA\Voxprint" -Directory -Filter "runtime-*" -ErrorAction SilentlyContinue
+          # the uninstaller deletes the shared runtime (several GB) in its last step, after the program folder is gone: wait for it
+          for ($i = 0; $i -lt 120; $i++) {
+            $left = Get-ChildItem "$env:LOCALAPPDATA\Voxprint" -Directory -Filter "runtime-*" -ErrorAction SilentlyContinue
+            if (-not $left) { break }
+            Start-Sleep 2
+          }
           if ($left) {
             if (Test-Path C:\vmd-uninstall.log) { Get-Content C:\vmd-uninstall.log | Select-String "runtime" }
             foreach ($d in $left) { $d.FullName; Get-ChildItem $d.FullName | Format-Table Name; if (Test-Path "$($d.FullName)\.users.json") { Get-Content "$($d.FullName)\.users.json" } }
