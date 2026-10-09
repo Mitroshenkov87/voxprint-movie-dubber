@@ -279,8 +279,9 @@ def _reference_hypothesis(wav: Path, cfg: Dict[str, Any], emit: Emit) -> Optiona
     """Re-transcription of a reference clip, or None in mock mode / when ASR cannot run."""
     if cfg.get("asr") != "whisper":
         return None
+    repo = str(cfg.get("asr_repo") or DEFAULT_CFG["asr_repo"])
     try:
-        res = transcribe_faster_whisper(str(wav), None, cfg.get("asr_repo"), _device(cfg), cfg.get("allow_download", True),
+        res = transcribe_faster_whisper(str(wav), None, repo, _device(cfg), cfg.get("allow_download", True),
                                         lambda m: emit("log", text=m))
     except Exception as exc:  # noqa: BLE001 - no model in a test or a CPU trial: keep the joined text
         emit("log", text=f"reference check skipped ({type(exc).__name__})")

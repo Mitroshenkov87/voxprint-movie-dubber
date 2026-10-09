@@ -46,7 +46,9 @@ weekly pull requests for GitHub Actions only; Python pins stay in `requirements.
 - Unused imports and unused timers in the diagnostics runner, the fetch worker, and the system checks.
 - mypy findings in `dubber/` and `tools/` (optional values used without a local, ffmpeg argument lists, probe
   results typed as plain objects, Windows-only `msvcrt` / `os.add_dll_directory` not visible to mypy under
-  `os.name == "nt"`). Fixed with annotations and narrower locals. No file-wide ignore was added.
+  `os.name == "nt"`). Fixed with annotations and narrower locals. No file-wide ignore was added. After merging
+  the clip-regression work: `float()` in `_parse_vram_fraction` only sees `int`, `float`, or `str`, and the
+  reference-clip ASR call passes a string model repo (the default when `asr_repo` is missing).
 - `setuptools>=78.1.1` in `requirements.txt`. 78.1.0 is PYSEC-2025-49 / CVE-2025-47273 (high: path traversal in
   `PackageIndex.download`). 78.1.1 fixes that release. The program does not call that downloader; the floor keeps
   the vulnerable release out of the runtime. A current install resolves to 84.x, which also covers the later
@@ -61,7 +63,7 @@ weekly pull requests for GitHub Actions only; Python pins stay in `requirements.
 | pip-audit | `accelerate==1.12.0` — PYSEC-2026-3804 / GHSA-4j2p-28q2-5m79 (sharded-checkpoint `weight_map` path traversal). GitHub rates it moderate. No fix version is published. | `requirements.txt` pins accelerate 1.12.0 on purpose (the verified stack). The advisory is not high or critical under the GitHub label, so it does not block and is not on the allowlist. |
 | pip-audit | `torch==2.11.0` — PYSEC-2025-194 / GHSA-rrmf-rvhw-rf47 (`torch.jit.script` memory corruption). GitHub rates it low. The fix is torch 2.13.0. | The runtime lock pins torch 2.11.0 (shared with the Audiobook Builder). Moving the whole stack to 2.13 is a separate compatibility check. Low severity does not block a release. |
 | vulture | `dubber/workers/common.py` `default_rope` argument `seq_len` (100% confidence) | The name is part of the transformers RoPE initialiser signature. The shim has to accept it even though this workaround does not use the value. |
-| radon | Rank D or E in `mixing.mix_range`, `segment.segment`, `report.render`, `translation.complete_translate`, `model_store.ensure_model`, `stages.st_tts`, `window._update_steps`, `window._on_done`, `w_gpu.run`, `w_tts.run`, `w_asr.run`, and `tools/audit.py` `classify_pip` | Report only. These are the long pipeline, UI, and audit functions. Splitting them is not part of this pass. |
+| radon | Rank D or E in `mixing.mix_range`, `voices.pick_reference_lines`, `segment.segment`, `script.translate_with_context`, `report.render`, `translation.complete_translate`, `model_store.ensure_model`, `stages.st_tts`, `window._update_steps`, `window._on_done`, `w_gpu.run`, `w_tts.run`, `w_asr.run`, and `tools/audit.py` `classify_pip` | Report only. These are the long pipeline, UI, and audit functions. Splitting them is not part of this pass. |
 | ruff E501 / UP | Style and `pyupgrade` rewrites | The tree uses long lines and the existing typing style. Selecting those rules would bury the real errors. |
 | mypy | `ignore_missing_imports` | Third-party libraries in this stack (torch, PySide6, and others) ship no stubs. Our own modules are still type-checked. There is no `ignore_errors`. |
 
