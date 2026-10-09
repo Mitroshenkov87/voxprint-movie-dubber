@@ -66,12 +66,20 @@ function RuntimeKey($lockObj, [string]$flavor) {
 }
 
 function DriverCuda {
-    # "CUDA Version: 12.8" from the nvidia-smi header = the newest CUDA the driver supports; $null without an NVIDIA GPU
+    # "CUDA Version: 12.8" / "CUDA UMD Version: 13.4" from the nvidia-smi header = the newest CUDA the driver supports; $null without an NVIDIA GPU
     $smi = Get-Command nvidia-smi -ErrorAction SilentlyContinue
     if (-not $smi) { return $null }
     try {
         $txt = (& $smi.Source 2>$null) -join "`n"
-        if ($txt -match 'CUDA Version:\s*(\d+)\.(\d+)') { return @([int]$Matches[1], [int]$Matches[2]) }
+        # older drivers: "CUDA Version: 12.8"; drivers 6xx (real case, 617.42): "CUDA UMD Version: 13.4"
+        if ($txt -match 'CUDA (?:UMD )?Version:\s*(\d+)\.(\d+)') { return @([int]$Matches[1], [int]$Matches[2]) }
+        # no version in the header: the driver number tells the minimum (570+ runs CUDA 12.8, 560+ 12.6)
+        $drv = ((& $smi.Source --query-gpu=driver_version --format=csv,noheader 2>$null) | Select-Object -First 1)
+        if ($drv -match '^\s*(\d+)\.') {
+            $major = [int]$Matches[1]
+            if ($major -ge 570) { return @(12, 8) }
+            if ($major -ge 560) { return @(12, 6) }
+        }
     } catch { }
     return $null
 }

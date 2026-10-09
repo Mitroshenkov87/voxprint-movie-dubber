@@ -353,3 +353,17 @@ def test_asr_hole_is_found_and_filled_from_the_second_pass():
     assert added > 20 and len(got) == len(words) and [w["start"] for w in got] == sorted(w["start"] for w in got)
     assert asr.find_holes([(0.0, 93.5)], d["segments"]) == []          # the complete transcript has none
     assert asr.find_holes([], first) == []
+
+
+def test_driver_cuda_is_read_from_new_nvidia_smi_headers():
+    # MitroshenkovPC, driver 617.42: "CUDA UMD Version: 13.4" -> the installer chose the CPU build of PyTorch (run 3)
+    ps1 = (Path(__file__).resolve().parents[1] / "installer" / "install-runtime.ps1").read_text(encoding="utf-8")
+    m = re.search(r"-match '(CUDA [^']+)'", ps1)
+    rx = re.compile(m.group(1).replace("(?:UMD )?", "(?:UMD )?"))
+    assert rx.search("| NVIDIA-SMI 617.42   KMD Version: 617.42   CUDA UMD Version: 13.4 |").groups() == ("13", "4")
+    assert rx.search("| NVIDIA-SMI 572.16   Driver Version: 572.16   CUDA Version: 12.8 |").groups() == ("12", "8")
+    from dubber.infra import runtime
+    assert runtime.choose_flavor(runtime.load_lock(), (13, 4)) == "cu128"
+    assert "driver_version" in ps1
+    src = (Path(__file__).resolve().parents[1] / "dubber" / "diag" / "checks_system.py").read_text(encoding="utf-8")
+    assert "UMD" in src

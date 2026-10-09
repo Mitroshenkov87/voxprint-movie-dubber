@@ -18,7 +18,7 @@
 
 #define AppName "VoxprintMovieDubber"
 #define AppDisplayName "Voxprint AI Movie Dubber"
-#define AppVersion "0.1.0-pre.3"
+#define AppVersion "0.1.0-pre.4"
 #define PyW "{app}\runtime\Scripts\pythonw.exe"
 #define Py "{app}\runtime\Scripts\python.exe"
 

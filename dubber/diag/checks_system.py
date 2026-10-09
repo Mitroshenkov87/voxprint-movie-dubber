@@ -270,7 +270,7 @@ def query_nvidia_smi() -> dict:
                          temp_c=c[10], util=c[11], persistence=c[12], display_active=c[13]))
     out["gpus"] = gpus
     full = _run([smi])
-    m = re.search(r"CUDA Version:\s*([\d.]+)", full)
+    m = re.search(r"CUDA (?:UMD )?Version:\s*([\d.]+)", full)      # drivers 6xx write "CUDA UMD Version"
     out["cuda_driver_api"] = m.group(1) if m else ""
     return out
 
