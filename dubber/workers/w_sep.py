@@ -17,6 +17,7 @@ from dubber.workers.common import (WorkerContext, cuda_sync, free_gpu, peak_vram
 
 
 def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
+    """Separate the mix with TIGER-DnR and write dialogue, effect, music, and 16 kHz dialogue WAVs under ``out_dir``."""
     import numpy as np
     import soundfile as sf
     import torch

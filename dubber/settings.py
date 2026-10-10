@@ -34,11 +34,13 @@ def _file():
 
 
 def load() -> Dict[str, Any]:
+    """Load known settings from ``state/settings.json``, filling gaps from :data:`DEFAULTS`."""
     data = read_json(_file(), {}) or {}
     return {**DEFAULTS, **{k: v for k, v in data.items() if k in DEFAULTS}}
 
 
 def save(values: Dict[str, Any]) -> None:
+    """Merge known keys from ``values`` into ``state/settings.json``."""
     cur = load()
     cur.update({k: v for k, v in values.items() if k in DEFAULTS})
     write_json(_file(), cur)
@@ -51,6 +53,7 @@ def output_format() -> str:
 
 
 def engine_cfg() -> Dict[str, Any]:
+    """Return engine, device, and secret settings for a worker, with ``device`` normalized."""
     s = load()
     cfg = {k: s[k] for k in ENGINE_KEYS}
     cfg["device"] = device()
@@ -80,4 +83,5 @@ def set_device(value: str) -> None:
 
 
 def redacted(values: Dict[str, Any]) -> Dict[str, Any]:
+    """Return ``values`` with secret keys replaced by ``"set"`` when present and ``""`` when empty."""
     return {k: ("set" if v else "") if k in SECRET_KEYS else v for k, v in values.items()}

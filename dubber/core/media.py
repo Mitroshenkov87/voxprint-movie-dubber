@@ -14,6 +14,7 @@ LANG3 = {"rus": "ru", "eng": "en", "deu": "de", "ger": "de", "ru": "ru", "en": "
 
 @dataclass
 class Track:
+    """One audio or subtitle stream from ffprobe."""
     index: int              # index among streams of its type (ffmpeg "0:a:N" / "0:s:N")
     stream: int             # absolute stream index
     codec: str
@@ -23,9 +24,11 @@ class Track:
 
     @property
     def lang2(self) -> str:
+        """Two-letter language code. Known three-letter tags are mapped; others are cut to two letters."""
         return LANG3.get(self.lang.lower(), self.lang.lower()[:2])
 
     def label(self) -> str:
+        """Short label: language, codec, channel count when known, and title."""
         bits = [self.lang or "und", self.codec]
         if self.channels:
             bits.append(f"{self.channels} ch")
@@ -36,6 +39,7 @@ class Track:
 
 @dataclass
 class MediaInfo:
+    """Duration, video codec, and the audio and subtitle tracks of one film file."""
     path: Path
     duration: float = 0.0
     video_codec: str = ""
@@ -44,14 +48,17 @@ class MediaInfo:
 
     @property
     def text_subtitles(self) -> List[Track]:
+        """Subtitle tracks whose codec is text rather than a picture."""
         return [t for t in self.subtitles if t.codec in TEXT_SUB_CODECS]
 
     @property
     def container(self) -> str:
+        """File extension without the dot, in lower case."""
         return self.path.suffix.lower().lstrip(".")
 
 
 def probe(path: Path) -> MediaInfo:
+    """Duration, video codec, and audio and subtitle tracks from ffprobe."""
     data = ffmpeg.probe(Path(path))
     info = MediaInfo(Path(path), float(data["duration"] or 0.0))
     a = s = 0
@@ -69,6 +76,7 @@ def probe(path: Path) -> MediaInfo:
 
 
 def extract_subtitle(path: Path, track: Track, out_srt: Path) -> List[subs.Cue]:
+    """Convert one subtitle stream to SRT at ``out_srt`` and return its cues."""
     ffmpeg.run(["-i", path, "-map", f"0:s:{track.index}", "-c:s", "srt", out_srt])
     return subs.load_file(out_srt)
 
@@ -99,6 +107,7 @@ def pick_original_track(info: Optional[MediaInfo], target_lang: str = "") -> int
 
 def extract_audio(path: Path, out: Path, sr: int, channels: int, track: int = 0, start: Optional[float] = None,
                   length: Optional[float] = None) -> None:
+    """Extract one audio track as 16-bit PCM. ``start`` and ``length``, when set, are seconds."""
     args: List[object] = []
     if start is not None:
         args += ["-ss", f"{start:.3f}"]

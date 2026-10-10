@@ -129,6 +129,7 @@ class SettingsDialog(QDialog):
             self.edt_models.setText(d)
 
     def values(self) -> dict:
+        """Return the settings currently shown in the form."""
         return {"subdl_key": self.edt_subdl.text().strip(), "opensubtitles_key": self.edt_os_key.text().strip(),
                 "opensubtitles_user": self.edt_os_user.text().strip(), "opensubtitles_password": self.edt_os_pass.text(),
                 "hf_token": self.edt_hf.text().strip(), "separation": self.cmb_sep.currentData(),
@@ -137,6 +138,7 @@ class SettingsDialog(QDialog):
                 "allow_download": self.chk_download.isChecked(), "vram_tier": self.cmb_tier.currentData()}
 
     def accept(self) -> None:
+        """Save the form and close the dialog."""
         vals = self.values()
         settings.save(vals)
         if vals["device"] != settings.device():
@@ -162,6 +164,7 @@ class DiagThread(QThread):
         self.runner: Optional[DiagnosticRunner] = None
 
     def run(self) -> None:
+        """Run the checks and emit the report path, or the error."""
         try:
             self.runner = DiagnosticRunner(self.options, on_progress=lambda f, t: self.progress.emit(f, t),
                                            on_result=lambda r: self.result.emit(r.id, r.status.value, r.summary))
@@ -171,6 +174,7 @@ class DiagThread(QThread):
             self.failed.emit(f"{type(exc).__name__}: {exc}")
 
     def cancel(self) -> None:
+        """Stop the diagnostic runner."""
         if self.runner:
             self.runner.cancel()
 
@@ -240,6 +244,7 @@ class DiagnosticsDialog(QDialog):
         self.chk_download.setText(tr("ui.diag_download", gb=gb) if gb > 0 else tr("ui.diag_download_none"))
 
     def build_options(self) -> DiagOptions:
+        """Build the diagnostic options from this dialog and the saved token."""
         s = settings.load()
         opt = DiagOptions(allow_download=self.chk_download.isChecked(), quick=self.chk_quick.isChecked(), target_lang=self._target_lang(),
                           hf_token=str(s.get("hf_token") or ""), tts_model=str(s.get("tts_model") or "tts_1_7b"))
@@ -248,6 +253,7 @@ class DiagnosticsDialog(QDialog):
         return opt
 
     def start(self) -> None:
+        """Start the checks and show their progress."""
         if self.diag is not None and self.diag.isRunning():
             return
         self.btn_diag.setEnabled(False)
@@ -268,11 +274,13 @@ class DiagnosticsDialog(QDialog):
         self.diag.start()
 
     def cancel(self) -> None:
+        """Stop the running checks."""
         if self.diag is not None:
             self.diag.cancel()
             self.btn_cancel.setEnabled(False)
 
     def running(self) -> bool:
+        """Return whether the checks are still running."""
         return self.diag is not None and self.diag.isRunning()
 
     def _on_progress(self, frac: float, text: str) -> None:
@@ -305,14 +313,17 @@ class DiagnosticsDialog(QDialog):
         self.lbl_status.setText(tr("ui.diag_failed", error=error))
 
     def open_report(self) -> None:
+        """Open the report in the default application."""
         if self.report_path:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.report_path)))
 
     def show_in_folder(self) -> None:
+        """Show the report file in its folder."""
         if self.report_path:
             show_in_folder(self.report_path)
 
     def copy_report(self) -> None:
+        """Copy the report text to the clipboard."""
         if not self.report_path:
             return
         try:
@@ -322,6 +333,7 @@ class DiagnosticsDialog(QDialog):
             self.lbl_status.setText(str(exc))
 
     def closeEvent(self, e) -> None:  # noqa: N802
+        """Stop any running checks and close the dialog."""
         diag = self.diag
         if self.running() and diag is not None:
             diag.cancel()
@@ -330,6 +342,7 @@ class DiagnosticsDialog(QDialog):
 
 
 def show_in_folder(path: Path) -> None:
+    """Show the file in Explorer, or open its folder on other systems."""
     if sys.platform == "win32":
         try:
             subprocess.Popen(["explorer", "/select,", str(path)])
@@ -352,6 +365,7 @@ class CatalogThread(QThread):
         self.cancelled = False
 
     def run(self) -> None:
+        """List the catalog, or install the queued voices."""
         from dubber.core import voice_catalog as vc
 
         if not self.todo:
@@ -438,11 +452,13 @@ class VoiceCatalogDialog(QDialog):
         self.btn_install.setEnabled(any(self.list.item(i).flags() & Qt.ItemFlag.ItemIsUserCheckable for i in range(self.list.count())))
 
     def selected(self) -> list:
+        """Return the voices checked for download."""
         ids = {self.list.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.list.count())
                if self.list.item(i).flags() & Qt.ItemFlag.ItemIsUserCheckable and self.list.item(i).checkState() == Qt.CheckState.Checked}
         return [v for v in self.voices if v.id in ids]
 
     def install(self) -> None:
+        """Download the checked voices."""
         todo = self.selected()
         if not todo or (self.job is not None and self.job.isRunning()):
             return
@@ -468,6 +484,7 @@ class VoiceCatalogDialog(QDialog):
         self._on_listed(self.voices, "")
 
     def closeEvent(self, e) -> None:  # noqa: N802
+        """Stop a running download and close the dialog."""
         if self.job is not None and self.job.isRunning():
             self.job.cancelled = True
             self.job.wait(30000)

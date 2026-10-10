@@ -29,6 +29,7 @@ class FfmpegError(RuntimeError):
 
 @dataclass
 class FfmpegInfo:
+    """ffmpeg and ffprobe that were found, the version line, and candidates that did not run."""
     ffmpeg: Optional[str] = None
     ffprobe: Optional[str] = None
     version: str = ""
@@ -95,6 +96,7 @@ _cached: Optional[FfmpegInfo] = None
 
 
 def ffmpeg_info(refresh: bool = False) -> FfmpegInfo:
+    """Return the cached :func:`find_ffmpeg` result, searching on the first call and when ``refresh`` is true."""
     global _cached
     if _cached is None or refresh:
         _cached = find_ffmpeg()
@@ -102,6 +104,11 @@ def ffmpeg_info(refresh: bool = False) -> FfmpegInfo:
 
 
 def require_ffmpeg() -> str:
+    """Return the path of a working ffmpeg executable.
+
+    Raises:
+        FfmpegError: No ffmpeg binary was found.
+    """
     exe = ffmpeg_info().ffmpeg
     if not exe:
         raise FfmpegError("ffmpeg was not found (install ffmpeg, or set VOXPRINT_FFMPEG to its path)")
@@ -124,6 +131,7 @@ def run(args: Sequence[object], timeout: float = 3600) -> subprocess.CompletedPr
 
 
 class StreamInfo(TypedDict):
+    """One media stream: index, type, codec, language, channel count, sample rate in hertz, and title."""
     index: int
     type: str
     codec: str
@@ -134,6 +142,7 @@ class StreamInfo(TypedDict):
 
 
 class ProbeResult(TypedDict):
+    """Media duration in seconds and the streams :func:`probe` reported."""
     duration: Optional[float]
     streams: List[StreamInfo]
 

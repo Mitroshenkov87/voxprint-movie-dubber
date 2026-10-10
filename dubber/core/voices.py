@@ -35,6 +35,7 @@ REF_SHOUT_DB = 6.0                        # a 1.5-3 s line louder than this abov
 
 @dataclass
 class LibraryVoice:
+    """One voice folder in the shared library: adapter, language, and reference clip."""
     id: str
     name: str
     path: Path
@@ -48,11 +49,13 @@ class LibraryVoice:
 
     @property
     def ref_audio(self) -> Optional[Path]:
+        """Path of ``ref_sample.wav``, or None when that file is missing."""
         p = self.path / "ref_sample.wav"
         return p if p.is_file() else None
 
     @property
     def preview(self) -> Optional[Path]:
+        """``preview.wav`` when present, otherwise ``ref_sample.wav``, or None when neither exists."""
         for n in ("preview.wav", "ref_sample.wav"):
             if (self.path / n).is_file():
                 return self.path / n
@@ -106,6 +109,7 @@ def default_single_voice(target_lang: str, root: Optional[Path] = None) -> Optio
 
 
 def get_library_voice(voice_id: str, root: Optional[Path] = None) -> Optional[LibraryVoice]:
+    """The installed voice whose folder name is ``voice_id``, or None."""
     return next((v for v in list_library(root) if v.id == voice_id), None)
 
 

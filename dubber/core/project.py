@@ -32,6 +32,7 @@ CHUNK_S = 30.0
 
 @dataclass
 class Line:
+    """One script line: timing, original text, translation, and the flags that drive the dub."""
     id: int
     start: float
     end: float
@@ -54,27 +55,32 @@ class Line:
 
     @property
     def duration(self) -> float:
+        """Length of the line in seconds, never negative."""
         return max(0.0, self.end - self.start)
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "Line":
+        """Build a line from a JSON object, ignoring keys this class does not have."""
         names = {f.name for f in fields(cls)}
         return cls(**{k: v for k, v in d.items() if k in names})
 
 
 @dataclass
 class Voice:
+    """How a character is spoken: a clone, a library voice, an actor blend, or automatic."""
     kind: str = "clone"               # clone (own lines) | library (shared library) | actor (blend of both) | auto (by key role)
     id: str = ""                      # library voice id
 
     @classmethod
     def from_dict(cls, d: Optional[Dict[str, Any]]) -> "Voice":
+        """Build a voice from a JSON object. A missing object becomes a clone with an empty id."""
         d = d or {}
         return cls(kind=str(d.get("kind") or "clone"), id=str(d.get("id") or ""))
 
 
 @dataclass
 class Speaker:
+    """One character: the chosen voice, the reference clip, and how much of the dialogue they speak."""
     id: str
     name: str = ""
     voice: Voice = field(default_factory=lambda: Voice("auto"))   # auto: key character -> actor-like, others -> library match
@@ -86,6 +92,7 @@ class Speaker:
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "Speaker":
+        """Build a speaker from a JSON object. A blank or missing ``actor_weight`` stays unset."""
         raw = d.get("actor_weight")
         weight = None if raw is None or raw == "" else float(raw)
         return cls(id=str(d["id"]), name=str(d.get("name") or d["id"]), voice=Voice.from_dict(d.get("voice")),
@@ -112,6 +119,11 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
 
 
 def atomic_write_text(path: Path, text: str) -> None:
+    """Replace ``path`` with ``text`` through a temp file.
+
+    Raises:
+        PermissionError: The destination stayed locked after several retries.
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex[:8]}.tmp")
@@ -127,10 +139,12 @@ def atomic_write_text(path: Path, text: str) -> None:
 
 
 def write_json(path: Path, data: Any) -> None:
+    """Write ``data`` as UTF-8 JSON, replacing ``path`` atomically."""
     atomic_write_text(path, json.dumps(data, ensure_ascii=False, indent=1))
 
 
 def read_json(path: Path, default: Any = None) -> Any:
+    """Parse a JSON file, or return ``default`` when it is missing or invalid."""
     try:
         return json.loads(Path(path).read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
@@ -148,6 +162,7 @@ def write_json_gz(path: Path, data: Any) -> None:
 
 
 def read_json_gz(path: Path, default: Any = None) -> Any:
+    """Parse gzip-compressed JSON, or return ``default`` when the file is missing or invalid."""
     try:
         with gzip.open(path, "rb") as gz:
             return json.loads(gz.read().decode("utf-8"))
@@ -156,6 +171,7 @@ def read_json_gz(path: Path, default: Any = None) -> Any:
 
 
 def hash_of(*parts: Any) -> str:
+    """First 16 hex characters of SHA-256 over the JSON form of each part."""
     h = hashlib.sha256()
     for p in parts:
         h.update(json.dumps(p, sort_keys=True, ensure_ascii=False, default=str).encode("utf-8"))
@@ -164,6 +180,7 @@ def hash_of(*parts: Any) -> str:
 
 
 def file_fingerprint(path: Path) -> str:
+    """``size:mtime`` of ``path``, or ``missing`` when the file cannot be stated."""
     try:
         st = Path(path).stat()
         return f"{st.st_size}:{int(st.st_mtime)}"
@@ -172,6 +189,8 @@ def file_fingerprint(path: Path) -> str:
 
 
 class Project:
+    """One film's project folder: settings, stage cache, lines, and speakers."""
+
     def __init__(self, folder: Path) -> None:
         self.folder = Path(folder)
         data = read_json(self.folder / "project.json", {}) or {}
@@ -183,6 +202,7 @@ class Project:
     # ------------------------------------------------------------------ creation
     @classmethod
     def create(cls, folder: Path, source: Path, **settings: Any) -> "Project":
+        """Create a project in ``folder`` for ``source`` and save it. Extra keywords overwrite settings."""
         p = cls(folder)
         p.settings.update(settings)
         p.settings["source"] = str(Path(source).resolve())
@@ -199,20 +219,29 @@ class Project:
     # ------------------------------------------------------------------ files
     @property
     def source(self) -> Path:
+        """Film path stored in the settings."""
         return Path(self.settings["source"])
 
     def path(self, *parts: str) -> Path:
+        """Join ``parts`` under the project folder and create the parent directory."""
         p = self.folder.joinpath(*parts)
         p.parent.mkdir(parents=True, exist_ok=True)
         return p
 
     def rel(self, p: Path) -> str:
+        """``p`` relative to the project folder, with forward slashes.
+
+        Raises:
+            ValueError: ``p`` is not inside the project folder.
+        """
         return Path(p).resolve().relative_to(self.folder.resolve()).as_posix()
 
     def abs(self, rel: str) -> Path:
+        """Project path for a relative path stored in the project."""
         return self.folder / rel
 
     def save(self) -> None:
+        """Write ``project.json``, ``lines.json``, and ``speakers.json``."""
         self.folder.mkdir(parents=True, exist_ok=True)
         write_json(self.folder / "project.json", {"schema": SCHEMA, "settings": self.settings, "stages": self.stages})
         write_json(self.folder / "lines.json", [asdict(ln) for ln in self.lines])
@@ -220,29 +249,36 @@ class Project:
 
     # ------------------------------------------------------------------ stage cache
     def stage_fresh(self, key: str, inputs: str) -> bool:
+        """Whether stage ``key`` is marked done for this exact ``inputs`` hash."""
         st = self.stages.get(key) or {}
         return bool(st.get("done")) and st.get("inputs") == inputs
 
     def mark_done(self, key: str, inputs: str, seconds: float, **extra: Any) -> None:
+        """Mark stage ``key`` done for ``inputs`` and save. ``seconds`` is wall-clock time; extra keywords are stored on the stage."""
         self.stages[key] = {"done": True, "inputs": inputs, "seconds": round(seconds, 2), "at": time.time(), **extra}
         self.save()
 
     def invalidate(self, *keys: str) -> None:
+        """Drop the named stages from the cache and save."""
         for k in keys:
             self.stages.pop(k, None)
         self.save()
 
     # ------------------------------------------------------------------ script helpers
     def line(self, line_id: int) -> Optional[Line]:
+        """The script line with this id, or None."""
         return next((ln for ln in self.lines if ln.id == line_id), None)
 
     def speaker(self, sid: str) -> Optional[Speaker]:
+        """The character with this id, or None."""
         return next((s for s in self.speakers if s.id == sid), None)
 
     def dub_lines(self) -> List[Line]:
+        """Lines to synthesise: a translation is set, and the original is not kept."""
         return [ln for ln in self.lines if not ln.keep_original and ln.translation.strip()]
 
     def merge_speakers(self, keep: str, absorb: Iterable[str]) -> None:
+        """Move lines from ``absorb`` onto ``keep``, drop those speakers, and invalidate voices through mux."""
         absorb = [a for a in absorb if a != keep]
         for ln in self.lines:
             if ln.speaker in absorb:
@@ -255,6 +291,7 @@ class Project:
         self.invalidate("voices", "tts", "fit", "mix", "mux")
 
     def reassign(self, line_id: int, speaker: str) -> None:
+        """Give one line another speaker and clear its synthesised audio. Creates the speaker when it is new."""
         ln = self.line(line_id)
         if ln and ln.speaker != speaker:
             ln.speaker = speaker
@@ -271,6 +308,7 @@ class Project:
         return total > 0 and sp.seconds / total >= float(self.settings.get("key_share", 0.2))
 
     def voice_for(self, line: Line) -> Voice:
+        """Voice for this line: the single project voice, or the speaker's voice when multi-voice is on."""
         if not self.settings.get("multi_voice"):
             return Voice.from_dict(self.settings.get("single_voice"))
         sp = self.speaker(line.speaker)

@@ -96,6 +96,7 @@ class GpuSampler(threading.Thread):
         return None
 
     def run(self) -> None:
+        """Poll nvidia-smi about once a second until :meth:`stop` is called."""
         if not self.smi:
             return
         thr = None
@@ -118,6 +119,7 @@ class GpuSampler(threading.Thread):
             self._halt.wait(self.interval)
 
     def stop(self) -> None:
+        """Stop sampling and wait up to 12 seconds for this thread to finish."""
         self._halt.set()
         if self.is_alive():
             self.join(timeout=12)

@@ -101,6 +101,7 @@ def loudness_match_gain(dub: np.ndarray, reference: np.ndarray) -> float:
 
 
 def chunk_bounds(total: float, chunk_s: float) -> List[Tuple[float, float]]:
+    """Ranges of at most ``chunk_s`` seconds from 0 to ``total``. The last one ends at ``total``."""
     out, t = [], 0.0
     while t < total - 1e-6:
         out.append((t, min(total, t + chunk_s)))

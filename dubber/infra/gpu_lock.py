@@ -28,6 +28,7 @@ _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 
 
 
 def lock_file() -> Path:
+    """Return the shared GPU lock path: ``VOXPRINT_GPU_LOCK``, or ``voxprint-gpu.lock`` in the temp directory."""
     override = os.environ.get("VOXPRINT_GPU_LOCK")
     return Path(override) if override else Path(tempfile.gettempdir()) / LOCK_NAME
 
@@ -80,11 +81,13 @@ def gpu_processes() -> List[str]:
 
 
 def voxprint_gpu_busy(procs: Optional[List[str]] = None) -> bool:
+    """Return whether a Python or Voxprint process is holding GPU memory."""
     procs = gpu_processes() if procs is None else procs
     return any(("python" in n.lower() or "voxprint" in n.lower()) for n in procs)
 
 
 def is_stale(data: Dict[str, Any], path: Path, now: Optional[datetime] = None, busy: Optional[Callable[[], bool]] = None) -> bool:
+    """Return whether the lock is older than two hours and no Voxprint process is using the GPU."""
     now = now or _now()
     eta = _parse(data.get("eta")) or _parse(data.get("started"))
     if eta is None:                                           # garbage: use the file age
@@ -98,6 +101,7 @@ def is_stale(data: Dict[str, Any], path: Path, now: Optional[datetime] = None, b
 
 
 class GpuLockTimeout(TimeoutError):
+    """The wait for the shared GPU lock was cancelled or exceeded its timeout."""
     pass
 
 
@@ -143,6 +147,7 @@ def _pid_alive(pid: Any) -> bool:
 
 
 def release(path: Optional[Path] = None, owner: str = OWNER) -> None:
+    """Delete the lock file when this process owns it."""
     p = path or lock_file()
     cur = read_lock(p)
     if cur is not None and cur.get("owner") == owner and cur.get("pid") in (None, os.getpid()):

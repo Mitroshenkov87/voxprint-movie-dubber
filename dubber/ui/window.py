@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 from PySide6.QtCore import QTimer, Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QIcon
@@ -53,7 +53,16 @@ def engine_cfg() -> Dict[str, Any]:
 
 
 class MainWindow(QWidget):
-    def __init__(self, autorun: bool = False, options_hook=None, cfg: Optional[Dict[str, Any]] = None) -> None:
+    """Main window for choosing a film, reviewing the dub, and running the pipeline.
+
+    Args:
+        autorun: Open diagnostics and start them shortly after the window is built.
+        options_hook: Called with diagnostic options before a run, when set.
+        cfg: Engine settings for pipeline jobs. When omitted, Settings or the mock engines are used.
+    """
+
+    def __init__(self, autorun: bool = False, options_hook: Optional[Callable[..., None]] = None,
+                 cfg: Optional[Dict[str, Any]] = None) -> None:
         super().__init__()
         self.backdrop = "plain"
         self.project: Optional[Project] = None
@@ -181,6 +190,7 @@ class MainWindow(QWidget):
 
     # ------------------------------------------------------------------ texts
     def retranslate(self) -> None:
+        """Refresh the window and every page for the current language."""
         self.setWindowTitle(APP_DISPLAY_NAME)
         icon = resource_dir() / "assets" / "voxprint-dubber.ico"
         if icon.is_file():
@@ -210,6 +220,7 @@ class MainWindow(QWidget):
         menu.exec(self.btn_gear.mapToGlobal(self.btn_gear.rect().bottomLeft()))
 
     def set_language(self, code: str) -> None:
+        """Switch the interface language and refresh the window."""
         i18n.set_language(code)
         self.retranslate()
 
@@ -254,6 +265,7 @@ class MainWindow(QWidget):
         self.act_save_as.setEnabled(bool(self.project) and not busy)
 
     def go(self, index: int) -> None:
+        """Show a wizard step, staying on Film until the project is prepared."""
         if index > 0 and not self._prepared():
             index = 0
         if index == 1 and not self._multi():
@@ -262,15 +274,18 @@ class MainWindow(QWidget):
         self._update_steps()
 
     def target_lang(self) -> str:
+        """Return the dub language selected on the Film page."""
         return self.film.target_lang()
 
     # ------------------------------------------------------------------ film
     def dragEnterEvent(self, e) -> None:  # noqa: N802
+        """Accept a dragged video, subtitle, or project file."""
         urls = e.mimeData().urls() if e.mimeData().hasUrls() else []
         if any(Path(u.toLocalFile()).suffix.lower() in VIDEO_EXTS | SUB_EXTS | {PROJECT_EXT} for u in urls):
             e.acceptProposedAction()
 
     def dropEvent(self, e) -> None:  # noqa: N802
+        """Open a dropped film or project, or attach a dropped subtitle file."""
         for u in e.mimeData().urls():
             p = Path(u.toLocalFile())
             if p.suffix.lower() == PROJECT_EXT:
@@ -282,6 +297,7 @@ class MainWindow(QWidget):
                 self._film_changed()
 
     def choose_file(self) -> None:
+        """Ask for a film file and open it."""
         path, _ = QFileDialog.getOpenFileName(self, tr("ui.file_dialog"), str(Path.home()), tr("ui.file_filter"))
         if path:
             self.set_source(Path(path))
@@ -290,12 +306,14 @@ class MainWindow(QWidget):
         self.file_menu.exec(self.btn_file.mapToGlobal(self.btn_file.rect().bottomLeft()))
 
     def choose_vxdub(self) -> None:
+        """Ask for a project file and open it."""
         start = str(self.vxdub_path.parent) if self.vxdub_path else str(Path.home())
         path, _ = QFileDialog.getOpenFileName(self, tr("vxdub.open_title"), start, tr("vxdub.filter"))
         if path:
             self.open_vxdub(Path(path))
 
     def save_vxdub_as(self) -> None:
+        """Ask where to save the project file, then save it."""
         if self.project is None:
             return
         start = self.vxdub_path or self.project.source.with_suffix(PROJECT_EXT)
@@ -393,6 +411,7 @@ class MainWindow(QWidget):
         QMessageBox.warning(self, title, text)
 
     def choose_subtitles(self) -> None:
+        """Ask for a subtitle file and use it for this film."""
         start = str(self.project.source.parent) if self.project else str(Path.home())
         path, _ = QFileDialog.getOpenFileName(self, tr("film.subs_choose"), start, tr("film.subs_filter"))
         if path:
@@ -400,6 +419,7 @@ class MainWindow(QWidget):
             self._film_changed()
 
     def projects_root(self) -> Path:
+        """Return the folder that holds film projects."""
         custom = str(settings.load().get("projects_dir") or "").strip()
         return Path(custom) if custom else paths.projects_dir()
 
@@ -624,9 +644,17 @@ class MainWindow(QWidget):
 
     # ------------------------------------------------------------------ pipeline
     def cfg(self) -> Dict[str, Any]:
+        """Return the engine settings for a pipeline run."""
         return dict(self._cfg) if self._cfg is not None else engine_cfg()
 
     def run_pipeline(self, kind: str, until: str, preview: Optional[float] = None) -> bool:
+        """Start a background pipeline job and return whether it started.
+
+        Args:
+            kind: Which screen owns the progress. ``prepare``, ``find``, and ``auto`` use the Film page.
+            until: Last pipeline stage to run.
+            preview: Film time where a preview fragment starts.
+        """
         if self.project is None or (self.job is not None and self.job.isRunning()):
             return False
         self.project.save()
@@ -654,6 +682,7 @@ class MainWindow(QWidget):
         return True
 
     def cancel_job(self) -> None:
+        """Ask the running pipeline job to stop."""
         if self.job is not None:
             self.job.cancel()
 
@@ -748,6 +777,7 @@ class MainWindow(QWidget):
         self.film.show_subtitle_status(self.project, bool(s.get("subdl_key") or s.get("opensubtitles_key")))
 
     def set_original_volume(self, value: float) -> None:
+        """Save how loud the original audio stays under the dub."""
         if self.project is not None:
             self.project.settings["original_volume"] = round(value, 2)
             self.project.save()
@@ -756,6 +786,7 @@ class MainWindow(QWidget):
 
     # ------------------------------------------------------------------ preview / watch / result
     def start_preview(self) -> None:
+        """Dub a one-minute fragment and play it."""
         if self.project is None:
             return
         self.player.stop()
@@ -780,6 +811,7 @@ class MainWindow(QWidget):
         return ChunkSource(p.folder / "watch")
 
     def start_watch(self) -> None:
+        """Play the film alongside the dubbed audio that is already ready."""
         if self.project is None or self.watch_state is None or not self.watch_state.ready:
             return
         if self.player.open(self.project.source, self.watch_source(), 0.0, None, self.watch_state):
@@ -787,6 +819,7 @@ class MainWindow(QWidget):
             self.player.play()
 
     def show_result(self) -> None:
+        """Show the finished dubbed file in its folder."""
         out = (self.project.settings.get("output_file") or "") if self.project else ""
         if out and Path(out).exists():
             dialogs.show_in_folder(Path(out))
@@ -841,6 +874,7 @@ class MainWindow(QWidget):
             self.chars.lbl_multi_status.setText(tr("run.failed", error=str(exc)))
 
     def open_voice_catalog(self) -> None:
+        """Open the shared voice catalog and reload characters after an install."""
         dlg = dialogs.VoiceCatalogDialog(self)
         dlg.setStyleSheet(build_style(False))
         dlg.exec()
@@ -848,6 +882,7 @@ class MainWindow(QWidget):
             self.chars.load(self.project)
 
     def open_settings(self) -> None:
+        """Open the settings dialog and refresh the plan when they are saved."""
         dlg = dialogs.SettingsDialog(self)
         dlg.setStyleSheet(build_style(False))
         if dlg.exec() and self.project is not None:
@@ -855,6 +890,7 @@ class MainWindow(QWidget):
             self._refresh_plan()
 
     def open_diagnostics(self, start: bool = False) -> None:
+        """Show the diagnostics dialog and start the checks when asked."""
         if self.diag_dialog is None:
             self.diag_dialog = dialogs.DiagnosticsDialog(self, self.target_lang, self._options_hook)
             self.diag_dialog.setStyleSheet(build_style(False))
@@ -874,6 +910,7 @@ class MainWindow(QWidget):
                 self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
 
     def closeEvent(self, e) -> None:  # noqa: N802
+        """Stop playback and background work, then close the window."""
         self.player.stop()
         if self.job is not None and self.job.isRunning():
             self.job.cancel()

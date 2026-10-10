@@ -26,11 +26,13 @@ def too_long_count(p: Project) -> int:
 
 
 def diarized(p: Project) -> bool:
+    """Whether diarization is marked done and its summary does not say it was skipped."""
     st = p.stages.get("diarization") or {}
     return bool(st.get("done")) and "skipped" not in str(st.get("summary", ""))
 
 
 def attention(p: Project) -> Dict[str, List[Hint]]:
+    """Badges for the Characters and Lines tabs. An empty list means that tab needs no attention."""
     out: Dict[str, List[Hint]] = {"characters": [], "lines": []}
     if not p.lines:
         return out

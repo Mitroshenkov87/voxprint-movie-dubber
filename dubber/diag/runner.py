@@ -48,6 +48,7 @@ class DiagOptions:
     timeout_scale: float = 1.0
 
     def as_report_options(self) -> Dict[str, Any]:
+        """Header fields for the report. The token is recorded only as ``given`` or ``none``."""
         return {"target": self.target_lang, "quick": "yes" if self.quick else "no", "downloads": "allowed" if self.allow_download else "off",
                 "hf_token": "given" if self.hf_token else "none", "tts_model": models.SPECS[self.tts_model].repo.split("/")[-1],
                 "clip": "bundled synthetic" if not self.clip else self.clip.name}
@@ -55,6 +56,15 @@ class DiagOptions:
 
 @dataclass
 class Step:
+    """One diagnostic check in the run plan.
+
+    Args:
+        id: Stable check id written into the report.
+        title: Label shown while the check runs.
+        fn: Zero-argument function that returns a check result.
+        weight: Share of the overall progress bar.
+        group: Skip name. ``DiagOptions.skip`` drops a whole group before it runs.
+    """
     id: str
     title: str
     fn: Callable[[], CheckResult]
@@ -98,10 +108,12 @@ class DiagnosticRunner:
 
     # ------------------------------------------------------------------ control
     def cancel(self) -> None:
+        """Stop before the next check and cancel a worker that is still running."""
         self._cancel.set()
 
     @property
     def cancelled(self) -> bool:
+        """True after :meth:`cancel` has been called."""
         return self._cancel.is_set()
 
     # ------------------------------------------------------------------ main loop
@@ -217,6 +229,7 @@ class DiagnosticRunner:
 
     @staticmethod
     def result_from_outcome(check_id: str, title: str, out: WorkerOutcome) -> CheckResult:
+        """Turn a finished, crashed, timed-out, or cancelled worker into a check result, and warn when a finished worker then exits non-zero."""
         r = CheckResult(check_id, title)
         r.seconds = out.seconds
         tail = "\n".join(out.stderr_tail.splitlines()[-30:])

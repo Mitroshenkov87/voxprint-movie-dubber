@@ -15,13 +15,14 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QFrame, 
                                QTableWidgetItem, QVBoxLayout, QWidget)
 
 from dubber.core import actor_voice, media, script, subtitles, voices
-from dubber.core.project import Project, Voice
+from dubber.core.project import Project, Speaker, Voice
 from dubber.i18n import tr
 
 TARGET_LANGS = ("ru", "en", "de")
 
 
 def card(primary: bool = False) -> QFrame:
+    """Return a card frame, marked primary when it holds the main action."""
     f = QFrame()
     f.setObjectName("card")
     f.setProperty("primary", "true" if primary else "false")
@@ -29,6 +30,7 @@ def card(primary: bool = False) -> QFrame:
 
 
 def label(obj: str = "", wrap: bool = True) -> QLabel:
+    """Return a label, using obj as its object name when one is given."""
     lb = QLabel()
     if obj:
         lb.setObjectName(obj)
@@ -40,11 +42,13 @@ class AutoLabel(QLabel):
     """A status label that takes no room while it has nothing to say."""
 
     def setText(self, text: str) -> None:  # noqa: N802
+        """Set the text and hide the label when it is empty."""
         super().setText(text)
         self.setVisible(bool(text))
 
 
 def fmt_time(t: float, ms: bool = False) -> str:
+    """Format a duration as a clock time, with milliseconds when asked."""
     t = max(0.0, t)
     h, m, s = int(t // 3600), int(t % 3600 // 60), t % 60
     body = f"{m:02d}:{s:06.3f}" if ms else f"{m:02d}:{int(s):02d}"
@@ -52,6 +56,7 @@ def fmt_time(t: float, ms: bool = False) -> str:
 
 
 def fmt_eta(seconds: float) -> str:
+    """Format a remaining time in minutes, or as unknown when it is negative."""
     if seconds < 0:
         return tr("dub.eta_unknown")
     m = int(round(seconds / 60))
@@ -68,15 +73,18 @@ def voice_items() -> List[tuple]:
 
 
 def voice_key(v: Voice) -> str:
+    """Return the combo-box value for a voice."""
     return f"{v.kind}:{v.id}"
 
 
 def voice_from_key(key: str) -> Voice:
+    """Return the voice stored in a combo-box value."""
     kind, _, vid = str(key).partition(":")
     return Voice(kind or "clone", vid)
 
 
 def fill_voice_combo(cmb: QComboBox, current: Voice, items: Optional[List[tuple]] = None) -> None:
+    """Fill a voice combo and select the current voice."""
     cmb.blockSignals(True)
     cmb.clear()
     found = False
@@ -292,6 +300,7 @@ class FilmPage(QWidget):
 
     # ------------------------------------------------------------------ texts
     def retranslate(self) -> None:
+        """Refresh this page's labels for the current language."""
         self.lbl_drop.setText(tr("film.title"))
         self.btn_file.setText(tr("ui.choose_file"))
         if not self.info:
@@ -338,6 +347,7 @@ class FilmPage(QWidget):
         self.options_toggled.emit(on)
 
     def set_options_open(self, on: bool) -> None:
+        """Open or close Options without notifying listeners."""
         self.btn_options.blockSignals(True)
         self.btn_options.setChecked(on)
         self.btn_options.blockSignals(False)
@@ -364,12 +374,15 @@ class FilmPage(QWidget):
     # ------------------------------------------------------------------ model <-> view
     @property
     def auto_track(self) -> int:
+        """Return the original audio track for the selected dub language."""
         return media.pick_original_track(self.info, self.target_lang())
 
     def target_lang(self) -> str:
+        """Return the selected dub language."""
         return self.cmb_target.currentData() or "ru"
 
     def set_media(self, path: Path, info: Optional[media.MediaInfo], error: str = "") -> None:
+        """Show the film path, its tracks, and the probe error when probing failed."""
         self.info = info
         self.lbl_file.setText(str(path))
         self.cmb_audio.blockSignals(True)
@@ -388,6 +401,7 @@ class FilmPage(QWidget):
                                  audio=len(info.audio), subs=subs_txt))
 
     def set_subs_file(self, path: str) -> None:
+        """Offer this subtitle file in the combo and select it."""
         self.subs_file = path
         while self.cmb_subs.count() > 2:
             self.cmb_subs.removeItem(2)
@@ -396,9 +410,11 @@ class FilmPage(QWidget):
             self.cmb_subs.setCurrentIndex(2)
 
     def subtitle_choice(self) -> str:
+        """Return the subtitle source: auto, none, or a file path."""
         return self.cmb_subs.currentData() or "auto"
 
     def multi(self) -> bool:
+        """Return whether each character gets its own voice."""
         return self.chk_multi.isChecked()
 
     def _widgets(self):
@@ -406,6 +422,7 @@ class FilmPage(QWidget):
                 self.sld_likeness, self.sld_volume, self.cmb_format)
 
     def load(self, p: Project) -> None:
+        """Show this project's options on the Film page."""
         for w in self._widgets():
             w.blockSignals(True)
         self.cmb_target.setCurrentIndex(max(0, self.cmb_target.findData(p.settings.get("target_lang"))))
@@ -434,6 +451,7 @@ class FilmPage(QWidget):
         self.show_subtitle_status(p)
 
     def store(self, p: Project) -> None:
+        """Copy the Film options into the project settings."""
         p.settings["target_lang"] = self.target_lang()
         auto = (self.cmb_audio.currentData() if self.cmb_audio.currentData() is not None else -1) == -1
         p.settings["audio_track_auto"] = auto
@@ -465,6 +483,7 @@ class FilmPage(QWidget):
         self.lbl_plan.setText(tr("film.plan", lang=tr(f"lang.{p.settings.get('target_lang', 'ru')}"), voice=voice, name=out_name))
 
     def running(self, on: bool) -> None:
+        """Enable or disable the Film actions while a job runs."""
         self.btn_dub.setEnabled(not on)
         self.btn_prepare.setEnabled(not on)
         self.btn_cancel.setVisible(on)
@@ -475,6 +494,7 @@ class FilmPage(QWidget):
             self.lbl_eta.setText("")
 
     def set_attention(self, items: List[str]) -> None:
+        """Show review notes, or hide them when there are none."""
         self.lbl_attention.setText(tr("review.title", items="; ".join(items)) if items else "")
         self.lbl_attention.setVisible(bool(items))
 
@@ -506,7 +526,16 @@ class FilmPage(QWidget):
 
 # ================================================================================================ 2. Characters
 class SpeakerCard(QFrame):
-    def __init__(self, page: "CharactersPage", sp, samples: List[str], items: List[tuple]) -> None:
+    """One character: name, voice, likeness, and a few of their lines.
+
+    Args:
+        page: Characters page that receives edits from this card.
+        sp: Speaker this card shows.
+        samples: Short lines quoted on the card.
+        items: Voice choices for the combo box.
+    """
+
+    def __init__(self, page: "CharactersPage", sp: Speaker, samples: List[str], items: List[tuple]) -> None:
         super().__init__()
         self.setObjectName("card")
         self.sid = sp.id
@@ -613,6 +642,7 @@ class CharactersPage(QWidget):
         lay.addWidget(self.btn_next, 0, Qt.AlignmentFlag.AlignRight)
 
     def retranslate(self) -> None:
+        """Refresh this page's labels for the current language."""
         self.lbl_title.setText(tr("chars.title"))
         self.lbl_disabled.setText(tr("chars.disabled"))
         self.btn_find.setText(tr("chars.find"))
@@ -624,13 +654,16 @@ class CharactersPage(QWidget):
 
     # ------------------------------------------------------------------ model -> view
     def count_lines(self, sid: str) -> int:
+        """Return how many lines this speaker has."""
         return sum(1 for ln in self.project.lines if ln.speaker == sid) if self.project else 0
 
     def diarized(self) -> bool:
+        """Return whether speaker detection finished without being skipped."""
         st = (self.project.stages.get("diarization") or {}) if self.project else {}
         return bool(st.get("done")) and "skipped" not in str(st.get("summary", ""))
 
     def load(self, p: Project) -> None:
+        """Rebuild the character cards from the project."""
         self.project = p
         multi = bool(p.settings.get("multi_voice"))
         items = voice_items()
@@ -654,6 +687,7 @@ class CharactersPage(QWidget):
 
     # ------------------------------------------------------------------ edits
     def set_actor_weight(self, sid: str, percent: int) -> None:
+        """Save how closely this character should match the actor."""
         project = self.project
         sp = project.speaker(sid) if project else None
         if project is None or sp is None:
@@ -663,6 +697,7 @@ class CharactersPage(QWidget):
         self.changed.emit("voice")
 
     def set_voice(self, sid: str, data) -> None:
+        """Save the voice chosen for this character."""
         project = self.project
         sp = project.speaker(sid) if project else None
         if project is None or sp is None or data is None:
@@ -672,6 +707,7 @@ class CharactersPage(QWidget):
         self.changed.emit("voice")
 
     def set_key(self, sid: str, on: bool) -> None:
+        """Save whether this character is a key speaker."""
         project = self.project
         sp = project.speaker(sid) if project else None
         if project is not None and sp is not None and on != project.is_key(sp):
@@ -680,6 +716,7 @@ class CharactersPage(QWidget):
             self.changed.emit("voice")
 
     def rename(self, sid: str, name: str) -> None:
+        """Save a new name for this character."""
         project = self.project
         sp = project.speaker(sid) if project else None
         if project is not None and sp is not None and name.strip() and name.strip() != sp.name:
@@ -688,9 +725,11 @@ class CharactersPage(QWidget):
             self.changed.emit("name")
 
     def selected(self) -> List[str]:
+        """Return the ids of the checked characters."""
         return [sid for sid, c in self.cards.items() if c.chk.isChecked()]
 
     def merge_selected(self) -> None:
+        """Merge the checked characters into the one with the most speech."""
         sel = self.selected()
         if self.project is None or len(sel) < 2:
             self.lbl_multi_status.setText(tr("chars.merge_hint"))
@@ -753,6 +792,7 @@ class LinesPage(QWidget):
         lay.addWidget(self.btn_next, 0, Qt.AlignmentFlag.AlignRight)
 
     def retranslate(self) -> None:
+        """Refresh this page's labels for the current language."""
         self.lbl_title.setText(tr("lines.title"))
         self.chk_only_long.setText(tr("lines.only_long"))
         self.table.setHorizontalHeaderLabels([tr("lines.col_time"), tr("lines.col_speaker"), tr("lines.col_original"),
@@ -779,6 +819,7 @@ class LinesPage(QWidget):
         return {"stretched": tr("lines.flag_stretched"), "shifted": tr("lines.flag_shifted")}.get(ln.fit, "")
 
     def load(self, p: Project) -> None:
+        """Fill the table from the project's lines."""
         self.project = p
         self._loading = True
         self.table.setRowCount(len(p.lines))
@@ -851,12 +892,18 @@ class LinesPage(QWidget):
         self.changed.emit()
 
     def set_editable(self, on: bool) -> None:
+        """Allow or block editing of the line table."""
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.EditKeyPressed
                                    if on else QAbstractItemView.EditTrigger.NoEditTriggers)
 
 
 # ================================================================================================ 4. Dub
 class DubPage(QWidget):
+    """Dub step: run the pipeline, set the original volume, and play the result.
+
+    Args:
+        player: Built-in player shown on this page.
+    """
     dub = Signal()
     cancel = Signal()
     preview = Signal()
@@ -940,6 +987,7 @@ class DubPage(QWidget):
         self.lbl_volume_value.setText(f"{v} %" if v else tr("dub.volume_off"))
 
     def retranslate(self) -> None:
+        """Refresh this page's labels for the current language."""
         self.btn_dub.setText(tr("dub.start"))
         self.btn_cancel.setText(tr("ui.btn_cancel"))
         self.lbl_volume.setText(tr("dub.volume"))
@@ -950,6 +998,7 @@ class DubPage(QWidget):
         self._volume_text(self.sld_volume.value())
 
     def load(self, p: Project) -> None:
+        """Show the saved original volume and enable the result buttons when a file exists."""
         self.sld_volume.blockSignals(True)
         self.sld_volume.setValue(int(round(100 * float(p.settings.get("original_volume", 0.15)))))
         self.sld_volume.blockSignals(False)
@@ -961,6 +1010,7 @@ class DubPage(QWidget):
         self.btn_external.setEnabled(exists)
 
     def running(self, on: bool) -> None:
+        """Enable or disable the Dub actions while a job runs."""
         self.btn_dub.setEnabled(not on)
         self.btn_cancel.setVisible(on)
         self.btn_preview.setEnabled(not on)

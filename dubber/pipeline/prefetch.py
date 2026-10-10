@@ -40,12 +40,20 @@ CPU_WORK = {
 
 @dataclass(frozen=True)
 class Plan:
+    """Model load and CPU work that can overlap the GPU stage already running.
+
+    Args:
+        next_model: Model to prefetch, or empty when this stage has no successor.
+        cpu: CPU jobs, ``vad`` or ``ffmpeg``, that are safe to run beside the GPU stage.
+        need_gb: VRAM, in GB, that the next model is expected to need.
+    """
     next_model: str
     cpu: Tuple[str, ...]
     need_gb: float
 
 
 def plan(stage: str) -> Plan:
+    """Return the next model, the CPU jobs that can overlap ``stage``, and the VRAM that model needs."""
     nxt = NEXT_MODEL.get(stage, "")
     need = MODEL_VRAM_GB.get(NEXT_VRAM.get(nxt, ""), 0.0) if nxt else 0.0
     return Plan(nxt, CPU_WORK.get(stage, ()), need)

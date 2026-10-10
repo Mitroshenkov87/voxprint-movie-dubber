@@ -64,6 +64,7 @@ def _ps(script: str, timeout: float = 25) -> str:
 
 
 def check_app() -> CheckResult:
+    """Record the program version, data folders, registered model users, and whether the shared GPU lock is held."""
     r = CheckResult("system.app", "Program and run context", Status.INFO)
     r.summary = version_line()
     r.kv("program", version_line()).kv("executable", sys.executable).kv("frozen", bool(getattr(sys, "frozen", False)))
@@ -82,6 +83,7 @@ def check_app() -> CheckResult:
 
 
 def check_os() -> CheckResult:
+    """Record the operating system and Python build, and warn when Windows is older than the supported build."""
     r = CheckResult("system.os", "Operating system", Status.INFO)
     plat = platform.platform()
     r.kv("platform", plat).kv("machine", platform.machine()).kv("python", f"{platform.python_version()} ({platform.python_implementation()}, "
@@ -110,6 +112,7 @@ def check_os() -> CheckResult:
 
 
 def check_hardware() -> CheckResult:
+    """Record CPU, memory, and power source, and warn on battery power or under 6 GB of free RAM."""
     r = CheckResult("system.hw", "CPU, RAM, power", Status.INFO)
     cpu = platform.processor() or ""
     if sys.platform == "win32":
@@ -159,6 +162,7 @@ def check_hardware() -> CheckResult:
 
 
 def check_disk(extra: Optional[List[Path]] = None) -> CheckResult:
+    """Record free space for the models, temp, and desktop folders, and warn when models or temp have under 12 GB free."""
     r = CheckResult("system.disk", "Disk space", Status.OK)
     low = []
     for label, p in (("models folder", paths.models_dir()), ("temp folder", Path(__import__("tempfile").gettempdir())), ("desktop (report)", paths.desktop_dir())):
@@ -177,6 +181,7 @@ def check_disk(extra: Optional[List[Path]] = None) -> CheckResult:
 
 
 def check_packages() -> CheckResult:
+    """List installed versions of the tracked packages and name the ones that are absent, without importing them."""
     r = CheckResult("system.packages", "Python packages (installed versions)", Status.INFO)
     found, missing = [], []
     for name in PACKAGES:
@@ -221,6 +226,7 @@ def check_network(timeout: float = 5.0) -> CheckResult:
 
 
 def check_ffmpeg() -> CheckResult:
+    """Locate ffmpeg and ffprobe and record encoders, build licence, and hardware acceleration, failing when ffmpeg is missing."""
     r = CheckResult("system.ffmpeg", "ffmpeg / ffprobe", Status.OK)
     info = ffmpeg.ffmpeg_info(refresh=True)
     if not info.ffmpeg:
@@ -297,6 +303,7 @@ def _gpu_facts(rows: List[dict]) -> tuple[GpuFact, ...]:
 
 
 def check_gpu_smi() -> CheckResult:
+    """Record NVIDIA name, compute capability, driver branch, and VRAM, failing the check when no qualifying GPU is found."""
     r = CheckResult("gpu.smi", "NVIDIA driver (nvidia-smi)", Status.OK)
     d = query_nvidia_smi()
     if not d:

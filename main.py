@@ -118,6 +118,11 @@ def _refuse_unsupported_gpu(message_box) -> bool:
 
 
 def main(argv=None) -> int:
+    """Start the window, or dispatch a headless, worker, or installer command.
+
+    Returns:
+        The process exit code. The window returns 1 when the graphics card is below the minimum.
+    """
     argv = list(sys.argv[1:] if argv is None else argv)
     from dubber.infra.stdio_guard import guard_stdio
 

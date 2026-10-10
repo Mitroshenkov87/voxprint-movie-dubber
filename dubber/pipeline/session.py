@@ -39,6 +39,7 @@ class WorkerSession:
         self._start()
 
     def alive(self) -> bool:
+        """True while the session worker process is still running."""
         return self.proc is not None and self.proc.poll() is None
 
     def _start(self) -> None:
@@ -118,6 +119,7 @@ class WorkerSession:
                 raise RuntimeError(str(msg.get("summary") or "session failed"))
 
     def close(self) -> None:
+        """Stop the session worker, waiting up to 15 seconds before killing it."""
         proc = self.proc
         if proc is None:
             return
@@ -146,6 +148,7 @@ def get_session(cfg: Dict[str, Any]) -> WorkerSession:
 
 
 def close_session() -> None:
+    """Stop the shared session worker for this program, if one is running."""
     global _session
     if _session is not None:
         _session.close()

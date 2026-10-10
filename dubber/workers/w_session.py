@@ -82,6 +82,7 @@ def _run_one(folder: str, key: str, cfg: Dict[str, Any], ctx: WorkerContext) -> 
 
 
 def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
+    """Run JSON stage commands from stdin in this process until ``quit``, keeping loaded models between stages."""
     from dubber.infra import resident
 
     resident.enable()

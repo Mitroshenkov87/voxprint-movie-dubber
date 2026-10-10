@@ -34,11 +34,13 @@ Fetch = Callable[[str], bytes]                       # url -> body
 
 
 class VoiceCatalogError(RuntimeError):
+    """Listing or installing a remote voice failed."""
     pass
 
 
 @dataclass
 class RemoteVoice:
+    """One voice published as a zip in a Hugging Face repository."""
     id: str
     name: str
     repo: str
@@ -51,10 +53,12 @@ class RemoteVoice:
 
     @property
     def url(self) -> str:
+        """Hugging Face download URL of this voice's zip."""
         return f"{HF}/{self.repo}/resolve/main/{self.id}.zip"
 
 
 def repos() -> List[str]:
+    """Repository ids to list. A non-empty ``VOXPRINT_VOICE_REPOS`` replaces the built-in default."""
     env = os.environ.get(ENV_REPOS, "").strip()
     return [r.strip() for r in env.split(",") if r.strip()] if env else list(DEFAULT_REPOS)
 
@@ -66,6 +70,7 @@ def _fetch(url: str) -> bytes:
 
 
 def parse_sums(text: str) -> Dict[str, str]:
+    """Map voice id to lowercase SHA-256. Only ``<64 hex>  <id>.zip`` lines are kept."""
     out = {}
     for line in text.splitlines():
         parts = line.strip().split()

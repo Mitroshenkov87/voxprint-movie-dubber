@@ -1,0 +1,30 @@
+# Release gate for tools/audit.py. Pyflakes (F) and syntax errors (E9) stay blocking.
+# Line length and pyupgrade stay off. Public docstrings are required (pydocstyle D1).
+# Tests and tools are exempt from the docstring rules. Vendored Look2Hear is not scanned.
+extend-exclude = ["dubber/third_party"]
+
+[lint]
+select = [
+    "F",
+    "E9",
+    "D100",
+    "D101",
+    "D102",
+    "D103",
+    "D104",
+    "D105",
+    "D106",
+    "D107",
+]
+ignore = [
+    "D105", # magic methods: the class or the method name already says what they are
+    "D107", # __init__: the constructor is documented on the class
+]
+
+[lint.pydocstyle]
+convention = "google"
+
+[lint.per-file-ignores]
+"tests/**/*.py" = ["D"]
+"tools/**/*.py" = ["D"]
+"dubber/third_party/**/*.py" = ["D"]

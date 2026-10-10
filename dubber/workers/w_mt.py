@@ -15,6 +15,7 @@ from dubber.workers.common import WorkerContext, cuda_sync, free_gpu, peak_vram_
 
 
 def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
+    """Translate ``sentences`` with the direct Opus-MT pair, or skip when that pair does not exist."""
     src, tgt = args.get("source", "en"), args.get("target", "ru")
     sentences: List[str] = list(args.get("sentences") or [])
     if src == tgt:

@@ -53,6 +53,7 @@ def candidate_dirs() -> List[Path]:
 
 
 def has_cublas12(dirs: List[Path]) -> bool:
+    """Return whether any directory in ``dirs`` contains ``cublas64_12.dll``."""
     return any((d / "cublas64_12.dll").is_file() for d in dirs)
 
 

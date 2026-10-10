@@ -1,7 +1,8 @@
 """One-shot code audit for Voxprint AI Movie Dubber.
 
 Runs ruff, mypy, bandit, pip-audit, vulture, radon and gitleaks. Prints one summary (and, on GitHub Actions, writes
-that same summary to the job summary) and the full text to ``audit-report.txt``.
+that same summary to the job summary) and the full text to ``audit-report.txt``. Ruff uses ``ruff.toml``: pyflakes,
+syntax errors, and missing public docstrings (pydocstyle, Google convention, D100–D107 with D105 and D107 ignored).
 
     python -m pip install -r tools/requirements-audit.txt
     python tools/audit.py --python <app venv python> [--gitleaks-mode diff|full] [--gitleaks-range A..B]
@@ -340,15 +341,19 @@ def classify_pip(payload: Mapping[str, Any], allow: Sequence[Advisory],
 
 
 def ruff_check(py: str) -> Check:
-    # Real errors only: pyflakes (F, including undefined names) and syntax (E9). Style (E501) and pyupgrade (UP) are out.
-    code, out, err = _run([py, "-m", "ruff", "check", "--select", "F,E9", "--ignore", "E501,UP",
+    """Pyflakes, syntax errors, and missing public docstrings.
+
+    The rule set lives in ``ruff.toml`` (pydocstyle, Google convention). Tests, tools, and vendored code are exempt
+    from the docstring rules. A missing docstring on new public code fails the release gate.
+    """
+    code, out, err = _run([py, "-m", "ruff", "check", "--config", str(ROOT / "ruff.toml"),
                            "--output-format", "concise", "--no-cache", *TARGETS])
     if code == 127 or _missing(err):
-        return Check("ruff (F, E9)", "not installed", err.strip(), True)
+        return Check("ruff (F, E9, D1)", "not installed", err.strip(), True)
     if code not in (0, 1):
-        return Check("ruff (F, E9)", "failed to run", (out + err).strip(), True)
+        return Check("ruff (F, E9, D1)", "failed to run", (out + err).strip(), True)
     lines = [ln for ln in out.splitlines() if _FINDING_LINE.search(ln)]
-    return Check("ruff (F, E9)", f"{len(lines)} error(s)", out.strip(), bool(lines))
+    return Check("ruff (F, E9, D1)", f"{len(lines)} error(s)", out.strip(), bool(lines))
 
 
 def mypy_check(py: str) -> Check:

@@ -35,6 +35,12 @@ RECORD = "actor_voice.json"
 
 @dataclass
 class Candidate:
+    """Library voice that can be blended with an actor.
+
+    Args:
+        gender: Empty when unknown; a known gender skips voices of the other gender.
+        adapter_scale: LoRA strength of this library voice.
+    """
     id: str
     path: Path
     gender: str = ""
@@ -42,6 +48,7 @@ class Candidate:
 
 
 def folder(project_folder: Path, speaker_id: str) -> Path:
+    """Directory of the temporary actor voice for one speaker."""
     return Path(project_folder) / "voices" / f"actor_{speaker_id}"
 
 
@@ -59,6 +66,7 @@ def ref_quality(x: np.ndarray, sr: int) -> Tuple[float, float, bool]:
 
 
 def cosine(a: np.ndarray, b: np.ndarray) -> float:
+    """Cosine similarity of two embeddings, or -1 when the lengths differ or either vector is zero."""
     a, b = np.asarray(a, np.float32).reshape(-1), np.asarray(b, np.float32).reshape(-1)
     if a.size != b.size or not a.any() or not b.any():
         return -1.0
@@ -66,6 +74,7 @@ def cosine(a: np.ndarray, b: np.ndarray) -> float:
 
 
 def load_centroid(path: Path) -> Optional[np.ndarray]:
+    """Speaker embedding from ``speaker_centroid.safetensors`` in ``path``, or None when it cannot be read."""
     f = Path(path) / CENTROID_FILE
     if not f.is_file():
         return None
@@ -105,11 +114,13 @@ def blend(actor: np.ndarray, library: Optional[np.ndarray], weight: float) -> np
 
 
 def adapter_scale(library_scale: float, weight: float) -> float:
+    """``library_scale * (1 - weight)``, rounded to 3 decimals and never below zero."""
     return round(max(0.0, float(library_scale) * (1.0 - float(weight))), 3)
 
 
 def write_record(dirpath: Path, data: Dict[str, Any], actor_emb: Optional[np.ndarray] = None,
                  blended: Optional[np.ndarray] = None) -> None:
+    """Write ``actor_voice.json`` and, when given, the actor and blended embedding arrays. Creates the folder."""
     d = Path(dirpath)
     d.mkdir(parents=True, exist_ok=True)
     if actor_emb is not None:
@@ -122,6 +133,7 @@ def write_record(dirpath: Path, data: Dict[str, Any], actor_emb: Optional[np.nda
 
 
 def read_record(dirpath: Path) -> Dict[str, Any]:
+    """Parsed ``actor_voice.json``, or an empty dict when the file is missing or not JSON."""
     try:
         return json.loads((Path(dirpath) / RECORD).read_text(encoding="utf-8"))
     except (OSError, ValueError):

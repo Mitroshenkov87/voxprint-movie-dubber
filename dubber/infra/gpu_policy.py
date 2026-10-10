@@ -36,6 +36,7 @@ StartupCode = Literal["no_cuda", "low_compute"]
 
 @dataclass(frozen=True)
 class GpuFact:
+    """One NVIDIA GPU from nvidia-smi: name, compute capability, driver version, and driver branch."""
     name: str
     compute: Tuple[int, int]
     driver: str
@@ -44,6 +45,7 @@ class GpuFact:
 
 @dataclass(frozen=True)
 class GateResult:
+    """Minimum-GPU check: whether any card qualifies, which cards were seen, and a one-line summary."""
     ok: bool
     gpus: Tuple[GpuFact, ...]
     qualifying: Tuple[GpuFact, ...]
@@ -52,12 +54,14 @@ class GateResult:
 
 @dataclass(frozen=True)
 class StartupBlock:
+    """Why the window stays closed: no CUDA device, or compute capability below 8.9."""
     code: StartupCode
     name: str = ""
     capability: str = ""
 
 
 def parse_compute(text: str) -> Optional[Tuple[int, int]]:
+    """Parse a compute capability such as ``8.9`` into ``(8, 9)``, or return None."""
     match = _COMPUTE.match(text.strip())
     if not match:
         return None
@@ -93,10 +97,12 @@ def parse_nvidia_smi_query(text: str) -> Tuple[GpuFact, ...]:
 
 
 def meets_policy(gpu: GpuFact) -> bool:
+    """Return whether the GPU is compute 8.9 or newer and the driver branch is 600 or newer."""
     return gpu.compute >= MIN_COMPUTE and gpu.driver_branch >= MIN_DRIVER_BRANCH
 
 
 def found_text(gpus: Sequence[GpuFact]) -> str:
+    """Return one sentence describing the NVIDIA GPUs that were found."""
     if not gpus:
         return "No NVIDIA GPU was found."
     text = "; ".join(
@@ -108,6 +114,7 @@ def found_text(gpus: Sequence[GpuFact]) -> str:
 
 
 def failure_summary(gpus: Sequence[GpuFact]) -> str:
+    """Return why the machine is below the minimum, including the case of no NVIDIA GPU."""
     if not gpus:
         return f"No NVIDIA GPU found. {_NEED}"
     listed = "; ".join(
@@ -134,6 +141,7 @@ def evaluate_gpus(gpus: Sequence[GpuFact]) -> GateResult:
 
 
 def evaluate_nvidia_smi_query(text: str) -> GateResult:
+    """Check nvidia-smi CSV text against the RTX 40 and driver-branch 600 minimum."""
     return evaluate_gpus(parse_nvidia_smi_query(text))
 
 

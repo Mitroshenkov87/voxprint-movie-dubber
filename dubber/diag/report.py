@@ -103,6 +103,7 @@ def fmt_gb(x: Optional[float]) -> str:
 
 
 def fmt_num(x: Optional[float], digits: int = 2) -> str:
+    """Format ``x`` to ``digits`` decimal places, or ``-`` when ``x`` is missing."""
     return "-" if x is None else f"{x:.{digits}f}"
 
 
@@ -156,19 +157,27 @@ class Report:
         return result
 
     def get(self, check_id: str) -> Optional[CheckResult]:
+        """Return the check with this id, or None when it has not been added."""
         for r in self.results:
             if r.id == check_id:
                 return r
         return None
 
     def note(self, text: str) -> None:
+        """Append a note printed under the summary totals."""
         self.notes.append(text)
 
     def finish(self, complete: bool = True) -> None:
+        """Record the finish time and whether the diagnostic run completed.
+
+        Args:
+            complete: False leaves the rendered state as ``INCOMPLETE``.
+        """
         self.finished = time.time()
         self.complete = complete
 
     def counts(self) -> Dict[str, int]:
+        """Count checks for each status, including statuses that did not occur."""
         c = {s.value: 0 for s in Status}
         for r in self.results:
             c[r.status.value] += 1

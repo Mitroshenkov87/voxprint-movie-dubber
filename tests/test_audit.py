@@ -116,6 +116,31 @@ def test_cpu_torch_local_version_is_audited_as_the_pypi_release():
     assert audit._pypi_version("1.2.3") == "1.2.3"
 
 
+def test_ruff_config_requires_google_docstrings_and_the_audit_uses_it():
+    text = (ROOT / "ruff.toml").read_text(encoding="utf-8")
+    assert 'convention = "google"' in text
+    for code in ("D100", "D101", "D102", "D103", "D104", "D105", "D106", "D107"):
+        assert code in text
+    assert "tests/**/*.py" in text and '["D"]' in text
+    seen = {}
+
+    def fake_run(cmd, env=None, timeout=1200):
+        seen["cmd"] = list(cmd)
+        return 0, "", ""
+
+    original = audit._run
+    audit._run = fake_run
+    try:
+        result = audit.ruff_check(sys.executable)
+    finally:
+        audit._run = original
+    assert result.summary.startswith("0 error")
+    assert result.blocks is False
+    joined = " ".join(seen["cmd"])
+    assert "ruff.toml" in joined
+    assert "--select" not in seen["cmd"]
+
+
 def test_gitleaks_report_parses_a_list_and_an_empty_file():
     assert audit._parse_gitleaks("") == []
     rows = audit._parse_gitleaks('[{"File": "a.py", "StartLine": 3, "RuleID": "generic", "Description": "x"}]')

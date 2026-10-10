@@ -1,6 +1,6 @@
 # Voxprint AI Movie Dubber: User guide
 
-This guide covers release candidate 1.0.0 RC. The window, the splash and About show the build number and the codename from `BUILD.json` (Bochan). For the requirements and the installers, see [Install](../README.md#install) in the README.
+This guide covers release candidate 1.0.0 RC. The window, the splash and About show the build number and the codename from `BUILD.json` (Bochan). For the requirements and the installers, see [Install](https://github.com/Mitroshenkov87/voxprint-movie-dubber/blob/main/README.md#install) in the README.
 
 Screenshots are placeholders for now; they are added after the first test on real hardware.
 

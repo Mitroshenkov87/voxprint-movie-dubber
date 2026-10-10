@@ -44,6 +44,7 @@ _KEY_RE = re.compile(r"^runtime-[0-9a-f]{12}$")
 
 
 def load_lock(path: Optional[Path] = None) -> Dict[str, Any]:
+    """Return the parsed runtime lock (``runtime_lock.json`` unless ``path`` is given)."""
     return json.loads(Path(path or LOCK_PATH).read_text(encoding="utf-8-sig"))
 
 
@@ -62,12 +63,14 @@ def _sha(text: str) -> str:
 
 
 def key_material(flavor: str, requirements: str, constraints: str, lock: Optional[Dict[str, Any]] = None) -> str:
+    """Return the canonical string hashed into a runtime key: Python, platform, torch flavor, and requirement hashes."""
     lock = lock or load_lock()
     return (f"python={lock['python']};platform={lock['platform']};torch={lock['torch_version']}+{flavor};"
             f"req={_sha(normalize_requirements(requirements))};constraints={_sha(normalize_requirements(constraints))}")
 
 
 def runtime_key(flavor: str, requirements: str, constraints: str, lock: Optional[Dict[str, Any]] = None) -> str:
+    """Return the first 12 hex digits of the SHA-256 of :func:`key_material`."""
     return _sha(key_material(flavor, requirements, constraints, lock))[:12]
 
 
@@ -93,6 +96,7 @@ def choose_flavor(lock: Dict[str, Any], driver_cuda: Optional[tuple]) -> Optiona
 
 
 def runtime_dir(key: str) -> Path:
+    """Return ``<Voxprint home>/runtime-<key>`` for this pin set."""
     return shared_paths.voxprint_home() / f"{PREFIX}{key}"
 
 
@@ -130,11 +134,13 @@ def current_runtime_dir(app_dir: Optional[Path] = None) -> Optional[Path]:
 
 
 def installed_runtimes() -> List[Path]:
+    """Return shared ``runtime-<key>`` folders that contain ``runtime-key.json``, sorted by path."""
     home = shared_paths.voxprint_home()
     return sorted(p for p in home.glob(f"{PREFIX}*") if p.is_dir() and is_runtime_dir(p))
 
 
 def register_user(root: Optional[Path] = None) -> Optional[Dict[str, bool]]:
+    """Mark this program in the runtime ``.users.json``, or return None when no runtime folder is known."""
     root = root or current_runtime_dir()
     return model_store.register_user(USER_KEY, root) if root else None
 

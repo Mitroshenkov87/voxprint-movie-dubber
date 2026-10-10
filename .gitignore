@@ -19,3 +19,5 @@ audit-report.txt
 .ruff_cache/
 .app/
 .tools/
+site/
+.cache/

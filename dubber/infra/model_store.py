@@ -47,10 +47,12 @@ class ModelUnavailable(RuntimeError):
 
 
 def models_root() -> Path:
+    """Return the shared models folder, creating the configured directory when that is possible."""
     return shared_paths.models_dir()
 
 
 def folder_name(repo: str) -> str:
+    """Turn ``owner/name`` into the on-disk folder name ``owner--name``."""
     return repo.replace("/", "--")
 
 
@@ -81,6 +83,7 @@ def verify_structure(path: Path, weights: Sequence[str] = DEFAULT_WEIGHTS, requi
 
 # ---------------------------------------------------------------------------------------------- manifest (size + SHA-256)
 def load_manifest(path: Optional[Path] = None) -> Dict[str, Any]:
+    """Load pinned models from ``model_manifest.json``, or return an empty dict when the file is missing, unreadable, or not schema 1."""
     try:
         data = json.loads(Path(path or MANIFEST_PATH).read_text(encoding="utf-8"))
         return data.get("models", {}) if isinstance(data, dict) and data.get("schema") == 1 else {}
@@ -89,10 +92,12 @@ def load_manifest(path: Optional[Path] = None) -> Dict[str, Any]:
 
 
 def pinned_revision(repo: str) -> Optional[str]:
+    """Return the pinned revision for ``repo``, or None when the manifest has no entry."""
     return (load_manifest().get(repo) or {}).get("revision")
 
 
 def sha256_file(path: Path, bufsize: int = 1 << 20) -> str:
+    """Return the hex SHA-256 of ``path``, read in ``bufsize``-byte chunks."""
     h = hashlib.sha256()
     with open(path, "rb") as fh:
         for block in iter(lambda: fh.read(bufsize), b""):
@@ -139,6 +144,7 @@ def write_verified_marker(folder: Path, repo: str) -> None:
 
 def is_ready(folder: Path, repo: str, weights: Sequence[str] = DEFAULT_WEIGHTS, patterns: Optional[Iterable[str]] = None,
              require_config: bool = True) -> bool:
+    """Return whether the folder has the expected weights and matches the manifest, hashing files only when ``.verified`` is absent."""
     if not verify_structure(folder, weights, require_config):
         return False
     bad = manifest_bad_files(folder, repo, patterns, full_hash=not (folder / ".verified").exists())
@@ -154,6 +160,7 @@ class ModelLock:
         self._fh: Any = None
 
     def try_acquire(self) -> bool:
+        """Take the OS file lock without waiting, or return False when another holder still has it."""
         for _ in range(5):
             self.path.parent.mkdir(parents=True, exist_ok=True)
             try:
@@ -189,9 +196,11 @@ class ModelLock:
 
     @property
     def held(self) -> bool:
+        """Return whether this instance currently holds the file lock."""
         return self._fh is not None
 
     def release(self, remove: bool = False) -> None:
+        """Unlock the file, and delete it when ``remove`` is true."""
         fh, self._fh = self._fh, None
         if fh is None:
             return
@@ -221,6 +230,11 @@ class ModelLock:
                 pass
 
     def acquire(self, on_wait: Callable[[float], None] = lambda s: None, poll: float = 0.5, timeout: Optional[float] = None) -> None:
+        """Wait until this instance holds the per-model file lock.
+
+        Raises:
+            TimeoutError: Another process still holds the lock after ``timeout`` seconds.
+        """
         t0 = time.monotonic()
         while not self.try_acquire():
             waited = time.monotonic() - t0
@@ -231,6 +245,7 @@ class ModelLock:
 
 
 def lock_path(repo: str, root: Optional[Path] = None) -> Path:
+    """Return ``<models>/.<owner>--<name>.lock`` for ``repo``."""
     return (Path(root) if root else models_root()) / f".{folder_name(repo)}.lock"
 
 
@@ -266,6 +281,7 @@ def _users_path(root: Optional[Path] = None) -> Path:
 
 
 def read_users(root: Optional[Path] = None) -> Dict[str, bool]:
+    """Read ``.users.json`` as a map of program name to in-use flag, or return an empty dict."""
     try:
         data = json.loads(_users_path(root).read_text(encoding="utf-8-sig"))
         return {str(k): bool(v) for k, v in data.items()} if isinstance(data, dict) else {}
@@ -288,6 +304,7 @@ def _write_users(users: Dict[str, bool], root: Optional[Path] = None) -> None:
 
 
 def register_user(key: str = USER_KEY, root: Optional[Path] = None) -> Dict[str, bool]:
+    """Mark ``key`` as using the models folder, write ``.users.json``, and return the updated map."""
     users = read_users(root)
     users[key] = True
     _write_users(users, root)
@@ -316,6 +333,7 @@ def _dir_size(p: Path) -> int:
 
 @dataclass
 class EnsureInfo:
+    """Folder of a complete model, whether it was already present or just downloaded, and the download time in seconds."""
     path: Path
     source: str                 # "present" | "downloaded"
     download_s: float = 0.0

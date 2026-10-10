@@ -8,6 +8,7 @@ import numpy as np
 
 
 def read(path: Path | str, sr: Optional[int] = None, mono: bool = True) -> Tuple[np.ndarray, int]:
+    """Float32 samples and their sample rate. Resamples when ``sr`` is set and differs from the file."""
     import soundfile as sf
 
     data, rate = sf.read(str(path), dtype="float32", always_2d=True)
@@ -19,6 +20,7 @@ def read(path: Path | str, sr: Optional[int] = None, mono: bool = True) -> Tuple
 
 
 def read_range(path: Path, start: float, end: float, mono: bool = False) -> Tuple[np.ndarray, int]:
+    """Samples from ``start`` to ``end`` seconds, zero-padded when the file ends first."""
     import soundfile as sf
 
     info = sf.info(str(path))
@@ -30,6 +32,7 @@ def read_range(path: Path, start: float, end: float, mono: bool = False) -> Tupl
 
 
 def write(path: Path, x: np.ndarray, sr: int) -> None:
+    """Write samples as 16-bit PCM, creating parent directories. Values outside [-1, 1] are clipped."""
     import soundfile as sf
 
     Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -37,6 +40,7 @@ def write(path: Path, x: np.ndarray, sr: int) -> None:
 
 
 def duration(path: Path) -> float:
+    """Length of a sound file in seconds."""
     import soundfile as sf
 
     info = sf.info(str(path))
@@ -44,6 +48,7 @@ def duration(path: Path) -> float:
 
 
 def resample(x: np.ndarray, sr_from: int, sr_to: int) -> np.ndarray:
+    """Resample along axis 0. Uses scipy when it imports, otherwise linear interpolation."""
     if sr_from == sr_to:
         return x
     try:

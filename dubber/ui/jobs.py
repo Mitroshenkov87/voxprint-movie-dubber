@@ -16,6 +16,15 @@ from dubber.pipeline import runner as R
 
 
 class PipelineThread(QThread):
+    """Run the dubbing pipeline, or a preview fragment, on a worker thread.
+
+    Args:
+        folder: Project folder the runner reads and writes.
+        cfg: Engine settings passed to the runner.
+        until_stage: Last pipeline stage to run.
+        preview: Film time where a preview fragment starts, or None for a full run.
+        preview_len: Length of that fragment in seconds.
+    """
     stage = Signal(str, str, str)          # key, status, message
     log = Signal(str)
     progress = Signal(float, float)        # overall 0..1, ETA seconds (-1 unknown)
@@ -31,6 +40,7 @@ class PipelineThread(QThread):
         self.result_folder = self.folder
 
     def run(self) -> None:
+        """Run the pipeline to the chosen stage and emit whether it finished."""
         try:
             p = Project(self.folder)
             if self.preview is not None:
@@ -44,4 +54,5 @@ class PipelineThread(QThread):
             self.done.emit(False, f"{type(exc).__name__}: {exc}")
 
     def cancel(self) -> None:
+        """Ask the pipeline to stop."""
         self.cancel_event.set()

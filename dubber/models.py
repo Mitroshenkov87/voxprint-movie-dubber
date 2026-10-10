@@ -18,6 +18,7 @@ from dubber.infra.model_store import ModelUnavailable  # noqa: F401  (re-exporte
 
 @dataclass(frozen=True)
 class ModelSpec:
+    """One Hugging Face model in the dubber registry: repo, size in gigabytes, license, and completeness rules."""
     key: str
     repo: str
     title: str
@@ -121,6 +122,7 @@ def locate(repo: str) -> Optional[Path]:
 
 
 class EnsureInfo(TypedDict):
+    """How :func:`ensure` resolved a model: a source label and the download time in seconds."""
     source: str
     download_s: float
 
