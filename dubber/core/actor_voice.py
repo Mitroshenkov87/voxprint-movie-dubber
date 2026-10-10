@@ -35,12 +35,7 @@ RECORD = "actor_voice.json"
 
 @dataclass
 class Candidate:
-    """Library voice that can be blended with an actor.
-
-    Args:
-        gender: Empty when unknown; a known gender skips voices of the other gender.
-        adapter_scale: LoRA strength of this library voice.
-    """
+    """Library voice that can be blended with an actor. A known gender skips voices of the other gender."""
     id: str
     path: Path
     gender: str = ""

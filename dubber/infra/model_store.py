@@ -230,11 +230,7 @@ class ModelLock:
                 pass
 
     def acquire(self, on_wait: Callable[[float], None] = lambda s: None, poll: float = 0.5, timeout: Optional[float] = None) -> None:
-        """Wait until this instance holds the per-model file lock.
-
-        Raises:
-            TimeoutError: Another process still holds the lock after ``timeout`` seconds.
-        """
+        """Wait until this instance holds the per-model file lock. Raises TimeoutError when another process still holds it after ``timeout`` seconds."""
         t0 = time.monotonic()
         while not self.try_acquire():
             waited = time.monotonic() - t0

@@ -64,11 +64,7 @@ class Eta:
         self._last: Optional[Tuple[float, float]] = None
 
     def update(self, now: float, done_s: float, total_s: float) -> float:
-        """Remaining wall-clock seconds after this sample, or -1 until a dubbing rate is known.
-
-        Args:
-            now: Wall-clock time in seconds, on the same clock as the previous call.
-        """
+        """Remaining wall-clock seconds after this sample, or -1 until a dubbing rate is known."""
         if self._last is not None:
             dt, dd = now - self._last[0], done_s - self._last[1]
             if dt > 0 and dd >= 0:

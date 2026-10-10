@@ -107,11 +107,7 @@ def inputs_for(key: str, p: Project, cfg: Dict[str, Any], prev: str) -> str:
 
 # ---------------------------------------------------------------------------------------------- light stages
 def st_probe(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
-    """Read the container and store duration, track labels, and a known audio-track language.
-
-    Raises:
-        RuntimeError: The file has no audio track.
-    """
+    """Read the container and store duration, track labels, and a known audio-track language. Raises RuntimeError when the file has no audio track."""
     info = media.probe(p.source)
     t0, t1 = _rng(p)
     dur = (min(t1, info.duration) - t0) if t0 is not None and t1 is not None else info.duration
@@ -197,11 +193,7 @@ def st_subtitles(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
 
 
 def st_script(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
-    """Build dialogue lines from target subtitles, else source subtitles, else recognition, snapping subtitle times to the speech windows.
-
-    Raises:
-        RuntimeError: There are no subtitles and no recognition result.
-    """
+    """Build dialogue lines from target subtitles, else source subtitles, else recognition, snapping subtitle times to the speech windows. Raises RuntimeError when there are no subtitles and no recognition result."""
     windows = [tuple(w) for w in read_json(p.path("analysis", "windows.json"), [])]
     tgt = p.path("subs", "target.srt")
     src = p.path("subs", "source.srt")
@@ -556,11 +548,7 @@ def actor_spec(p: Project, sp, library_only: bool = False):
 
 
 def make_tts(p: Project, cfg: Dict[str, Any], need_adapters: bool, emit: Emit):
-    """Load Qwen3-TTS for the dub language, reusing a resident model when that cache is on, or the mock engine when TTS is mock.
-
-    Args:
-        need_adapters: True when a line uses a library or actor voice, which cannot use the CUDA Graphs backend.
-    """
+    """Load Qwen3-TTS for the dub language, reusing a resident model when that cache is on, or the mock engine when TTS is mock. Library and actor voices set ``need_adapters`` and cannot use the CUDA Graphs backend."""
     from dubber.engines import tts as tts_mod
 
     if cfg.get("tts") == "mock":
@@ -594,11 +582,7 @@ def _blocks(lines: List[Line], block_s: float) -> List[Tuple[float, List[Line]]]
 
 
 def st_tts(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
-    """Synthesize dubbed lines in 60-second blocks, time-fit each take into its slot, and publish Watch-mode progress.
-
-    Raises:
-        RuntimeError: A real engine has no library voice and no reference clip to clone.
-    """
+    """Synthesize dubbed lines in 60-second blocks, time-fit each take into its slot, and publish Watch-mode progress. Raises RuntimeError when a real engine has no library voice and no reference clip to clone."""
     lang = p.settings["target_lang"]
     script.prepare_for_voice(p.lines, lang, float(p.settings.get("duration") or 0) or None)
     lines = sorted(p.dub_lines(), key=lambda ln: ln.start)
@@ -703,11 +687,7 @@ def line_audio_map(p: Project, lines: List[Line]) -> Dict[int, Tuple[np.ndarray,
 
 
 def mix_into(p: Project, t0: float, t1: float, lines: List[Line], cache: Dict[int, Tuple[np.ndarray, int]]) -> Tuple[np.ndarray, int]:
-    """Mix the dub from ``t0`` to ``t1`` seconds and return the waveform with its sample rate.
-
-    Args:
-        cache: Line audio already loaded. Clips not in it are read and stored here.
-    """
+    """Mix the dub from ``t0`` to ``t1`` seconds and return the waveform with its sample rate. Missing clips are read into ``cache``."""
     windows = [tuple(w) for w in read_json(p.path("analysis", "windows.json"), [])]
     bg, sp = p.folder / "stems" / "background.wav", p.folder / "stems" / "speech.wav"
     near = [ln for ln in lines if ln.place_start < t1 and ln.place_start + ln.audio_s > t0 or ln.keep_original]

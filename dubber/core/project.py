@@ -119,11 +119,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
 
 
 def atomic_write_text(path: Path, text: str) -> None:
-    """Replace ``path`` with ``text`` through a temp file.
-
-    Raises:
-        PermissionError: The destination stayed locked after several retries.
-    """
+    """Replace ``path`` with ``text`` through a temp file. Raises PermissionError when the destination stays locked."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex[:8]}.tmp")
@@ -229,11 +225,7 @@ class Project:
         return p
 
     def rel(self, p: Path) -> str:
-        """``p`` relative to the project folder, with forward slashes.
-
-        Raises:
-            ValueError: ``p`` is not inside the project folder.
-        """
+        """``p`` relative to the project folder, with forward slashes. Raises ValueError when ``p`` is outside it."""
         return Path(p).resolve().relative_to(self.folder.resolve()).as_posix()
 
     def abs(self, rel: str) -> Path:

@@ -10,11 +10,7 @@ from typing import Optional, TextIO
 
 
 class GuardedStream:
-    """Text stream whose write and flush swallow console errors.
-
-    Args:
-        inner: Real stdout or stderr. None when the process has no console.
-    """
+    """Text stream whose write and flush swallow console errors. ``inner`` is None when the process has no console."""
     def __init__(self, inner: Optional[TextIO]) -> None:
         self._inner = inner
         self._dead = inner is None

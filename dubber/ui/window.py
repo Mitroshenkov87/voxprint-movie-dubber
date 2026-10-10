@@ -53,13 +53,7 @@ def engine_cfg() -> Dict[str, Any]:
 
 
 class MainWindow(QWidget):
-    """Main window for choosing a film, reviewing the dub, and running the pipeline.
-
-    Args:
-        autorun: Open diagnostics and start them shortly after the window is built.
-        options_hook: Called with diagnostic options before a run, when set.
-        cfg: Engine settings for pipeline jobs. When omitted, Settings or the mock engines are used.
-    """
+    """Main window for choosing a film, reviewing the dub, and running the pipeline. ``autorun`` opens diagnostics and starts them."""
 
     def __init__(self, autorun: bool = False, options_hook: Optional[Callable[..., None]] = None,
                  cfg: Optional[Dict[str, Any]] = None) -> None:
@@ -648,13 +642,7 @@ class MainWindow(QWidget):
         return dict(self._cfg) if self._cfg is not None else engine_cfg()
 
     def run_pipeline(self, kind: str, until: str, preview: Optional[float] = None) -> bool:
-        """Start a background pipeline job and return whether it started.
-
-        Args:
-            kind: Which screen owns the progress. ``prepare``, ``find``, and ``auto`` use the Film page.
-            until: Last pipeline stage to run.
-            preview: Film time where a preview fragment starts.
-        """
+        """Start a background pipeline job and return whether it started. ``prepare``, ``find``, and ``auto`` use the Film page."""
         if self.project is None or (self.job is not None and self.job.isRunning()):
             return False
         self.project.save()

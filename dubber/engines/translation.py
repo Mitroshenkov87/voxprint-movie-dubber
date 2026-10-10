@@ -106,18 +106,7 @@ def complete_translate(texts: Sequence[str], fn: Translate, tgt: str = "", retry
 
 
 class OpusMT:
-    """One Opus-MT model loaded for a single language pair.
-
-    Args:
-        src: Source language code.
-        tgt: Target language code.
-        device: Torch device, ``cuda`` or ``cpu``.
-        allow_download: Download the Marian weights when they are not on disk.
-        log: Receives a progress line after each batch when the input is longer than one batch.
-
-    Raises:
-        RuntimeError: No Opus-MT model exists for this pair.
-    """
+    """One Opus-MT model loaded for a single language pair. Raises RuntimeError when no model exists for that pair."""
 
     def __init__(self, src: str, tgt: str, device: str, allow_download: bool, log: Callable[[str], None]) -> None:
         import torch  # noqa: F401
@@ -132,11 +121,7 @@ class OpusMT:
         self.device, self.log, self.prefix = device, log, spec.target_token
 
     def __call__(self, texts: List[str], beams: int = 4, batch: int = 16) -> List[str]:
-        """Translate ``texts`` with Marian beam search, ``batch`` sentences per generate call.
-
-        Args:
-            beams: Beam width. The completeness retry calls this with 1.
-        """
+        """Translate ``texts`` with Marian beam search, ``batch`` sentences per generate call. The completeness retry uses ``beams`` 1."""
         import torch
 
         out: List[str] = []
@@ -248,14 +233,7 @@ def finish_mt(text: str, source: str, tgt: str) -> str:
 
 def opus_translate(texts: List[str], src: str, tgt: str, device: str, allow_download: bool, log: Callable[[str], None],
                    batch: int = 16) -> List[str]:
-    """Translate lines with Opus-MT, retrying incomplete sentences and pivoting through English when no direct model exists.
-
-    Args:
-        batch: Sentences per generate call.
-
-    Raises:
-        RuntimeError: No direct model exists and the pair cannot pivot through English.
-    """
+    """Translate lines with Opus-MT, retrying incomplete sentences and pivoting through English when no direct model exists. Raises RuntimeError when the pair cannot pivot."""
     if src == tgt or not texts:
         return list(texts)
     if models.mt_spec(src, tgt) is None:

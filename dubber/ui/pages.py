@@ -526,14 +526,7 @@ class FilmPage(QWidget):
 
 # ================================================================================================ 2. Characters
 class SpeakerCard(QFrame):
-    """One character: name, voice, likeness, and a few of their lines.
-
-    Args:
-        page: Characters page that receives edits from this card.
-        sp: Speaker this card shows.
-        samples: Short lines quoted on the card.
-        items: Voice choices for the combo box.
-    """
+    """One character: name, voice, likeness, and a few of their lines."""
 
     def __init__(self, page: "CharactersPage", sp: Speaker, samples: List[str], items: List[tuple]) -> None:
         super().__init__()
@@ -899,11 +892,7 @@ class LinesPage(QWidget):
 
 # ================================================================================================ 4. Dub
 class DubPage(QWidget):
-    """Dub step: run the pipeline, set the original volume, and play the result.
-
-    Args:
-        player: Built-in player shown on this page.
-    """
+    """Dub step: run the pipeline, set the original volume, and play the result."""
     dub = Signal()
     cancel = Signal()
     preview = Signal()

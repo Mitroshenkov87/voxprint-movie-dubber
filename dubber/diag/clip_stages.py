@@ -23,14 +23,7 @@ class StageContext:
 
 @dataclass
 class StageResult:
-    """Outcome of one diagnostic clip stage.
-
-    Args:
-        key: Stage name.
-        ok: True when the stage finished.
-        message: One-line result.
-        seconds: Wall-clock time, in seconds.
-    """
+    """Outcome of one diagnostic clip stage."""
     key: str
     ok: bool
     message: str = ""
@@ -43,11 +36,7 @@ class Stage:
     title_key = ""
 
     def run(self, ctx: StageContext) -> StageResult:
-        """Run this stage and store its outputs on ``ctx``.
-
-        Raises:
-            NotImplementedError: This base stage has no step of its own.
-        """
+        """Run this stage and store its outputs on ``ctx``. The base stage raises NotImplementedError."""
         raise NotImplementedError
 
 

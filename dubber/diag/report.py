@@ -168,11 +168,7 @@ class Report:
         self.notes.append(text)
 
     def finish(self, complete: bool = True) -> None:
-        """Record the finish time and whether the diagnostic run completed.
-
-        Args:
-            complete: False leaves the rendered state as ``INCOMPLETE``.
-        """
+        """Record the finish time. ``complete`` False leaves the rendered state as ``INCOMPLETE``."""
         self.finished = time.time()
         self.complete = complete
 

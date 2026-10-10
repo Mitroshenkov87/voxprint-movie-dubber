@@ -56,15 +56,7 @@ class DiagOptions:
 
 @dataclass
 class Step:
-    """One diagnostic check in the run plan.
-
-    Args:
-        id: Stable check id written into the report.
-        title: Label shown while the check runs.
-        fn: Zero-argument function that returns a check result.
-        weight: Share of the overall progress bar.
-        group: Skip name. ``DiagOptions.skip`` drops a whole group before it runs.
-    """
+    """One diagnostic check in the run plan. ``group`` is the skip name ``DiagOptions.skip`` drops before it runs."""
     id: str
     title: str
     fn: Callable[[], CheckResult]

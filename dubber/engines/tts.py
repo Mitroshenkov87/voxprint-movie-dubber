@@ -50,16 +50,11 @@ class VoiceSpec:
     """How one speaker is synthesized: a clone clip, a library adapter, or an actor blend.
 
     Args:
-        key: Stable id, used as part of the synthesis cache key.
         kind: ``clone``, ``library``, or ``actor``.
-        ref_audio: Reference clip for cloning, or empty.
-        ref_text: Transcript of ``ref_audio``. Empty selects x-vector-only cloning.
-        adapter_dir: Library-voice folder that holds the LoRA adapter.
+        ref_text: Empty selects x-vector-only cloning.
         adapter_scale: LoRA strength. New library voices use 0.5; older ones use 1.0.
         actor_weight: Share of the actor's timbre; the rest is the closest library voice.
         actor_ok: False when the actor clip is not long or clean enough, so the library voice is used as is.
-        gender: Optional hint for picking the closest library voice.
-        candidates: Library voices the actor blend may match.
         record_dir: Folder where the chosen blend is written, or empty to skip that record.
     """
     key: str                       # stable id (cache key part)
@@ -187,11 +182,7 @@ class BaseTTS:
         return out
 
     def synthesize_batch(self, texts: Sequence[str], voice: VoiceSpec, seed: Optional[int] = None) -> List[np.ndarray]:
-        """Synthesize ``texts`` in one voice and return one waveform per text.
-
-        Raises:
-            NotImplementedError: Subclasses synthesize audio; this base does not.
-        """
+        """Synthesize ``texts`` in one voice and return one waveform per text. Subclasses implement this; the base raises NotImplementedError."""
         raise NotImplementedError
 
     def max_batch(self) -> int:
@@ -252,11 +243,7 @@ class MockTTS(BaseTTS):
         self._resolved, self._blends = {}, {}
 
     def synthesize_batch(self, texts: Sequence[str], voice: VoiceSpec, seed: Optional[int] = None) -> List[np.ndarray]:
-        """Return a deterministic tone about as long as each line would take to speak.
-
-        Args:
-            seed: Mixed into the tone's hash so a retry of the same text can differ.
-        """
+        """Return a deterministic tone about as long as each line would take to speak. ``seed`` changes the tone for the same text."""
         from dubber.core.script import estimate_seconds
 
         voice = self.resolve(voice)
@@ -446,14 +433,7 @@ class QwenTTS(BaseTTS):
             return None
 
     def synthesize_batch(self, texts: Sequence[str], voice: VoiceSpec, seed: Optional[int] = None) -> List[np.ndarray]:
-        """Synthesize ``texts`` in the resolved voice and return one float32 waveform per line.
-
-        Args:
-            seed: When set, reseeds PyTorch before this call so a retry of the same line can differ.
-
-        Raises:
-            RuntimeError: The Qwen3-TTS weights are not loaded.
-        """
+        """Synthesize ``texts`` in the resolved voice and return one float32 waveform per line. ``seed`` reseeds PyTorch so a retry can differ. Raises RuntimeError when the weights are not loaded."""
         import torch
 
         if seed is not None:

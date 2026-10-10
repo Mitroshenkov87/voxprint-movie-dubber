@@ -16,15 +16,7 @@ from dubber.pipeline import runner as R
 
 
 class PipelineThread(QThread):
-    """Run the dubbing pipeline, or a preview fragment, on a worker thread.
-
-    Args:
-        folder: Project folder the runner reads and writes.
-        cfg: Engine settings passed to the runner.
-        until_stage: Last pipeline stage to run.
-        preview: Film time where a preview fragment starts, or None for a full run.
-        preview_len: Length of that fragment in seconds.
-    """
+    """Run the dubbing pipeline, or a preview fragment, on a worker thread."""
     stage = Signal(str, str, str)          # key, status, message
     log = Signal(str)
     progress = Signal(float, float)        # overall 0..1, ETA seconds (-1 unknown)

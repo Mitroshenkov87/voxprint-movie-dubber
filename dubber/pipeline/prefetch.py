@@ -40,13 +40,7 @@ CPU_WORK = {
 
 @dataclass(frozen=True)
 class Plan:
-    """Model load and CPU work that can overlap the GPU stage already running.
-
-    Args:
-        next_model: Model to prefetch, or empty when this stage has no successor.
-        cpu: CPU jobs, ``vad`` or ``ffmpeg``, that are safe to run beside the GPU stage.
-        need_gb: VRAM, in GB, that the next model is expected to need.
-    """
+    """Model load and CPU work that can overlap the GPU stage already running."""
     next_model: str
     cpu: Tuple[str, ...]
     need_gb: float

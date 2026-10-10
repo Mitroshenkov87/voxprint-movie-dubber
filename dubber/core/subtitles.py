@@ -23,12 +23,7 @@ LANG_ALIASES = {"ru": ("ru", "rus", "russian", "рус"), "en": ("en", "eng", "e
 
 @dataclass
 class Cue:
-    """One subtitle cue.
-
-    Args:
-        start: Start time in seconds.
-        end: End time in seconds.
-    """
+    """One subtitle cue."""
     start: float
     end: float
     text: str
@@ -295,11 +290,7 @@ def opensubtitles_search(api_key: str, video: Path, lang: str, http: Http = defa
 
 @dataclass
 class Found:
-    """Subtitles from one search hit.
-
-    Args:
-        source: ``embedded``, ``sidecar``, ``subdl``, or ``opensubtitles``.
-    """
+    """Subtitles from one search hit: ``embedded``, ``sidecar``, ``subdl``, or ``opensubtitles``."""
     source: str            # embedded | sidecar | subdl | opensubtitles
     cues: List[Cue]
     label: str = ""

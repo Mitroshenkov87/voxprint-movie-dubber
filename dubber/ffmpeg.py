@@ -104,11 +104,7 @@ def ffmpeg_info(refresh: bool = False) -> FfmpegInfo:
 
 
 def require_ffmpeg() -> str:
-    """Return the path of a working ffmpeg executable.
-
-    Raises:
-        FfmpegError: No ffmpeg binary was found.
-    """
+    """Return the path of a working ffmpeg executable, or raise FfmpegError when none is found."""
     exe = ffmpeg_info().ffmpeg
     if not exe:
         raise FfmpegError("ffmpeg was not found (install ffmpeg, or set VOXPRINT_FFMPEG to its path)")
