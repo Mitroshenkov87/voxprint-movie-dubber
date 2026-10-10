@@ -44,6 +44,11 @@
 #if BuildHandle == 0
   #error BUILD.json could not be opened
 #endif
+; The CI stamp is opened here, before the subs that read it: ISPP needs the handle declared before a sub uses it.
+#define StampHandle 0
+#if FileExists(StampJsonFile) != 0
+  #define StampHandle FileOpen(StampJsonFile)
+#endif
 #define AppVersion ""
 #define AppOffset ""
 #define FileCodename ""
@@ -110,13 +115,10 @@
 #define BuildI 0
 #for {BuildI = 0; BuildI < 40 && !FileEof(BuildHandle); BuildI++} ReadBuildJson
 #expr FileClose(BuildHandle)
-#if FileExists(StampJsonFile) != 0
-  #define StampHandle FileOpen(StampJsonFile)
-  #if StampHandle != 0
-    #define StampI 0
-    #for {StampI = 0; StampI < 40 && !FileEof(StampHandle); StampI++} ReadStampJson
-    #expr FileClose(StampHandle)
-  #endif
+#if StampHandle != 0
+  #define StampI 0
+  #for {StampI = 0; StampI < 40 && !FileEof(StampHandle); StampI++} ReadStampJson
+  #expr FileClose(StampHandle)
 #endif
 #if AppVersion == ""
   #error APP_VERSION was not read from dubber\appinfo.py
