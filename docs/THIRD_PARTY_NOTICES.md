@@ -6,10 +6,12 @@
 | TIGER-DnR weights (`JusperLee/TIGER-DnR`) | downloaded on demand | Apache-2.0 |
 | faster-qwen3-tts, qwen-tts-hf | Qwen3-TTS inference, CUDA Graphs | MIT / Apache-2.0 |
 | Qwen3-TTS-12Hz Base models (Qwen) | TTS with voice cloning, downloaded on demand | Apache-2.0 |
-| faster-whisper, CTranslate2, Whisper models | speech recognition | MIT |
+| faster-whisper, CTranslate2, `deepdml/faster-whisper-large-v3-turbo-ct2` | speech recognition | MIT |
 | Silero VAD | voice activity detection | MIT |
-| Opus-MT (Helsinki-NLP) | translation | CC-BY-4.0 |
-| pyannote speaker-diarization community-1 | speaker diarization (gated, optional) | CC-BY-4.0; needs a Hugging Face token and accepted terms |
+| Opus-MT tc-big (`Helsinki-NLP/opus-mt-tc-big-en-zle`, `-zle-en`, `-zle-de`, `-de-zle`) | translation (en↔ru, ru↔de). No tc-big model for en→de or de→en | CC-BY-4.0. University of Helsinki (Helsinki-NLP), https://huggingface.co/Helsinki-NLP, https://creativecommons.org/licenses/by/4.0/ |
+| pyannote speaker-diarization community-1 | speaker diarization (gated, optional) | CC-BY-4.0; https://huggingface.co/pyannote/speaker-diarization-community-1, https://creativecommons.org/licenses/by/4.0/; needs a Hugging Face token and accepted terms |
+| pyannote/embedding | speaker embeddings (gated, optional) | MIT |
+| Mel-Band RoFormer (`KimberleyJSN/melbandroformer` @ `ac9b0614ab3cd7f77219e18ba494dfd93956c348`, 2026-04-22) | optional vocal separation | MIT (model card relicensed MIT on that commit) |
 | PySide6 / Qt | user interface | LGPL-3.0 |
 | FFmpeg libraries inside PySide6 (Qt Multimedia FFmpeg backend, shared DLLs) | built-in video player for the preview and Watch mode | LGPL-2.1-or-later (dynamically linked, replaceable) |
 | python-stretch (Signalsmith Stretch) | time stretching of dub lines | MIT |

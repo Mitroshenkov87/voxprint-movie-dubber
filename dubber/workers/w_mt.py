@@ -1,7 +1,8 @@
-"""Worker ``mt``: offline machine translation with Opus-MT (Marian) - the default translator when no subtitles exist.
+"""Worker ``mt``: offline machine translation with Opus-MT tc-big (Marian).
 
 Input (args): ``source``, ``target`` (en/ru/de), ``sentences`` (list of str), ``out_json``, ``allow_download``, ``device``.
-Only direct pairs exist (en<->ru, en<->de); other pairs are SKIP in this pre-release (the audiobook program pivots through English).
+Direct tc-big pairs are en<->ru and ru<->de. en->de and de->en have no tc-big model and are SKIP here
+(the pipeline pivots through English only when both sides are non-English and a direct model is missing).
 """
 from __future__ import annotations
 
@@ -20,7 +21,7 @@ def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
         return {"status": "SKIP", "summary": f"source and target language are the same ({src}); nothing to translate"}
     spec = models.mt_spec(src, tgt)
     if spec is None:
-        return {"status": "SKIP", "summary": f"no direct Opus-MT model for {src}->{tgt} in this pre-release (pivot through English is not built yet)"}
+        return {"status": "SKIP", "summary": f"no direct Opus-MT tc-big model for {src}->{tgt}"}
     ctx.log(f"translation {src}->{tgt}: locating the model")
     folder, info = models.ensure(spec.repo, args.get("allow_download", True), log=ctx.log)
     t = time.time()
@@ -37,7 +38,8 @@ def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
     load_s = time.time() - t
 
     def translate(batch: List[str]) -> List[str]:
-        enc = tok(batch, return_tensors="pt", padding=True, truncation=True, max_length=256).to(device)
+        enc = tok(models.mt_inputs(spec.target_token, batch), return_tensors="pt", padding=True, truncation=True,
+                  max_length=256).to(device)
         with torch.no_grad():
             gen = model.generate(**enc, num_beams=int(args.get("beams", 4)), max_new_tokens=256)
         cuda_sync()

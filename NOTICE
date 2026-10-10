@@ -5,7 +5,19 @@ The source code of this program is licensed under the Apache License, Version 2.
 
 Not covered by that licence (each has its own terms):
   * Third-party software and models that Movie Dubber uses, vendors or downloads - see docs/THIRD_PARTY_NOTICES.md
-    (the vendored TIGER / look2hear code keeps its MIT licence, dubber/third_party/look2hear/LICENSE).
+    and docs/MODELS.md (the vendored TIGER / look2hear code keeps its MIT licence, dubber/third_party/look2hear/LICENSE).
+  * Opus-MT tc-big translation models (downloaded): Helsinki-NLP/opus-mt-tc-big-en-zle, -zle-en, -zle-de and -de-zle
+    (revisions 708be1d372fe4c358a352f404e6dc9ca0126ba48, 09a40f722d6d8b76aaad6fe51a06c914622a13d1,
+    b2e247f0c413ca6aa51a32f2f2be8666cf72405e, d4db2a2cbaa6c2f1ea57d0ed40924d35767b05f9): (c) Language Technology
+    Research Group at the University of Helsinki (Helsinki-NLP), from https://huggingface.co/Helsinki-NLP,
+    licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/), used unmodified.
+    Tiedemann et al., "Democratizing neural machine translation with OPUS-MT", Language Resources and Evaluation 58 (2024).
+  * pyannote speaker-diarization-community-1 (gated, downloaded when a Hugging Face token is set): (c) pyannote,
+    from https://huggingface.co/pyannote/speaker-diarization-community-1, licensed under CC BY 4.0
+    (https://creativecommons.org/licenses/by/4.0/). pyannote/embedding is MIT.
+  * Mel-Band RoFormer vocals checkpoint KimberleyJSN/melbandroformer, revision
+    ac9b0614ab3cd7f77219e18ba494dfd93956c348 (2026-04-22, the commit that set the model card to MIT;
+    https://huggingface.co/KimberleyJSN/melbandroformer).
   * Voice packages from the shared Voxprint voice library: every voice carries its own licence in its voice.json.
   * The icon and splash are original artwork by Aleksandr Mitroshenkov (assets/ICON-LICENSE.txt).
 

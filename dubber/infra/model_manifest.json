@@ -1,182 +1,220 @@
 {
  "models": {
-  "Helsinki-NLP/opus-mt-de-en": {
+  "deepdml/faster-whisper-large-v3-turbo-ct2": {
    "files": {
     "config.json": {
-     "sha256": "89368ef76ea89581025cdf605caac75b8a22af2c1a90ec57c8a5001f10537eeb",
-     "size": 1381
-    },
-    "generation_config.json": {
-     "sha256": "e5cccf365761fb31175fc978a75f5e857a822f173d0e447aa3a25d7cbcda15a4",
-     "size": 293
-    },
-    "pytorch_model.bin": {
-     "sha256": "e743c3070f61f477cb62fe95ef2c9be2e77f3e488cb6b8030ff8a19e8295c87d",
-     "size": 297928209
-    },
-    "source.spm": {
-     "sha256": "bbd1f495eea99c8e21ae086d9146e0fa7b096c3dfdd9ba07ab8b631889df5c9b",
-     "size": 796845
-    },
-    "target.spm": {
-     "sha256": "678f2a1177d8389f67b66299762dcc4fc567e89b07e212ba91b0c56daecf47ce",
-     "size": 768489
-    },
-    "tokenizer_config.json": {
-     "sha256": "51c3c3260d27cb7c4d11d0c53752b8fe87f2367129d7636fa917ce588b97306c",
-     "size": 42
-    },
-    "vocab.json": {
-     "sha256": "0d70d89fee4a8b4ef99a56d712163baadcabd5600a597f71515547ee70306329",
-     "size": 1273232
-    }
-   },
-   "license": "Apache-2.0",
-   "revision": "1a922f3b32a8e809e17a47d4b32142d8105924e5"
-  },
-  "Helsinki-NLP/opus-mt-en-de": {
-   "files": {
-    "config.json": {
-     "sha256": "41c7890e6f6c1f72c5c626569cfe739a8362080940edbb1747f25173f541653b",
-     "size": 1335
-    },
-    "generation_config.json": {
-     "sha256": "e5cccf365761fb31175fc978a75f5e857a822f173d0e447aa3a25d7cbcda15a4",
-     "size": 293
-    },
-    "pytorch_model.bin": {
-     "sha256": "da068344b1b0c20e6d4a8f77f48e06646b90d679029006b18579e68977206bdd",
-     "size": 297928209
-    },
-    "source.spm": {
-     "sha256": "678f2a1177d8389f67b66299762dcc4fc567e89b07e212ba91b0c56daecf47ce",
-     "size": 768489
-    },
-    "target.spm": {
-     "sha256": "bbd1f495eea99c8e21ae086d9146e0fa7b096c3dfdd9ba07ab8b631889df5c9b",
-     "size": 796845
-    },
-    "tokenizer_config.json": {
-     "sha256": "052c28be2c51ea3398bf9b9de92004270e29a51f8404f9921ec025986ffbefae",
-     "size": 42
-    },
-    "vocab.json": {
-     "sha256": "0d70d89fee4a8b4ef99a56d712163baadcabd5600a597f71515547ee70306329",
-     "size": 1273232
-    }
-   },
-   "license": "CC-BY-4.0",
-   "revision": "6183067f769a302e3861815543b9f312c71b0ca4"
-  },
-  "Helsinki-NLP/opus-mt-en-ru": {
-   "files": {
-    "config.json": {
-     "sha256": "d3c2614fd099bc228fc257f047e46f1c6f94cfa12dee2b1fa6c0d780e6b7de06",
-     "size": 1381
-    },
-    "generation_config.json": {
-     "sha256": "152452cb7a96bff6c20b54f91fae2a655b72a8a9ce978ca3e9384f87253d5281",
-     "size": 293
-    },
-    "pytorch_model.bin": {
-     "sha256": "d15fa58c6bc3efd3629c1b6b86d9aa6d15d2751a4620aa4cdd7eed7b5cbe583b",
-     "size": 306991893
-    },
-    "source.spm": {
-     "sha256": "16bebef1389a0b8ab452772c4e35b9e605e5713f8ac7baa71ca701394eaa086d",
-     "size": 802781
-    },
-    "target.spm": {
-     "sha256": "745998e51ba5b058e38b7ac7765c25c43ed5c1c39cc92b27163b9b2e323c9d7c",
-     "size": 1080169
-    },
-    "tokenizer_config.json": {
-     "sha256": "eca697b0e7109b94a9f2a1de82173fdbd4ddee97d1fd46a15b3162f191e6eed2",
-     "size": 42
-    },
-    "vocab.json": {
-     "sha256": "33e95da3be3fa3b50169c4c46693ba2f29fbf4cb29d99044bd07d72d181fa1e9",
-     "size": 2601758
-    }
-   },
-   "license": "Apache-2.0",
-   "revision": "bb09c99d180016eac6819df3dae68edb1690fdee"
-  },
-  "Helsinki-NLP/opus-mt-ru-en": {
-   "files": {
-    "config.json": {
-     "sha256": "5ea76c78596bce8fe005ef89e00de0924bf83e5f532ce08784ff1fcefb699f5f",
-     "size": 1381
-    },
-    "generation_config.json": {
-     "sha256": "31cff5e74efc263ff53efac09e3e350cd462d5c8198b1136b455d63a02d8cad5",
-     "size": 293
-    },
-    "pytorch_model.bin": {
-     "sha256": "535450eb5613f3cc912f9ca3e54cfef6c14d201b319c24a88faf776a65538b5d",
-     "size": 306991893
-    },
-    "source.spm": {
-     "sha256": "745998e51ba5b058e38b7ac7765c25c43ed5c1c39cc92b27163b9b2e323c9d7c",
-     "size": 1080169
-    },
-    "target.spm": {
-     "sha256": "16bebef1389a0b8ab452772c4e35b9e605e5713f8ac7baa71ca701394eaa086d",
-     "size": 802781
-    },
-    "tokenizer_config.json": {
-     "sha256": "8d826099b8c67179c83ab4ff94aff7ca7bf24ca14319cb0287b9a0b4c40b2a96",
-     "size": 42
-    },
-    "vocab.json": {
-     "sha256": "33e95da3be3fa3b50169c4c46693ba2f29fbf4cb29d99044bd07d72d181fa1e9",
-     "size": 2601758
-    }
-   },
-   "license": "CC-BY-4.0",
-   "revision": "fbd6dc73284f95536648512cc21d57f19191961a"
-  },
-  "Qwen/Qwen3-ForcedAligner-0.6B": {
-   "files": {
-    ".gitattributes": {
-     "sha256": "11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",
-     "size": 1519
-    },
-    "chat_template.json": {
-     "sha256": "75a8cfca24f00de72d796fbfed6858fc9614ef3dabd8696684cc3bc03a9c58ff",
-     "size": 1161
-    },
-    "config.json": {
-     "sha256": "d616c65d46c4b90bdc651b0a0963ea932732241140f337f9bb6b0335a9c8ef09",
-     "size": 5982
-    },
-    "generation_config.json": {
-     "sha256": "948d089b23bca1d214e768d59c4438365665f52ec6d33678f4062206b3fbbb8c",
-     "size": 115
-    },
-    "merges.txt": {
-     "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
-     "size": 1671853
-    },
-    "model.safetensors": {
-     "sha256": "47831d0e82f96b20e9034dba01a075ee06436654719f6a68289e49f1b65ce0e7",
-     "size": 1835544544
+     "sha256": "b0253ea6c0d3bea6b1e19e91a02acfd3b53f4467362efcb5a3e6b16c9b3a9b7e",
+     "size": 2263
     },
     "preprocessor_config.json": {
-     "sha256": "45e120a4eda2c20c5d7f2ea9354e63536bf35e27aa573fb7cdf78017b378770d",
-     "size": 330
+     "sha256": "7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711",
+     "size": 340
     },
-    "tokenizer_config.json": {
-     "sha256": "3ab80063f8511deb9566e6ad438d17b7a6277fcffd52d92854112f19d36bd81c",
-     "size": 12666
+    "tokenizer.json": {
+     "sha256": "297b13372ac43916285644fb9687add3cc62ee2a1adb60da3dc25cc94c1871fd",
+     "size": 2710337
     },
-    "vocab.json": {
-     "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
-     "size": 2776833
+    "vocabulary.json": {
+     "sha256": "c69260f2ab26d659b7c398f9a2b2b48ed0df16c3b47d7326782fd9cba71690c1",
+     "size": 1068114
+    },
+    "model.bin": {
+     "sha256": "e76620f83d5f5b69efd3d87e3dc180c1bd21df9fbebacfd4335e5e1efcc018da",
+     "size": 1617884929
     }
    },
-   "license": "Apache-2.0",
-   "revision": "c7cbfc2048c462b0d63a45797104fc9db3ad62b7"
+   "license": "MIT",
+   "revision": "4df90f75321148c3a29a9e2351b7ddf8f5b115a8"
+  },
+  "JusperLee/TIGER-DnR": {
+   "files": {
+    "config.json": {
+     "sha256": "ba9d2f833bf2f3a5855a35d0ccd11c786f6b92f1a482d84404bc4673edb29b54",
+     "size": 250
+    },
+    "model.safetensors": {
+     "sha256": "dd1c696e72f6adea0085ef1af640882a8260519ad666422835e387a5b4abdd2a",
+     "size": 17130568
+    }
+   },
+   "license": "Apache-2.0 (weights), MIT (code)",
+   "revision": "b7a59560bbca10febbcd46fb01600f868e587f57"
+  },
+  "pyannote/embedding": {
+   "files": {
+    "config.yaml": {
+     "sha256": "ca62ad63622a8e983ad5254a32a354b9dc69673485424d67f979c75bfffae38a",
+     "size": 1996
+    },
+    "pytorch_model.bin": {
+     "sha256": "4bcec986de13da7af7ac88736572692359950df63669989c4f78b294934c9089",
+     "size": 96383626
+    }
+   },
+   "license": "MIT, gated",
+   "revision": "4db4899737a38b2d618bbd74350915aa10293cb2"
+  },
+  "KimberleyJSN/melbandroformer": {
+   "files": {
+    "MelBandRoformer.ckpt": {
+     "sha256": "87201f4d31afb5bc79993230fc49446918425574db48c01c405e44f365c7559e",
+     "size": 913106900
+    }
+   },
+   "license": "MIT",
+   "revision": "ac9b0614ab3cd7f77219e18ba494dfd93956c348"
+  },
+  "Helsinki-NLP/opus-mt-tc-big-en-zle": {
+   "files": {
+    "config.json": {
+     "sha256": "962d235879c9def4cfdf140be81436d4fb9da25271dd69079df2c90b459f1332",
+     "size": 1076
+    },
+    "generation_config.json": {
+     "sha256": "d851d84c804c745d92dae5659bd2d8e8b976b664dd0fbc39b82ee88340147802",
+     "size": 301
+    },
+    "tokenizer_config.json": {
+     "sha256": "41deeedfc0e3ce366d6bde180dee025a8ca1bcd62b1451889301e8ea4bcbb609",
+     "size": 339
+    },
+    "vocab.json": {
+     "sha256": "41dbdff4a0b5a6ab125715c3342c5ce6516e93ffd49608813240403f036c5efb",
+     "size": 2510527
+    },
+    "special_tokens_map.json": {
+     "sha256": "09059cedc26bc46bc09a52f05b92d4922e11917e87f3b92059bb1a63a59ab2c4",
+     "size": 65
+    },
+    "source.spm": {
+     "sha256": "3612abfe04bf08344ba91115f0e15e228a7a15a621ea856bfd548097dbaeb43c",
+     "size": 802747
+    },
+    "target.spm": {
+     "sha256": "22940e744b3a9fd166a04880938fb61f7dfa8ba4b5d2d3f6371a6c4ba8f3b019",
+     "size": 1017004
+    },
+    "model.safetensors": {
+     "sha256": "e68caa9a233c177a3489257b69c18cece6da97767ab2581918ce3fc3c3899416",
+     "size": 478977130
+    }
+   },
+   "license": "CC-BY-4.0",
+   "revision": "708be1d372fe4c358a352f404e6dc9ca0126ba48"
+  },
+  "Helsinki-NLP/opus-mt-tc-big-zle-en": {
+   "files": {
+    "config.json": {
+     "sha256": "c3a0d99762cd5009ab0d9e793fab27b02a8362bb366191a58af677ea712c1263",
+     "size": 1076
+    },
+    "generation_config.json": {
+     "sha256": "aeafe756fb795970bccbb7c16391b79f42a4f9c1d5f32bc6e36b45f17cfa5a35",
+     "size": 301
+    },
+    "tokenizer_config.json": {
+     "sha256": "1c99d6f6250779f482836b8380d5fdcaa3ab8c7b6f332a6fcec1d8040eeb6c00",
+     "size": 339
+    },
+    "vocab.json": {
+     "sha256": "92148daf001ba378588442dfcdc7c4529210f2f28635ebc092faecf508190680",
+     "size": 2492486
+    },
+    "special_tokens_map.json": {
+     "sha256": "09059cedc26bc46bc09a52f05b92d4922e11917e87f3b92059bb1a63a59ab2c4",
+     "size": 65
+    },
+    "source.spm": {
+     "sha256": "a982dbb9362861151e36b0db1595b324cd1ce09acf46ce1f4d6d624e11c5807f",
+     "size": 1016851
+    },
+    "target.spm": {
+     "sha256": "e69faed7f1e60eec38c64cceba35cc4fb05ec6478082f4c8a14b141fd6596e9e",
+     "size": 802387
+    },
+    "model.safetensors": {
+     "sha256": "78608083ed48db06dd4b0afdb58b1ac7e2a3648b295fac58449c131c7bf0cc2c",
+     "size": 477829130
+    }
+   },
+   "license": "CC-BY-4.0",
+   "revision": "09a40f722d6d8b76aaad6fe51a06c914622a13d1"
+  },
+  "Helsinki-NLP/opus-mt-tc-big-zle-de": {
+   "files": {
+    "config.json": {
+     "sha256": "3365e8a0008b014e8360cfb8a48c21bcc250490e623d9fb38ba57372a9d4975a",
+     "size": 1076
+    },
+    "generation_config.json": {
+     "sha256": "3e5f85e6a764107acbf215671ce7b6a18b21cfb52f13892ff01498c71d4baf50",
+     "size": 301
+    },
+    "tokenizer_config.json": {
+     "sha256": "9946907fad1e49a4ff5e493feaaf3af386211feac30e9d883aaaea61cf822a14",
+     "size": 336
+    },
+    "vocab.json": {
+     "sha256": "768fd9a234ab432101826b4fd77ebea6aff67b1e461bc242d81877442db9fcfc",
+     "size": 2504322
+    },
+    "special_tokens_map.json": {
+     "sha256": "09059cedc26bc46bc09a52f05b92d4922e11917e87f3b92059bb1a63a59ab2c4",
+     "size": 65
+    },
+    "source.spm": {
+     "sha256": "ce6c0b9887274cbaef5320aec5db60c5afab66f983723ac4051aa68523f9032f",
+     "size": 1008968
+    },
+    "target.spm": {
+     "sha256": "7c23b510033f9329f8f2c6200a5c8f2cedc03133690dbde920c0f4f14e6a8bda",
+     "size": 823197
+    },
+    "model.safetensors": {
+     "sha256": "cab19ba28674308c4e51bc05ebf19dd8f2b9cacbc339a350ec389c47cf591a96",
+     "size": 478134580
+    }
+   },
+   "license": "CC-BY-4.0",
+   "revision": "b2e247f0c413ca6aa51a32f2f2be8666cf72405e"
+  },
+  "Helsinki-NLP/opus-mt-tc-big-de-zle": {
+   "files": {
+    "config.json": {
+     "sha256": "87339bacf38f0f193b9f3b79c1cc0e4de4ed8fcdbd886b87f2be69caa1236a71",
+     "size": 1076
+    },
+    "generation_config.json": {
+     "sha256": "5c3d58c11c2cf673224cd7bb9c7ad3fac618ffb185c4478144a96623940bd3ef",
+     "size": 301
+    },
+    "tokenizer_config.json": {
+     "sha256": "4cd738433f516c1205d9619098efdb383cde555fafd035f5410601908553f306",
+     "size": 336
+    },
+    "vocab.json": {
+     "sha256": "1afcad767fa7863a9a935f5b3e0efa0afa6a6918909b1fbffb14c5e2c07f3ff3",
+     "size": 2504592
+    },
+    "special_tokens_map.json": {
+     "sha256": "09059cedc26bc46bc09a52f05b92d4922e11917e87f3b92059bb1a63a59ab2c4",
+     "size": 65
+    },
+    "source.spm": {
+     "sha256": "dde526685600b958138d2b3863bf9b8be10774bf8a99573aede7db619c9b5eb0",
+     "size": 822915
+    },
+    "target.spm": {
+     "sha256": "3341e4c42304e509ef8068c1b0726be116a8ad90b513c62638db210bf47b4fb6",
+     "size": 1009491
+    },
+    "model.safetensors": {
+     "sha256": "2af78d2ff8d53c73e88dd032506c0dff28d17fb6a828f8b572afe128dbe1647e",
+     "size": 478062830
+    }
+   },
+   "license": "CC-BY-4.0",
+   "revision": "d4db2a2cbaa6c2f1ea57d0ed40924d35767b05f9"
   },
   "Qwen/Qwen3-TTS-12Hz-0.6B-Base": {
    "files": {
@@ -287,6 +325,6 @@
    "revision": "fd4b254389122332181a7c3db7f27e918eec64e3"
   }
  },
- "note": "Per-file size and SHA-256 of the pinned model revisions (copied from Voxprint AI Audiobook Builder infra/model_mirrors.json; shared spec). Model card files are not checked.",
+ "note": "Per-file size and SHA-256 of the pinned Hugging Face revisions. Checksums are verified on download. Qwen3-TTS hashes match the shared Voxprint model store. Model card files (.md, dotfiles) are not checked. MelBandRoformer.ckpt is the file at KimberleyJSN/melbandroformer revision ac9b0614 (2026-04-22, MIT relicence; the checkpoint blob itself was uploaded on 2024-08-06).",
  "schema": 1
 }

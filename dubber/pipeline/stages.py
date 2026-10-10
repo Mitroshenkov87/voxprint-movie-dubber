@@ -21,6 +21,8 @@ from dubber.core import audio, media, mixing, script, subtitles, timefit, voices
 from dubber.core.project import CHUNK_S, Line, Project, Speaker, hash_of, read_json, write_json
 from dubber.engines import translation as mt
 from dubber.engines.asr import AsrCudaFallback, transcribe_faster_whisper
+from dubber.engines.separation import chunk_batch_size, roformer_model, separate_windows, tiger_model
+from dubber.infra.resources import snapshot
 
 Emit = Callable[..., None]
 ORDER = ["probe", "extract", "subtitles", "vad", "separation", "asr", "script", "diarization", "translation", "voices", "tts", "mix", "mux"]
@@ -322,17 +324,10 @@ def st_separation(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
         return "no separation: the original is ducked under the dub"
     windows = [tuple(w) for w in read_json(p.path("analysis", "windows.json"), [])]
     if kind == "roformer":
-        from dubber.infra import shared_paths
-
-        fn = __import__("dubber.engines.separation", fromlist=["x"]).roformer_model(
-            _device(cfg), shared_paths.models_dir() / "audio-separator", cfg.get("roformer_model"), lambda m: emit("log", text=m))
+        fn = roformer_model(_device(cfg), bool(cfg.get("allow_download", True)), lambda m: emit("log", text=m),
+                            str(cfg.get("roformer_model") or "vocals_mel_band_roformer.ckpt"))
     else:
-        from dubber.engines.separation import tiger_model
-
         fn = tiger_model(_device(cfg), cfg.get("allow_download", True), lambda m: emit("log", text=m))
-    from dubber.engines.separation import chunk_batch_size, separate_windows
-    from dubber.infra.resources import snapshot
-
     snap = snapshot(use_torch=False)
     separate_windows(p.path("audio", "mix44.wav"), windows, p.path("stems", "speech.wav"), p.path("stems", "background.wav"), fn,
                      lambda m: emit("log", text=m), batch_size=chunk_batch_size(snap.vram_total_gb, snap.vram_budget_gb))

@@ -1,4 +1,7 @@
-"""Offline translation with Opus-MT (Marian models through transformers); direct pairs en<->ru, en<->de, else pivot via English.
+"""Offline translation with Opus-MT tc-big (Marian models through transformers).
+
+Direct pairs are en<->ru and ru<->de. en->de and de->en have no tc-big model. A pair of two non-English
+languages with no direct model still pivots through English.
 
 Completeness first (real case: "Yeah, that sounds cool! Learning sucks!" came back as "Да, звучит круто!" and "...Destroy it all.
 Destroy." lost "Destroy"): Marian models tend to drop a short trailing sentence when given several at once.  So every line is
@@ -112,14 +115,14 @@ class OpusMT:
         folder, _ = models.ensure(spec.repo, allow_download, log=log)
         self.tok = MarianTokenizer.from_pretrained(str(folder))
         self.model = MarianMTModel.from_pretrained(str(folder)).to(device).eval()
-        self.device, self.log = device, log
+        self.device, self.log, self.prefix = device, log, spec.target_token
 
     def __call__(self, texts: List[str], beams: int = 4, batch: int = 16) -> List[str]:
         import torch
 
         out: List[str] = []
         for i in range(0, len(texts), batch):
-            part = texts[i:i + batch]
+            part = models.mt_inputs(self.prefix, texts[i:i + batch])
             enc = self.tok(part, return_tensors="pt", padding=True, truncation=True, max_length=256).to(self.device)
             with torch.no_grad():
                 gen = self.model.generate(**enc, num_beams=beams, max_new_tokens=256)
