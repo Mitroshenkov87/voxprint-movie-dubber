@@ -20,3 +20,5 @@
 | espeak-ng (only to generate the synthetic test clip, `tools/make_test_clip.py`) | not shipped | GPL-3.0 (the generated audio is synthetic) |
 
 Project licence: Apache-2.0 for the program's own source code (see `LICENSE` and `NOTICE`), the same as Voxprint AI Audiobook Builder.
+
+`dubber/assets/splash-easter.jpg` is original generated art shipped with this program. It does not depict a real person. See `dubber/assets/README.md`.

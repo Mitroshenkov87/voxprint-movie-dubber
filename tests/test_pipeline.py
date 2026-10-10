@@ -340,7 +340,9 @@ def test_run_queue_halves_on_oom():
             return super().synthesize_batch(texts, voice, seed)
     e = Eng()
     got = {}
-    e.run_queue([(i, f"line {i}") for i in range(20)], tts_mod.VoiceSpec("v", "clone"), lambda i, w: got.__setitem__(i, w))
+    long = "x" * 130
+    e.line_seconds = {i: 9.0 for i in range(20)}
+    e.run_queue([(i, f"{long} {i}") for i in range(20)], tts_mod.VoiceSpec("v", "clone"), lambda i, w: got.__setitem__(i, w))
     assert len(got) == 20 and max(e.calls[1:]) <= 6
 
 

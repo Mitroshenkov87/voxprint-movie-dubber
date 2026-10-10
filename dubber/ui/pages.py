@@ -219,6 +219,10 @@ class FilmPage(QWidget):
         self.lbl_multi_hint = label("hint")
         self.lbl_voice = label("fileLabel", False)
         self.cmb_voice = QComboBox()
+        self.lbl_likeness = label("fileLabel", False)
+        self.sld_likeness = QSlider(Qt.Orientation.Horizontal)
+        self.sld_likeness.setRange(0, 100)
+        self.sld_likeness.setValue(50)
         self.lbl_volume = label("fileLabel", False)
         self.sld_volume = QSlider(Qt.Orientation.Horizontal)
         self.sld_volume.setRange(0, 100)
@@ -251,6 +255,9 @@ class FilmPage(QWidget):
         g.addWidget(self.lbl_voice, r, 0)
         g.addWidget(self.cmb_voice, r, 1, 1, 2)
         r += 1
+        g.addWidget(self.lbl_likeness, r, 0)
+        g.addWidget(self.sld_likeness, r, 1, 1, 2)
+        r += 1
         vol = QHBoxLayout()
         vol.addWidget(self.sld_volume, 1)
         vol.addWidget(self.lbl_volume_value)
@@ -276,6 +283,7 @@ class FilmPage(QWidget):
 
         self.chk_multi.toggled.connect(_on_multi)
         self.cmb_voice.currentIndexChanged.connect(lambda _i: self.option_changed.emit("voice"))
+        self.sld_likeness.sliderReleased.connect(lambda: self.option_changed.emit("likeness"))
         self.sld_volume.sliderReleased.connect(lambda: self.option_changed.emit("volume"))
         self.cmb_format.currentIndexChanged.connect(lambda _i: self.option_changed.emit("format"))
         self.info: Optional[media.MediaInfo] = None
@@ -313,6 +321,8 @@ class FilmPage(QWidget):
         self.chk_multi.setText(tr("chars.multi"))
         self.lbl_multi_hint.setText(tr("chars.multi_hint"))
         self.lbl_voice.setText(tr("chars.single_voice"))
+        self.lbl_likeness.setText(tr("chars.actor_weight"))
+        self.sld_likeness.setToolTip(tr("chars.actor_weight_tip"))
         self.lbl_volume.setText(tr("dub.volume"))
         self._volume_text(self.sld_volume.value())
         self.lbl_format.setText(tr("film.format"))
@@ -348,6 +358,8 @@ class FilmPage(QWidget):
         multi = self.chk_multi.isChecked()
         self.lbl_voice.setVisible(not multi)
         self.cmb_voice.setVisible(not multi)
+        self.lbl_likeness.setVisible(not multi)
+        self.sld_likeness.setVisible(not multi)
 
     # ------------------------------------------------------------------ model <-> view
     @property
@@ -390,8 +402,8 @@ class FilmPage(QWidget):
         return self.chk_multi.isChecked()
 
     def _widgets(self):
-        return (self.cmb_target, self.cmb_audio, self.cmb_subs, self.cmb_profanity, self.chk_multi, self.cmb_voice, self.sld_volume,
-                self.cmb_format)
+        return (self.cmb_target, self.cmb_audio, self.cmb_subs, self.cmb_profanity, self.chk_multi, self.cmb_voice,
+                self.sld_likeness, self.sld_volume, self.cmb_format)
 
     def load(self, p: Project) -> None:
         for w in self._widgets():
@@ -407,7 +419,11 @@ class FilmPage(QWidget):
         else:
             self.cmb_subs.setCurrentIndex(0 if ch == "auto" else 1)
         self.chk_multi.setChecked(bool(p.settings.get("multi_voice")))
-        fill_voice_combo(self.cmb_voice, Voice.from_dict(p.settings.get("single_voice")))
+        sv = p.settings.get("single_voice") or {}
+        fill_voice_combo(self.cmb_voice, Voice.from_dict(sv))
+        raw = sv.get("actor_weight")
+        likeness = p.settings.get("actor_weight", actor_voice.DEFAULT_WEIGHT) if raw is None else raw
+        self.sld_likeness.setValue(int(round(100 * float(likeness))))
         self.sld_volume.setValue(int(round(100 * float(p.settings.get("original_volume", 0.15)))))
         self._volume_text(self.sld_volume.value())
         fmt = str(p.settings.get("output_format") or "mkv")
@@ -425,9 +441,13 @@ class FilmPage(QWidget):
         p.settings["subtitle_choice"] = self.subtitle_choice()
         p.settings["profanity"] = self.cmb_profanity.currentData() or "keep"
         p.settings["multi_voice"] = self.multi()
+        prev = dict(p.settings.get("single_voice") or {})
         if self.cmb_voice.currentData() is not None:
             v = voice_from_key(self.cmb_voice.currentData())
-            p.settings["single_voice"] = {"kind": v.kind, "id": v.id}
+            prev["kind"] = v.kind
+            prev["id"] = v.id
+        prev["actor_weight"] = round(self.sld_likeness.value() / 100.0, 2)
+        p.settings["single_voice"] = prev
         p.settings["original_volume"] = round(self.sld_volume.value() / 100.0, 2)
         p.settings["output_format"] = self.cmb_format.currentData() or "mkv"
 
@@ -506,6 +526,16 @@ class SpeakerCard(QFrame):
         self.cmb_voice.currentIndexChanged.connect(lambda _i: page.set_voice(self.sid, self.cmb_voice.currentData()))
         self.btn_play = QPushButton(tr("chars.listen"))
         self.btn_play.clicked.connect(lambda: page.listen.emit(self.sid))
+        self.lbl_like = label("fileLabel", False)
+        self.lbl_like.setText(tr("chars.actor_weight"))
+        self.sld_like = QSlider(Qt.Orientation.Horizontal)
+        self.sld_like.setRange(0, 100)
+        self.sld_like.setToolTip(tr("chars.actor_weight_tip"))
+        project = page.project
+        raw = sp.actor_weight
+        base = actor_voice.DEFAULT_WEIGHT if project is None else project.settings.get("actor_weight", actor_voice.DEFAULT_WEIGHT)
+        self.sld_like.setValue(int(round(100 * float(base if raw is None else raw))))
+        self.sld_like.sliderReleased.connect(lambda: page.set_actor_weight(self.sid, self.sld_like.value()))
         self.btn_save = QPushButton(tr("chars.save_actor"))
         self.btn_save.clicked.connect(lambda: page.save_actor.emit(self.sid))
         made = page.project is not None and (actor_voice.folder(page.project.folder, sp.id) / actor_voice.RECORD).is_file()
@@ -521,6 +551,8 @@ class SpeakerCard(QFrame):
         lay.addWidget(self.chk_key, 1, 0, 1, 1, Qt.AlignmentFlag.AlignTop)
         lay.addWidget(self.lbl_samples, 1, 1, 1, 3)
         lay.addWidget(self.btn_save, 1, 4)
+        lay.addWidget(self.lbl_like, 2, 1)
+        lay.addWidget(self.sld_like, 2, 2, 1, 3)
         lay.setColumnStretch(1, 1)
 
 
@@ -561,27 +593,20 @@ class CharactersPage(QWidget):
         self.btn_merge = QPushButton()
         self.btn_merge.clicked.connect(self.merge_selected)
         self.lbl_multi_status = label("status")
-        self.lbl_actor = label("fileLabel", False)
-        self.sld_actor = QSlider(Qt.Orientation.Horizontal)
-        self.sld_actor.setRange(0, 100)
-        self.sld_actor.setFixedWidth(140)
-        self.sld_actor.sliderReleased.connect(self._on_actor_weight)
         row.addWidget(self.btn_find)
         row.addWidget(self.btn_merge)
         row.addWidget(self.lbl_multi_status, 1)
-        row.addWidget(self.lbl_actor)
-        row.addWidget(self.sld_actor)
         ml.addLayout(row)
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.cards_scroll = QScrollArea()
+        self.cards_scroll.setWidgetResizable(True)
+        self.cards_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.cards_host = QWidget()
         self.cards_host.setObjectName("content")
         self.cards_lay = QVBoxLayout(self.cards_host)
         self.cards_lay.setContentsMargins(0, 0, 0, 0)
         self.cards_lay.addStretch(1)
-        self.scroll.setWidget(self.cards_host)
-        ml.addWidget(self.scroll, 1)
+        self.cards_scroll.setWidget(self.cards_host)
+        ml.addWidget(self.cards_scroll, 1)
         lay.addWidget(self.box_multi, 1)
         self.btn_next = QPushButton()
         self.btn_next.clicked.connect(self.next_step.emit)
@@ -594,8 +619,6 @@ class CharactersPage(QWidget):
         self.btn_merge.setText(tr("chars.merge"))
         self.btn_next.setText(tr("chars.next"))
         self.btn_catalog.setText(tr("chars.catalog"))
-        self.lbl_actor.setText(tr("chars.actor_weight"))
-        self.sld_actor.setToolTip(tr("chars.actor_weight_tip"))
         if self.project is not None:
             self.load(self.project)
 
@@ -617,7 +640,6 @@ class CharactersPage(QWidget):
             c.setParent(None)
             c.deleteLater()
         self.cards = {}
-        self.sld_actor.setValue(int(round(100 * float(p.settings.get("actor_weight", actor_voice.DEFAULT_WEIGHT)))))
         card_items = [(Voice("auto", ""), tr("voice.auto"))] + items[:1] + [(Voice("actor", ""), tr("voice.actor"))] + items[1:]
         if multi:
             for sp in sorted(p.speakers, key=lambda s: -s.seconds):
@@ -631,11 +653,14 @@ class CharactersPage(QWidget):
         self.lbl_multi_status.setText(tr("chars.need_find") if need else tr("chars.found", n=len(p.speakers)) if multi else "")
 
     # ------------------------------------------------------------------ edits
-    def _on_actor_weight(self) -> None:
-        if self.project is not None:
-            self.project.settings["actor_weight"] = round(self.sld_actor.value() / 100.0, 2)
-            self.project.save()
-            self.changed.emit("voice")
+    def set_actor_weight(self, sid: str, percent: int) -> None:
+        project = self.project
+        sp = project.speaker(sid) if project else None
+        if project is None or sp is None:
+            return
+        sp.actor_weight = round(int(percent) / 100.0, 2)
+        project.save()
+        self.changed.emit("voice")
 
     def set_voice(self, sid: str, data) -> None:
         project = self.project
@@ -792,7 +817,10 @@ class LinesPage(QWidget):
         if self._loading or self.project is None:
             return
         r = it.row()
-        ln = self.project.line(int(self.table.item(r, COL_TIME).data(Qt.ItemDataRole.UserRole)))
+        stamp = self.table.item(r, COL_TIME)
+        if stamp is None:
+            return
+        ln = self.project.line(int(stamp.data(Qt.ItemDataRole.UserRole)))
         if ln is None:
             return
         col = it.column()
@@ -816,7 +844,9 @@ class LinesPage(QWidget):
             return
         self.project.save()
         self._loading = True
-        self.table.item(r, COL_FLAG).setText(self._flag(r))
+        flag = self.table.item(r, COL_FLAG)
+        if flag is not None:
+            flag.setText(self._flag(r))
         self._loading = False
         self.changed.emit()
 

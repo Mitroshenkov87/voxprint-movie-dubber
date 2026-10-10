@@ -145,7 +145,9 @@ def test_single_voice_defaults_to_a_library_voice_in_the_dub_language(tmp_path, 
     from dubber.ui.window import MainWindow
     w = MainWindow(cfg=S.MOCK_CFG)
     w.set_source(_film(tmp_path, clip))
-    assert w.project.settings["single_voice"] == {"kind": "library", "id": "narrator-anna"}
+    assert w.project.settings["single_voice"]["kind"] == "library"
+    assert w.project.settings["single_voice"]["id"] == "narrator-anna"
+    assert w.project.settings["single_voice"]["actor_weight"] == 0.5
     assert "Anna" in w.film.lbl_plan.text()
     w.film.cmb_voice.setCurrentIndex(w.film.cmb_voice.findData("clone:"))       # the user's own choice wins from now on
     assert w.project.settings["single_voice"]["kind"] == "clone" and w.project.settings["single_voice_user"]

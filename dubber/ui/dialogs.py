@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, 
                                QWidget)
 
 from dubber import models, settings
+from dubber.appinfo import version_label
 from dubber.diag.runner import DiagnosticRunner, DiagOptions
 from dubber.i18n import tr
 from dubber.infra import shared_paths
@@ -42,6 +43,9 @@ class SettingsDialog(QDialog):
         self.setMinimumWidth(560)
         s = settings.load()
         lay = QVBoxLayout(self)
+        ver = QLabel(version_label())
+        ver.setObjectName("hint")
+        lay.addWidget(ver)
         form = QFormLayout()
         self.edt_subdl = _secret()
         self.edt_subdl.setText(s["subdl_key"])
@@ -71,9 +75,9 @@ class SettingsDialog(QDialog):
                          ("settings.os_pass", self.edt_os_pass), ("settings.hf", self.edt_hf)):
             form.addRow(tr(label), w)
         form.addRow(tr("settings.models_dir"), row)
-        for label, w in (("settings.separation", self.cmb_sep), ("settings.diarization", self.cmb_diar), ("settings.tts", self.cmb_tts),
-                         ("settings.backend", self.cmb_backend), ("settings.device", self.cmb_device)):
-            form.addRow(tr(label), w)
+        for label, box in (("settings.separation", self.cmb_sep), ("settings.diarization", self.cmb_diar), ("settings.tts", self.cmb_tts),
+                           ("settings.backend", self.cmb_backend), ("settings.device", self.cmb_device)):
+            form.addRow(tr(label), box)
         form.addRow("", self.chk_download)
         lay.addLayout(form)
         hint = QLabel(tr("settings.hint"))
@@ -412,7 +416,11 @@ class VoiceCatalogDialog(QDialog):
         self.btn_install.setEnabled(False)
         self.progress.show()
         self.job = CatalogThread(todo)
-        self.job.progress.connect(lambda f, n: (self.progress.setValue(int(f * 1000)), self.lbl.setText(tr("catalog.downloading", name=n))))
+        def show_progress(frac: float, name: str) -> None:
+            self.progress.setValue(int(frac * 1000))
+            self.lbl.setText(tr("catalog.downloading", name=name))
+
+        self.job.progress.connect(show_progress)
         self.job.installed.connect(self._on_installed)
         self.job.finished_all.connect(self._on_done)
         self.job.start()

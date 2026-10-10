@@ -3,9 +3,9 @@ can run in the GUI process (light stages, tests) or in a worker process (models)
 ``log`` (text), ``progress`` (0..1 of the stage) and ``until`` (seconds of film whose dub is final - Watch mode).
 
 Order (research note 06): probe -> extract -> subtitles -> vad -> separation -> asr -> script -> diarization -> translation ->
-voices -> tts (+ time fitting, block by block in film order) -> mix -> mux.  Models run one after another (one process each),
-so the peak VRAM is that of the largest model; every stage keeps a headroom of max(2 GB, 8 % of the card)
-(``dubber.infra.resources``).
+voices -> tts (+ time fitting, block by block in film order) -> mix -> mux.  Model stages of one dub share one worker
+process and keep a model loaded while it fits the VRAM budget (free memory minus max(2 GB, 8 % of the card);
+``dubber.infra.resources``).
 """
 from __future__ import annotations
 
@@ -20,16 +20,16 @@ import numpy as np
 from dubber.core import audio, media, mixing, script, subtitles, timefit, voices
 from dubber.core.project import CHUNK_S, Line, Project, Speaker, hash_of, read_json, write_json
 from dubber.engines import translation as mt
-from dubber.engines.asr import transcribe_faster_whisper
+from dubber.engines.asr import AsrCudaFallback, transcribe_faster_whisper
 
 Emit = Callable[..., None]
 ORDER = ["probe", "extract", "subtitles", "vad", "separation", "asr", "script", "diarization", "translation", "voices", "tts", "mix", "mux"]
 HEAVY = {"vad", "separation", "asr", "diarization", "translation", "tts"}          # model stages: a worker process each
 GPU = {"separation", "asr", "diarization", "translation", "tts"}                   # hold the shared Voxprint GPU lock
 BLOCK_S = 60.0              # TTS + fitting work through the film in blocks of this length (Watch mode follows the blocks)
-TAKES = 3                   # best-of-N for lines that do not fit
+MAX_TTS_RETRIES = 1         # one extra synthesis for a line that is still too long after the length-aware wording
 #: bumped when a stage's algorithm changes, so projects analysed by an older build redo that stage (and only the later ones)
-ASR_VERSION, SCRIPT_VERSION, MT_VERSION, VOICES_VERSION = 3, 3, 6, 2
+ASR_VERSION, SCRIPT_VERSION, MT_VERSION, VOICES_VERSION, TTS_FIT_VERSION = 3, 3, 6, 2, 2
 
 DEFAULT_CFG: Dict[str, Any] = {
     "device": "auto", "allow_download": True, "inprocess": False,
@@ -92,8 +92,9 @@ def inputs_for(key: str, p: Project, cfg: Dict[str, Any], prev: str) -> str:
         "translation": [c.get("translation"), s.get("target_lang"), s.get("profanity"), MT_VERSION],
         "voices": [VOICES_VERSION, s.get("multi_voice"), s.get("single_voice"),
                    [(sp.id, sp.voice.kind, sp.voice.id) for sp in p.speakers]],
-        "tts": [c.get("tts"), c.get("tts_model"), s.get("actor_weight") if s.get("multi_voice") else None,
-                [(sp.id, sp.voice.kind, sp.voice.id, p.is_key(sp)) for sp in p.speakers] if s.get("multi_voice") else None, [(ln.id, ln.translation, ln.speaker, ln.keep_original, ln.start, ln.end) for ln in p.lines]],
+        "tts": [c.get("tts"), c.get("tts_model"), TTS_FIT_VERSION, s.get("actor_weight"), s.get("single_voice"),
+                [(sp.id, sp.voice.kind, sp.voice.id, p.is_key(sp), sp.actor_weight) for sp in p.speakers],
+                [(ln.id, ln.translation, ln.speaker, ln.keep_original, ln.start, ln.end) for ln in p.lines]],
         "mix": [s.get("original_volume")],
         "mux": [s.get("output_format"), s.get("output")],
     }
@@ -282,7 +283,9 @@ def _reference_hypothesis(wav: Path, cfg: Dict[str, Any], emit: Emit) -> Optiona
     repo = str(cfg.get("asr_repo") or DEFAULT_CFG["asr_repo"])
     try:
         res = transcribe_faster_whisper(str(wav), None, repo, _device(cfg), cfg.get("allow_download", True),
-                                        lambda m: emit("log", text=m))
+                                        lambda m: emit("log", text=m), requested=str(cfg.get("device") or "auto"))
+    except AsrCudaFallback:
+        raise
     except Exception as exc:  # noqa: BLE001 - no model in a test or a CPU trial: keep the joined text
         emit("log", text=f"reference check skipped ({type(exc).__name__})")
         return None
@@ -327,10 +330,12 @@ def st_separation(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
         from dubber.engines.separation import tiger_model
 
         fn = tiger_model(_device(cfg), cfg.get("allow_download", True), lambda m: emit("log", text=m))
-    from dubber.engines.separation import separate_windows
+    from dubber.engines.separation import chunk_batch_size, separate_windows
+    from dubber.infra.resources import snapshot
 
+    snap = snapshot(use_torch=False)
     separate_windows(p.path("audio", "mix44.wav"), windows, p.path("stems", "speech.wav"), p.path("stems", "background.wav"), fn,
-                     lambda m: emit("log", text=m))
+                     lambda m: emit("log", text=m), batch_size=chunk_batch_size(snap.vram_total_gb, snap.vram_budget_gb))
     x, sr = audio.read(p.path("stems", "speech.wav"), 16000)
     audio.write(p.path("stems", "speech16.wav"), x, sr)
     return f"{kind}: speech and background stems on {len(windows)} windows"
@@ -347,11 +352,10 @@ def st_asr(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
     wav = p.path("stems", "speech16.wav")
     if not wav.exists():
         wav = p.path("audio", "mix16.wav")
-    from dubber.engines.asr import transcribe_faster_whisper
-
     repo = str(cfg.get("asr_repo") or DEFAULT_CFG["asr_repo"])
     res = transcribe_faster_whisper(str(wav), _asr_hint(p), repo, _device(cfg),
-                                    cfg.get("allow_download", True), lambda m: emit("log", text=m))
+                                    cfg.get("allow_download", True), lambda m: emit("log", text=m),
+                                    requested=str(cfg.get("device") or "auto"))
     write_json(out, res)
     if res.get("language"):
         p.settings["source_lang_detected"] = res["language"]
@@ -508,8 +512,14 @@ def voice_spec(p: Project, ln: Line):
         if sp and sp.ref_audio:
             return VoiceSpec(f"clone:{sp.id}", "clone", str(p.abs(sp.ref_audio)), sp.ref_text)
     ref = p.settings.get("single_ref") or {}
-    if ref.get("audio"):
-        return VoiceSpec("clone:single", "clone", str(p.abs(ref["audio"])), ref.get("text", ""))
+    sv = p.settings.get("single_voice") or {}
+    if ref.get("audio") and sv.get("kind") != "library":
+        from dubber.core import actor_voice as av
+
+        raw = sv.get("actor_weight")
+        w = float(p.settings.get("actor_weight", av.DEFAULT_WEIGHT) if raw is None else raw)
+        ghost = Speaker("single", ref_audio=str(ref["audio"]), ref_text=str(ref.get("text") or ""), actor_weight=w)
+        return actor_spec(p, ghost)
     return VoiceSpec("default", "clone", "", "")
 
 
@@ -523,7 +533,8 @@ def actor_spec(p: Project, sp, library_only: bool = False):
     if ref and not library_only:
         x, sr = audio.read(Path(ref))
         ok = av.ref_quality(x, sr)[2]
-    w = float(p.settings.get("actor_weight", av.DEFAULT_WEIGHT))
+    raw = getattr(sp, "actor_weight", None)
+    w = float(p.settings.get("actor_weight", av.DEFAULT_WEIGHT) if raw is None else raw)
     return VoiceSpec(f"{'match' if library_only else 'actor'}:{sp.id}:{w:.2f}", "actor", ref, sp.ref_text, actor_weight=w, actor_ok=ok,
                      candidates=tuple(av.candidates_from_library(voices.list_library())),
                      record_dir=str(av.folder(p.folder, sp.id)))
@@ -535,11 +546,19 @@ def make_tts(p: Project, cfg: Dict[str, Any], need_adapters: bool, emit: Emit):
     if cfg.get("tts") == "mock":
         return tts_mod.MockTTS(p.settings["target_lang"])
     from dubber import models
+    from dubber.infra import resident
+    from dubber.infra.resources import MODEL_VRAM_GB
 
-    folder, _ = models.ensure(models.SPECS[cfg.get("tts_model", "tts_1_7b")].repo, cfg.get("allow_download", True),
-                              log=lambda m: emit("log", text=m))
-    return tts_mod.QwenTTS(folder, p.settings["target_lang"], _device(cfg), cfg.get("tts_backend", "auto"), need_adapters,
-                           lambda m: emit("log", text=m))
+    model_name = str(cfg.get("tts_model", "tts_1_7b"))
+    folder, _ = models.ensure(models.SPECS[model_name].repo, cfg.get("allow_download", True), log=lambda m: emit("log", text=m))
+
+    def build():
+        return tts_mod.QwenTTS(folder, p.settings["target_lang"], _device(cfg), cfg.get("tts_backend", "auto"), need_adapters,
+                               lambda m: emit("log", text=m))
+
+    if resident.enabled():
+        return resident.slot("tts", MODEL_VRAM_GB.get(model_name, 5.0), build)
+    return build()
 
 
 def _blocks(lines: List[Line], block_s: float) -> List[Tuple[float, List[Line]]]:
@@ -553,13 +572,15 @@ def _blocks(lines: List[Line], block_s: float) -> List[Tuple[float, List[Line]]]
 
 
 def st_tts(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
+    lang = p.settings["target_lang"]
+    script.prepare_for_voice(p.lines, lang, float(p.settings.get("duration") or 0) or None)
     lines = sorted(p.dub_lines(), key=lambda ln: ln.start)
     total = float(p.settings.get("duration") or (lines[-1].end + 5 if lines else 0))
-    lang = p.settings["target_lang"]
     specs = {ln.id: voice_spec(p, ln) for ln in lines}
     if any(not s.ref_audio for s in specs.values()) and cfg.get("tts") != "mock":
         raise RuntimeError("no voice reference: choose a library voice or let the program clone one from the film")
     engine = make_tts(p, cfg, any(s.kind in ("library", "actor") for s in specs.values()), emit)
+    engine.line_seconds = {ln.id: script.estimate_seconds(ln.translation or "", lang) for ln in lines}
     sr = engine.sample_rate
     tdir = p.path("tts", "x").parent
     fitdir = p.path("tts", "fit", "x").parent
@@ -595,6 +616,9 @@ def st_tts(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
                     done(i, engine.synthesize_batch([t], spec, seed=seed)[0])
         return got
 
+    from dubber.infra.thermal import Guard
+
+    guard = Guard()
     blocks = _blocks(lines, BLOCK_S)
     for bi, (bend, blines) in enumerate(blocks):
         for ln in blines:
@@ -602,25 +626,22 @@ def st_tts(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
         got = synth([(ln.id, ln.spoken) for ln in blines])
         wavs.update(got)
         secs.update({i: len(w) / sr for i, w in got.items()})
-        # ---- time fitting: placement, then shorter wording / extra takes for the lines that still do not fit
-        for attempt in range(2):
-            plan = {pl.id: pl for pl in timefit.place(lines, {**est, **secs}, total)}
-            bad = [ln for ln in blines if plan[ln.id].needs_retry]
-            if not bad:
-                break
-            for ln in bad:
-                slot = timefit.slot_for(ln, lines, total) * timefit.MAX_STRETCH
-                cands: List[Tuple[str, np.ndarray]] = [(ln.spoken, wavs[ln.id])]
-                for variant in script.shorten(ln.translation, lang)[:2] if attempt == 0 else []:
-                    cands.append((variant, synth([(ln.id, variant)])[ln.id]))
-                if attempt == 1:
-                    for seed in range(1, TAKES):
-                        cands.append((ln.spoken, synth([(ln.id, ln.spoken)], seed=seed)[ln.id]))
-                k = timefit.best_take([len(w) / sr for _, w in cands], slot,
-                                      [script.kept_share(t, ln.translation) for t, _ in cands])
-                ln.spoken, wavs[ln.id] = cands[k]
-                secs[ln.id] = len(wavs[ln.id]) / sr
-                stats["retried"] += 1
+        # one extra synthesis per line that is still too long: one shorter wording, or one new seed
+        plan = {pl.id: pl for pl in timefit.place(lines, {**est, **secs}, total)}
+        bad = [ln for ln in blines if plan[ln.id].needs_retry]
+        for ln in bad[:]:
+            slot = timefit.slot_for(ln, lines, total) * timefit.MAX_STRETCH
+            cands: List[Tuple[str, np.ndarray]] = [(ln.spoken, wavs[ln.id])]
+            variants = script.shorten(ln.translation, lang)[:MAX_TTS_RETRIES]
+            if variants:
+                cands.append((variants[0], synth([(ln.id, variants[0])])[ln.id]))
+            else:
+                cands.append((ln.spoken, synth([(ln.id, ln.spoken)], seed=1)[ln.id]))
+            k = timefit.best_take([len(w) / sr for _, w in cands], slot,
+                                  [script.kept_share(t, ln.translation) for t, _ in cands])
+            ln.spoken, wavs[ln.id] = cands[k]
+            secs[ln.id] = len(wavs[ln.id]) / sr
+            stats["retried"] += 1
         plan = {pl.id: pl for pl in timefit.place(lines, {**est, **secs}, total)}
         records = []
         for ln in blines:
@@ -636,7 +657,9 @@ def st_tts(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
         write_json(p.path("tts", "blocks", f"{bi:05d}.json"), {"until": until, "lines": records})
         emit("until", seconds=round(until, 2))
         emit("progress", value=(bi + 1) / len(blocks))
-    engine.close()
+        guard.pause_after_block(log=lambda m: emit("log", text=m), stage="tts")
+    if not getattr(engine, "_kept", False):
+        engine.close()
     return (f"{len(lines)} lines ({getattr(engine, 'backend', '?')}): {stats['fits']} fit, {stats['shifted']} shifted into pauses, "
             f"{stats['stretched']} stretched <=1.15x, {stats['too_long']} too long; {stats['retried']} retries")
 
