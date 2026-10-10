@@ -17,6 +17,7 @@ from dubber.appinfo import version_label
 from dubber.diag.runner import DiagnosticRunner, DiagOptions
 from dubber.i18n import tr
 from dubber.infra import shared_paths
+from dubber.ui.icons import suite_icon
 
 
 def _combo(items, current: str) -> QComboBox:
@@ -96,6 +97,7 @@ class SettingsDialog(QDialog):
                                    ("graphs/sdpa", "CUDA Graphs"), ("standard/sdpa", "SDPA")], s["tts_backend"])
         self.cmb_device = _combo([("auto", tr("settings.auto")), ("cuda", "CUDA")], settings.device())
         self.chk_download = QCheckBox(tr("settings.allow_download"))
+        self.chk_download.setIcon(suite_icon("download"))
         self.chk_download.setChecked(bool(s["allow_download"]))
         for label, w in (("settings.subdl", self.edt_subdl), ("settings.os_key", self.edt_os_key), ("settings.os_user", self.edt_os_user),
                          ("settings.os_pass", self.edt_os_pass), ("settings.hf", self.edt_hf)):
@@ -112,6 +114,9 @@ class SettingsDialog(QDialog):
         hint.setWordWrap(True)
         lay.addWidget(hint)
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        save_btn = bb.button(QDialogButtonBox.StandardButton.Save)
+        if save_btn is not None:
+            save_btn.setIcon(suite_icon("save"))
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
         lay.addWidget(bb)
@@ -187,6 +192,7 @@ class DiagnosticsDialog(QDialog):
         self.lbl_desc.setObjectName("fileLabel")
         self.lbl_desc.setWordWrap(True)
         self.chk_download = QCheckBox()
+        self.chk_download.setIcon(suite_icon("download"))
         self.chk_download.setChecked(True)
         self.chk_quick = QCheckBox(tr("ui.diag_quick"))
         self.btn_diag = QPushButton(tr("ui.btn_diag"))

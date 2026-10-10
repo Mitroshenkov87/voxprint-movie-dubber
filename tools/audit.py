@@ -38,7 +38,7 @@ REPORT = ROOT / "audit-report.txt"
 ALLOWLIST = ROOT / "tools" / "audit-allowlist.toml"
 TARGETS = [
     "dubber/core", "dubber/diag", "dubber/engines", "dubber/infra", "dubber/pipeline", "dubber/ui", "dubber/workers",
-    "dubber/appinfo.py", "dubber/ffmpeg.py", "dubber/i18n.py", "dubber/models.py", "dubber/paths.py",
+    "dubber/appinfo.py", "dubber/cli.py", "dubber/ffmpeg.py", "dubber/i18n.py", "dubber/models.py", "dubber/paths.py",
     "dubber/platform_win.py", "dubber/settings.py", "dubber/__init__.py", "main.py", "tools",
 ]
 BLOCKING_SEVERITY = {"high", "critical", "unknown"}

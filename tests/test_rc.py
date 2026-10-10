@@ -12,14 +12,19 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_version_label_quotes_the_codename_and_omits_an_empty_one():
-    from dubber.appinfo import APP_BUILD, APP_VERSION, CODENAME, format_version, release_title, version_label
+def test_version_label_quotes_the_codename_and_omits_an_empty_one(monkeypatch):
+    from dubber import appinfo
 
-    assert APP_VERSION == "1.0.0-rc" and APP_BUILD == 1000 and CODENAME == "Chazak"
-    assert version_label() == '1.0.0 RC · build 1000 "Chazak"'
-    assert format_version(codename="") == "1.0.0 RC · build 1000"
-    assert format_version(codename="  ") == "1.0.0 RC · build 1000"
-    assert release_title() == 'Voxprint AI Movie Dubber 1.0.0 RC · build 1000 "Chazak"'
+    monkeypatch.delenv("VOXPRINT_BUILD", raising=False)
+    monkeypatch.delenv("GITHUB_RUN_NUMBER", raising=False)
+    monkeypatch.setattr(appinfo, "build_info", lambda: {})
+    monkeypatch.setattr(appinfo, "build_json", lambda: {"offset": 983, "codename": "Bochan"})
+    assert appinfo.APP_VERSION == "1.0.0-rc"
+    assert appinfo.app_build() == 983 and appinfo.app_codename() == "Bochan"
+    assert appinfo.version_label() == '1.0.0 RC · build 983 "Bochan"'
+    assert appinfo.format_version(build=983, codename="") == "1.0.0 RC · build 983"
+    assert appinfo.format_version(build=983, codename="  ") == "1.0.0 RC · build 983"
+    assert appinfo.release_title() == 'Voxprint AI Movie Dubber 1.0.0 RC · build 983 "Bochan"'
 
 
 def test_installer_reads_appinfo_and_docs_state_the_codename_rule():
@@ -28,9 +33,10 @@ def test_installer_reads_appinfo_and_docs_state_the_codename_rule():
     assert '#define AppVersion "0.1.0-pre' not in iss
     assert "VersionLabel" in iss and "VersionInfoProductTextVersion" in iss
     building = (ROOT / "docs" / "BUILDING.md").read_text(encoding="utf-8")
-    assert "Chazak" in building and "Biblical Hebrew" in building and "not a theme" in building
+    assert "BUILD.json" in building and "Bochan" in building and "Biblical Hebrew" in building and "not a theme" in building
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert "Windows 11 24H2" in readme and "2025" in readme and "Chazak" in readme
+    assert "Windows 11 24H2" in readme and "2025" in readme and "Bochan" in readme and "BUILD.json" in readme
+    assert "BUILD.json" in iss
     yml = (ROOT / ".github" / "workflows" / "build-installer.yml").read_text(encoding="utf-8")
     assert "release_title" in yml
     note = (ROOT / "dubber" / "assets" / "README.md").read_text(encoding="utf-8")

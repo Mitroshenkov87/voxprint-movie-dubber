@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
-from dubber.appinfo import APP_BUILD, APP_VERSION
+from dubber.appinfo import APP_VERSION, app_build
 from dubber.core.project import DEFAULT_SETTINGS, Line, Project, Speaker
 
 SCHEMA = 1
@@ -339,7 +339,7 @@ def _build(project: Project, dest: Path, previous: Optional[Document], include_s
         created = now
     source = _source_record(video, dest, base.manifest.get("source") or {}, include_sha256)
     app = dict(base.manifest.get("app") or {}) if isinstance(base.manifest.get("app"), Mapping) else {}
-    app.update({"id": APP_ID, "version": APP_VERSION, "build": int(APP_BUILD)})
+    app.update({"id": APP_ID, "version": APP_VERSION, "build": app_build()})
     settings = dict(base.manifest.get("settings") or {}) if isinstance(base.manifest.get("settings"), Mapping) else {}
     settings.update(project.settings)
     manifest = dict(base.manifest)

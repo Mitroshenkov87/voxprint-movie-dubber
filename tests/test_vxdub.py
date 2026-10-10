@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from dubber.appinfo import APP_BUILD, APP_VERSION
+from dubber.appinfo import APP_VERSION, app_build
 from dubber.core.project import Line, Project, Speaker, Voice
 from dubber.core import vxdub
 
@@ -135,7 +135,7 @@ def test_round_trip_without_the_video(tmp_path):
 
     manifest = vxdub.read(dest).manifest
     assert manifest["schema"] == 1
-    assert manifest["app"] == {"id": "movie-dubber", "version": APP_VERSION, "build": APP_BUILD}
+    assert manifest["app"] == {"id": "movie-dubber", "version": APP_VERSION, "build": app_build()}
     assert manifest["created"].endswith("Z") and manifest["modified"].endswith("Z")
     source = manifest["source"]
     assert source["path"] == str(video.resolve())
@@ -322,6 +322,8 @@ def test_file_menu_saves_and_opens(tmp_path, clip):
     assert window.act_open.text() == "Open…"
     assert window.act_save.text() == "Save"
     assert window.act_save_as.text() == "Save As…"
+    assert not window.act_save.icon().isNull()
+    assert not window.act_save_as.icon().isNull()
     assert not window.act_save.isEnabled()
     window.set_source(clip)
     dest = tmp_path / "clip.vxdub"

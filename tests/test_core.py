@@ -213,4 +213,4 @@ def test_fetch_models_cli_rejects_unknown_key():
 
 def test_cli_version_prints_a_version():
     r = subprocess.run([sys.executable, str(ROOT / "main.py"), "--version"], capture_output=True, text=True, timeout=60)
-    assert r.returncode == 0 and '1.0.0 RC' in r.stdout and "Chazak" in r.stdout
+    assert r.returncode == 0 and "1.0.0 RC" in r.stdout and "Bochan" in r.stdout

@@ -29,6 +29,7 @@ from dubber.pipeline import runner as R
 from dubber.pipeline import stages as S
 from dubber.ui import dialogs
 from dubber.ui.dub_audio import ChunkSource, WavSource
+from dubber.ui.icons import suite_icon
 from dubber.ui.jobs import PipelineThread
 from dubber.ui.pages import TARGET_LANGS, CharactersPage, DubPage, FilmPage, LinesPage, fmt_eta, fmt_time
 from dubber.ui.player import HAVE_MULTIMEDIA, Player
@@ -92,8 +93,8 @@ class MainWindow(QWidget):
         self.btn_file.clicked.connect(self._file_menu)
         self.file_menu = QMenu(self)
         self.act_open = self.file_menu.addAction("")
-        self.act_save = self.file_menu.addAction("")
-        self.act_save_as = self.file_menu.addAction("")
+        self.act_save = self.file_menu.addAction(suite_icon("save"), "")
+        self.act_save_as = self.file_menu.addAction(suite_icon("save-as"), "")
         self.act_open.triggered.connect(lambda _checked=False: self.choose_vxdub())
         self.act_save.triggered.connect(lambda _checked=False: self.save_vxdub())
         self.act_save_as.triggered.connect(lambda _checked=False: self.save_vxdub_as())

@@ -36,7 +36,7 @@ A reader refuses `schema` greater than 1.
 ```json
 {
   "schema": 1,
-  "app": {"id": "movie-dubber", "version": "1.0.0-rc", "build": 1000},
+  "app": {"id": "movie-dubber", "version": "1.0.0-rc", "build": 1001},
   "created": "2026-10-10T09:14:00Z",
   "modified": "2026-10-10T09:14:00Z",
   "source": {
@@ -54,7 +54,9 @@ A reader refuses `schema` greater than 1.
 ```
 
 `schema` is the integer `1`. `app.id` is `movie-dubber`. `app.version` and `app.build` are the
-program version and build that wrote the file. `created` and `modified` are ISO 8601 UTC with a
+program version and build that wrote the file. The build is the number from `BUILD.json`
+(the release workflow's run number plus the offset, or the offset on a local run, or the
+marker `dev` when neither is available). `created` and `modified` are ISO 8601 UTC with a
 `Z` suffix and whole seconds. `created` is kept across saves; `modified` is the time of the save.
 
 `source_lang` and `target_lang` repeat the languages stored in `settings` so a reader can see them

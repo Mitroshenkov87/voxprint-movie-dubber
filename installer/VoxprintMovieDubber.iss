@@ -25,38 +25,114 @@
 
 #define AppName "VoxprintMovieDubber"
 #define AppDisplayName "Voxprint AI Movie Dubber"
-; APP_VERSION, APP_BUILD and CODENAME are read from dubber\appinfo.py (the only copy).
+; APP_VERSION is read from dubber\appinfo.py. The offset and codename are read from BUILD.json.
+; A CI build_info.json (build + codename) replaces the offset when the installer workflow wrote one.
 #define AppInfoFile AddBackslash(SourcePath) + "..\dubber\appinfo.py"
+#define BuildJsonFile AddBackslash(SourcePath) + "..\BUILD.json"
+#define StampJsonFile AddBackslash(SourcePath) + "..\build_info.json"
 #if FileExists(AppInfoFile) == 0
   #error dubber\appinfo.py was not found
+#endif
+#if FileExists(BuildJsonFile) == 0
+  #error BUILD.json was not found
 #endif
 #define AppInfoHandle FileOpen(AppInfoFile)
 #if AppInfoHandle == 0
   #error dubber\appinfo.py could not be opened
 #endif
+#define BuildHandle FileOpen(BuildJsonFile)
+#if BuildHandle == 0
+  #error BUILD.json could not be opened
+#endif
 #define AppVersion ""
-#define AppBuild ""
-#define AppCodename ""
-#sub ParseAppInfoLine
+#define AppOffset ""
+#define FileCodename ""
+#define StampedBuild ""
+#define StampedCodename ""
+#sub ParseVersionLine
   #define AppInfoLine FileRead(AppInfoHandle)
   #if AppInfoLine != ""
     #if Pos("APP_VERSION", AppInfoLine) == 1
       #define public AppVersion Copy(AppInfoLine, Pos('"', AppInfoLine) + 1, Len(AppInfoLine) - Pos('"', AppInfoLine) - 1)
-    #elif Pos("APP_BUILD", AppInfoLine) == 1
-      #define public AppBuild Trim(Copy(AppInfoLine, Pos("=", AppInfoLine) + 1, 16))
-    #elif Pos("CODENAME", AppInfoLine) == 1
-      #define public AppCodename Copy(AppInfoLine, Pos('"', AppInfoLine) + 1, Len(AppInfoLine) - Pos('"', AppInfoLine) - 1)
     #endif
   #endif
 #endsub
+#sub ReadBuildJson
+  #define BuildLine FileRead(BuildHandle)
+  #if Pos('"offset"', BuildLine) > 0
+    #define OffTail Copy(BuildLine, Pos('"offset"', BuildLine) + 8, 24)
+    #define OffRaw Trim(Copy(OffTail, Pos(":", OffTail) + 1, 12))
+    #define OffComma Pos(",", OffRaw)
+    #if OffComma > 0
+      #define OffCut Trim(Copy(OffRaw, 1, OffComma - 1))
+    #else
+      #define OffCut OffRaw
+    #endif
+    #define OffBrace Pos("}", OffCut)
+    #if OffBrace > 0
+      #define public AppOffset Trim(Copy(OffCut, 1, OffBrace - 1))
+    #else
+      #define public AppOffset OffCut
+    #endif
+  #endif
+  #if Pos('"codename"', BuildLine) > 0
+    #define NameTail Copy(BuildLine, Pos('"codename"', BuildLine) + 10, 80)
+    #define NameFrom Copy(NameTail, Pos('"', NameTail) + 1, 40)
+    #define public FileCodename Copy(NameFrom, 1, Pos('"', NameFrom) - 1)
+  #endif
+#endsub
+#sub ReadStampJson
+  #define StampLine FileRead(StampHandle)
+  #if Pos('"build":', StampLine) > 0
+    #define StampRaw Trim(Copy(StampLine, Pos('"build":', StampLine) + 8, 12))
+    #define StampComma Pos(",", StampRaw)
+    #if StampComma > 0
+      #define StampCut Trim(Copy(StampRaw, 1, StampComma - 1))
+    #else
+      #define StampCut StampRaw
+    #endif
+    #define StampBrace Pos("}", StampCut)
+    #if StampBrace > 0
+      #define public StampedBuild Trim(Copy(StampCut, 1, StampBrace - 1))
+    #else
+      #define public StampedBuild StampCut
+    #endif
+  #endif
+  #if Pos('"codename"', StampLine) > 0
+    #define StampNameTail Copy(StampLine, Pos('"codename"', StampLine) + 10, 80)
+    #define StampNameFrom Copy(StampNameTail, Pos('"', StampNameTail) + 1, 40)
+    #define public StampedCodename Copy(StampNameFrom, 1, Pos('"', StampNameFrom) - 1)
+  #endif
+#endsub
 #define AppInfoI 0
-#for {AppInfoI = 0; AppInfoI < 80 && !FileEof(AppInfoHandle); AppInfoI++} ParseAppInfoLine
+#for {AppInfoI = 0; AppInfoI < 80 && !FileEof(AppInfoHandle); AppInfoI++} ParseVersionLine
 #expr FileClose(AppInfoHandle)
+#define BuildI 0
+#for {BuildI = 0; BuildI < 40 && !FileEof(BuildHandle); BuildI++} ReadBuildJson
+#expr FileClose(BuildHandle)
+#if FileExists(StampJsonFile) != 0
+  #define StampHandle FileOpen(StampJsonFile)
+  #if StampHandle != 0
+    #define StampI 0
+    #for {StampI = 0; StampI < 40 && !FileEof(StampHandle); StampI++} ReadStampJson
+    #expr FileClose(StampHandle)
+  #endif
+#endif
 #if AppVersion == ""
   #error APP_VERSION was not read from dubber\appinfo.py
 #endif
-#if AppBuild == ""
-  #error APP_BUILD was not read from dubber\appinfo.py
+#if AppOffset == ""
+  #error offset was not read from BUILD.json
+#endif
+#if StampedBuild != ""
+  #define AppBuild StampedBuild
+#else
+  #define AppBuild AppOffset
+#endif
+#if StampedCodename != ""
+  #define AppCodename StampedCodename
+#else
+  #define AppCodename FileCodename
 #endif
 #define Q """
 #if Pos("-rc", AppVersion) > 0
@@ -150,8 +226,10 @@ Source: "{#PayloadDir}\ffmpeg\*"; DestDir: "{tmp}\payload\ffmpeg"; Flags: dontco
 #endif
 ; the program
 Source: "..\main.py"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\BUILD.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\requirements.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dubber\*"; DestDir: "{app}\dubber"; Excludes: "__pycache__,*.pyc"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\dubber\assets\icons\*.svg"; DestDir: "{app}\dubber\assets\icons"; Flags: ignoreversion
 Source: "..\assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "vxdub.ico"; DestDir: "{app}\assets"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion

@@ -45,15 +45,27 @@ jobs:
       - name: Write the build stamp (build_info.json)
         shell: pwsh
         run: |
+          # Same formula as dubber.appinfo.resolve_build: GITHUB_RUN_NUMBER + BUILD.json offset.
+          $spec = Get-Content -Raw -Encoding utf8 BUILD.json | ConvertFrom-Json
+          $offset = [int]$spec.offset
+          $codename = [string]$spec.codename
+          if (-not $codename) { throw "BUILD.json has no codename" }
+          $runText = "${{ github.run_number }}"
+          if ($runText -notmatch '^\d+$') { throw "GITHUB_RUN_NUMBER is not a number: $runText" }
+          $build = [int]$runText + $offset
+          if ($build -lt 1001) { throw "build $build is below 1001 (run $runText + offset $offset)" }
           $info = [ordered]@{
             commit = "${{ github.sha }}".Substring(0, 7)
             built = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-            run = "${{ github.run_number }}"
+            run = $runText
+            build = $build
+            codename = $codename
             ref = "${{ github.ref_name }}"
             flavour = "${{ matrix.kind }} installer"
           }
-          [IO.File]::WriteAllText("$PWD\build_info.json", ($info | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
+          [IO.File]::WriteAllText("$PWD\build_info.json", (($info | ConvertTo-Json) + "`n"), (New-Object Text.UTF8Encoding $false))
           Get-Content build_info.json
+          "build number: $build ($codename)"
 
       - name: Install Inno Setup
         shell: pwsh
@@ -292,7 +304,7 @@ jobs:
             done
             printf '\nBuilt from commit %s (workflow run %s).\n' "${{ github.sha }}" "${{ github.run_number }}"
           } >> /tmp/notes.md
-          title=$(python3 -c "from dubber.appinfo import release_title; print(release_title())")
+          title=$(python3 -c "from dubber.appinfo import app_build, release_title; n=app_build(); assert isinstance(n, int) and n >= 1001, n; print(release_title())")
           echo "release title: $title"
           test -n "$title"
           gh release create "$tag" --prerelease --title "$title" --verify-tag --notes-file /tmp/notes.md dist/*.exe dist/*.bin dist/*.sha256

@@ -48,8 +48,47 @@ def test_installer_and_window_use_the_icons():
     iss = (ROOT / "installer" / "VoxprintMovieDubber.iss").read_text(encoding="utf-8")
     assert r"SetupIconFile=..\assets\voxprint-dubber-setup.ico" in iss
     assert r"UninstallDisplayIcon={app}\assets\voxprint-dubber.ico" in iss
+    assert r"..\dubber\*" in iss and "recursesubdirs" in iss
+    assert r"..\dubber\assets\icons\*.svg" in iss
+    dubber_line = next(line for line in iss.splitlines() if r"..\dubber\*" in line)
+    assert "*.svg" not in dubber_line.split("Excludes:", 1)[-1]
     main = (ROOT / "main.py").read_text(encoding="utf-8")
     assert main.index("splash_mod.show()") < main.index("from dubber.ui.window import MainWindow")
+    window = (ROOT / "dubber" / "ui" / "window.py").read_text(encoding="utf-8")
+    assert "TODO(icons)" not in window
+
+
+def test_suite_icons_are_tinted_from_current_color():
+    pytest.importorskip("PySide6")
+    from PySide6.QtGui import QIcon
+    from PySide6.QtWidgets import QApplication
+
+    QApplication.instance() or QApplication([])
+    from dubber.ui.icons import ICON_NAMES, icons_dir, load_svg, render_icon
+
+    for name in ICON_NAMES:
+        text = (icons_dir() / f"{name}.svg").read_text(encoding="utf-8")
+        assert "currentColor" in text
+    icon = render_icon(load_svg("save"), normal="#ff0000", disabled="#00aa00", active="#0000ff", size=22)
+    assert _has_opaque(icon, QIcon.Mode.Normal, red=True)
+    assert _has_opaque(icon, QIcon.Mode.Disabled, green=True)
+    assert _has_opaque(icon, QIcon.Mode.Selected, blue=True)
+
+
+def _has_opaque(icon, mode, *, red=False, green=False, blue=False) -> bool:
+    image = icon.pixmap(22, 22, mode).toImage()
+    for y in range(image.height()):
+        for x in range(image.width()):
+            color = image.pixelColor(x, y)
+            if color.alpha() < 200:
+                continue
+            if red and color.red() > 180 and color.green() < 40 and color.blue() < 40:
+                return True
+            if green and color.green() > 120 and color.red() < 40:
+                return True
+            if blue and color.blue() > 180 and color.red() < 40 and color.green() < 40:
+                return True
+    return False
 
 
 def test_splash_paints_name_and_status():
