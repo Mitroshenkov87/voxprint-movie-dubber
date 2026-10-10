@@ -1,8 +1,8 @@
 """Runs a project through the stages: cache check, one worker process for the model stages, the shared GPU lock, progress + ETA,
 Watch-mode chunks while the dub is being made, and the 1-minute preview fragment.
 
-The runner is Qt-free; the window drives it from a QThread and gets callbacks.  ``main.py --run-project DIR`` runs it without a
-window (a detached process for very long jobs: closing the window does not stop it, a crash of a model stage does not kill it).
+The runner is Qt-free; the window drives it from a QThread and gets callbacks. ``main.py run-project`` (see ``dubber.cli``)
+runs it without a window.
 """
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ import shutil
 import threading
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from dubber.core import audio, mixing
@@ -345,20 +344,3 @@ def preview_project(p: Project, start: float, length: float = 60.0) -> Project:
         sub.settings["voice_hint"] = {s.id: {"kind": s.voice.kind, "id": s.voice.id} for s in p.speakers}
     sub.save()
     return sub
-
-
-def run_project_cli(folder: Path, stages_arg: str = "") -> int:
-    """``main.py --run-project DIR``: run / resume a project without a window; progress on stdout, settings from the app settings."""
-    from dubber import settings as app_settings
-
-    p = Project(folder)
-    if not p.settings.get("source"):
-        print(f"not a project folder: {folder}", flush=True)
-        return 2
-    cfg = app_settings.engine_cfg()
-    last = stages_arg.split(",")[-1] if stages_arg else "mux"
-    cb = Callbacks(stage=lambda k, s, m: print(f"[{s:>7}] {k}: {m}", flush=True), log=lambda t: print("    " + t, flush=True),
-                   progress=lambda f, e: None)
-    res = Runner(p, cfg, cb).run(until_stage=last)
-    print("done: " + res.message if res.ok else "FAILED: " + res.message, flush=True)
-    return 0 if res.ok else 1

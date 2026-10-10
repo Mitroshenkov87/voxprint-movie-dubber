@@ -53,9 +53,15 @@ both programs (`dubber/infra/suite.py`).
 
 ## Version and codename
 
-`APP_VERSION`, `APP_BUILD` and `CODENAME` in `dubber/appinfo.py` are the only copy of the release identity. The installer reads that file when it is compiled. The window, the splash, diagnostics and the GitHub release title use `version_label()` and `release_title()`.
+`BUILD.json` at the repository root is the only copy of the build offset and the codename. `dubber/appinfo.py` reads it. `APP_VERSION` in that module is the version string (`1.0.0-rc`). The build number is not stored as a constant.
 
-A codename is one Biblical Hebrew word in ASCII transliteration. It describes the state of that build (readiness, a milestone), not a theme of the product. It is shown only when it is not empty, in quotes: `1.0.0 RC · build 1000 "Chazak"`. Build 999 was Hineni (Genesis 22:1, "here I am": readiness). Build 1000 is Chazak (Joshua 1:9, "be strong": steady and resolved before the first test on real hardware).
+On the Build installers workflow the build number is `GITHUB_RUN_NUMBER` plus `offset`. The workflow writes that number and the codename into `build_info.json`. The installed program reads the stamp, so it does not need the git checkout. A local run, with no stamp and no `GITHUB_RUN_NUMBER`, uses the offset alone. `VOXPRINT_BUILD=dev` (or a missing `BUILD.json` and no stamp) shows the marker `dev`. `VOXPRINT_BUILD=<digits>` forces that number.
+
+The offset was chosen from the Build installers workflow: run_number 17 on 2026-10-10 (workflow run 38057799983). The next run is 18, and 18 + 983 = 1001.
+
+The window, the splash, About, `--version`, the installer and the GitHub release title all show `1.0.0 RC · build N "Bochan"` from that calculation. A codename is one Biblical Hebrew word in ASCII transliteration. It describes the state of that build (readiness, a milestone), not a theme of the product. It is shown only when it is not empty, in quotes. The codename of this line is Bochan.
+
+Headless commands for other programs are documented in [CLI.md](CLI.md).
 
 ## GitHub Actions
 `.github/workflows/build-installer.yml` (manual run or a `v*` tag) builds both installers on free `windows-latest` runners (a matrix

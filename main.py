@@ -4,6 +4,8 @@ r"""Voxprint AI Movie Dubber - entry point.
     main.py PROJECT.vxdub         start the window and open that dubbing project
     main.py --diagnose            start the window and run the diagnostics at once (the report goes to the Desktop)
     main.py --diagnose-cli        run the diagnostics without a window (console output), same report
+    main.py version|diagnose|fetch-models|run-project|info   headless commands (docs/CLI.md)
+    main.py --dry-run --json      discovery only: one JSON object, no model load or download
     main.py --worker NAME ARGS    internal: one heavy step in its own process (used by the diagnostics and the pipeline)
     main.py --fetch-models        download the AI models (used by the installer); --models KEY,KEY limits the set
     main.py --register-models-user      (installer) add this program to the shared models folder's .users.json
@@ -73,6 +75,23 @@ def _setup_logging() -> None:
         pass
 
 
+_HEADLESS_COMMANDS = {"version", "diagnose", "fetch-models", "run-project", "info", "project-info"}
+_HEADLESS_FLAGS = {"--version", "--dry-run", "--json", "--diagnose-cli", "--fetch-models", "--run-project",
+                   "--project-info", "--help", "-h"}
+
+
+def _wants_headless(argv: list) -> bool:
+    """True when this process should stay a command and not open the window."""
+    if not argv:
+        return False
+    if not str(argv[0]).startswith("-") and argv[0] in _HEADLESS_COMMANDS:
+        return True
+    flags = {str(item) for item in argv}
+    if flags & _HEADLESS_FLAGS:
+        return True
+    return False
+
+
 def project_file_from_argv(argv) -> str | None:
     """A ``.vxdub`` path passed as the first argument, or ``None``."""
     if not argv or str(argv[0]).startswith("-"):
@@ -111,11 +130,11 @@ def main(argv=None) -> int:
         mute_library_noise()
 
         return worker_main(argv[i + 1], argv[i + 2])
-    if "--version" in argv:
-        from dubber.appinfo import version_line
+    if _wants_headless(argv):
+        # Kept off the module import so --worker and the installer flags do not load the pipeline.
+        from dubber.cli import main as cli_main
 
-        print(version_line())
-        return 0
+        return cli_main(argv)
     _setup_logging()
     if "--register-models-user" in argv or "--unregister-models-user" in argv:
         return _models_users(argv)
@@ -130,24 +149,6 @@ def main(argv=None) -> int:
         from dubber.infra import suite
 
         return suite.sync_cli()
-    if "--run-project" in argv:
-        from dubber.pipeline.runner import run_project_cli
-
-        return run_project_cli(Path(_arg(argv, "--run-project")), _arg(argv, "--stages", "") or "")
-    if "--fetch-models" in argv:
-        return _fetch_models(argv)
-    if "--diagnose-cli" in argv:
-        from dubber.diag.runner import DiagnosticRunner
-
-        def prog(f, t):
-            if f >= 0:
-                print(f"[{f * 100:5.1f}%] {t}", flush=True)
-
-        runner = DiagnosticRunner(_options_from_argv(argv), on_progress=prog,
-                                  on_result=lambda r: print(f"  [{r.status.value:<4}] {r.id}: {r.summary[:120]}", flush=True))
-        path = runner.run()
-        print(f"Report saved: {path}", flush=True)
-        return 0
     from PySide6.QtCore import QTimer
     from PySide6.QtGui import QIcon
     from PySide6.QtWidgets import QApplication, QMessageBox
@@ -178,37 +179,6 @@ def main(argv=None) -> int:
     if "--selftest" in argv:
         QTimer.singleShot(400, app.quit)
     return app.exec()
-
-
-def _fetch_models(argv) -> int:
-    """Download the models into the app's models folder (resumable: finished models are skipped).  Exit 0 = all present."""
-    from dubber import models
-
-    spec = _arg(argv, "--models", "")
-    keys = [k for k in spec.split(",") if k]
-    if not keys:
-        from dubber.infra import resources, vram_tier
-
-        vram = resources.snapshot(use_torch=False).vram_total_gb
-        keys = vram_tier.install_models(vram, models.INSTALL_MODELS)      # a TTS model this card can run
-        print(vram_tier.describe(vram), flush=True)
-    unknown = [k for k in keys if k not in models.SPECS]
-    if unknown:
-        print(f"Unknown model key(s): {', '.join(unknown)}.  Known: {', '.join(models.SPECS)}", flush=True)
-        return 2
-    print(f"Downloading AI models (about {models.total_download_gb(keys)} GB, finished ones are skipped) to {models.paths.models_dir()}", flush=True)
-    failed = []
-    for key in keys:
-        s = models.SPECS[key]
-        print(f"- {s.title} [{s.repo}] ...", flush=True)
-        try:
-            models.ensure(s.repo, True, log=lambda m: print("    " + str(m), flush=True))
-            print("  done", flush=True)
-        except Exception as exc:  # noqa: BLE001 - report and continue with the next model
-            failed.append(key)
-            print(f"  FAILED: {' '.join(str(exc).split())[:300]}", flush=True)
-    print("All models are ready." if not failed else f"Not downloaded: {', '.join(failed)}.  Run this step again or start the diagnostics later.", flush=True)
-    return 1 if failed else 0
 
 
 def _models_users(argv) -> int:

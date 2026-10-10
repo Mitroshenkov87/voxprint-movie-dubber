@@ -68,6 +68,51 @@ jobs:
             --python .app/bin/python \
             --gitleaks-mode "${{ steps.leaks.outputs.mode }}" \
             --gitleaks-range "${{ steps.leaks.outputs.range }}"
+      - name: Headless CLI dry-run
+        shell: bash
+        run: |
+          set -eu
+          set +e
+          .app/bin/python main.py --dry-run --json > /tmp/voxprint-dry-run.json 2> /tmp/voxprint-dry-run.err
+          code=$?
+          set -e
+          echo "stderr:"
+          cat /tmp/voxprint-dry-run.err
+          DRY_CODE="$code" .app/bin/python - <<'PY'
+          import json, os
+          from pathlib import Path
+          code = int(os.environ["DRY_CODE"])
+          raw = Path("/tmp/voxprint-dry-run.json").read_text(encoding="utf-8")
+          err = Path("/tmp/voxprint-dry-run.err").read_text(encoding="utf-8")
+          decoder = json.JSONDecoder()
+          data, end = decoder.raw_decode(raw.strip())
+          if raw.strip()[end:].strip():
+              raise SystemExit("stdout has more than one JSON value")
+          if not isinstance(data, dict):
+              raise SystemExit("stdout is not a JSON object")
+          if "Traceback" in err:
+              raise SystemExit("dry-run crashed")
+          for key in ("ok", "exit_code", "command", "dry_run", "label", "build", "codename", "runtime", "gpu", "models", "would_run"):
+              if key not in data:
+                  raise SystemExit(f"missing {key}")
+          if data["dry_run"] is not True or data["command"] != "dry-run":
+              raise SystemExit("not a dry-run result")
+          if data["exit_code"] != code or data["ok"] is not (code == 0):
+              raise SystemExit(f"exit_code {data['exit_code']} does not match process {code}")
+          spec = json.loads(Path("BUILD.json").read_text(encoding="utf-8"))
+          run = os.environ.get("GITHUB_RUN_NUMBER", "").strip()
+          expected = int(run) + int(spec["offset"]) if run.isdigit() else int(spec["offset"])
+          if data["build"] != expected or data["codename"] != spec["codename"]:
+              raise SystemExit(f"build {data['build']!r} {data['codename']!r}, expected {expected} {spec['codename']!r}")
+          gpu = data["gpu"]
+          if gpu.get("ok") is not False or gpu.get("code") not in ("no_cuda", "low_compute") or code != 3:
+              raise SystemExit(f"Linux runner should report an unsupported GPU, got {code} {gpu}")
+          if not isinstance(data["models"], list) or not data["models"]:
+              raise SystemExit("models missing from discovery")
+          if not isinstance(data["would_run"], dict) or "stages" not in data["would_run"]:
+              raise SystemExit("would_run missing")
+          print("dry-run ok", code, data["label"], gpu["code"])
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -4,7 +4,7 @@ Part of the Voxprint AI Media Suite, together with [Voxprint AI Audiobook Builde
 
 Voxprint AI Movie Dubber is a Windows desktop application that adds an AI-dubbed audio track to a movie. It separates the dialogue from music and effects, recognises and translates the speech, re-voices it with a voice cloned from the film or taken from the Voxprint voice library and adds the result to the file as an extra audio track, leaving the video and the original audio untouched. You can listen to a one-minute preview first and start watching while the rest of the film is still being dubbed. Everything runs locally on your NVIDIA GPU.
 
-This is the 1.0.0 release candidate, build 1000 "Chazak".
+This is the 1.0.0 release candidate. The build number and the codename (Bochan) come from `BUILD.json`.
 
 ## Install
 
@@ -27,6 +27,8 @@ This is the 1.0.0 release candidate, build 1000 "Chazak".
 <!-- screenshot: main window -->
 
 You can listen to a one-minute preview first, start watching while the rest is still being dubbed, and review characters, voices and every line before dubbing. Step-by-step instructions are in the [User guide](docs/USER-GUIDE.md).
+
+Other programs can call it without the window. `python main.py --dry-run --json` prints one JSON object and does not load or download models. The commands and exit codes are in the [command-line reference](docs/CLI.md).
 
 **License:** Apache-2.0, see `LICENSE` and `NOTICE`. Third-party components keep their own licenses (`docs/THIRD_PARTY_NOTICES.md`).
 
