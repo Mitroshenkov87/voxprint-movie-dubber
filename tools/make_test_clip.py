@@ -86,7 +86,7 @@ def main() -> None:
     sf.write(str(wav), stereo, SR, subtype="PCM_16")
     clip = OUT / "voxprint-test-clip.mkv"
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", f"color=c=black:s=320x180:r=10:d={total:.2f}", "-i", str(wav),
-                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "35", "-pix_fmt", "yuv420p", "-c:a", "flac", "-shortest",
+                    "-c:v", "libsvtav1", "-preset", "10", "-crf", "35", "-pix_fmt", "yuv420p", "-c:a", "flac", "-shortest",
                     "-metadata:s:a:0", "language=eng", str(clip)], check=True)
     assert ref is not None
     r24 = np.interp(np.linspace(0, len(ref[0]) - 1, int(len(ref[0]) * 24000 / SR)), np.arange(len(ref[0])), ref[0]).astype(np.float32)

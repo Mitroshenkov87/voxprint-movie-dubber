@@ -27,6 +27,9 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from dubber.i18n import tr
+from dubber.infra.gpu_policy import gate_skipped, probe_torch, startup_block, startup_detail_key
+
 
 def _arg(argv, name, default=None):
     if name in argv:
@@ -67,6 +70,22 @@ def _setup_logging() -> None:
                             format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     except Exception:  # noqa: BLE001 - logging must never block the start
         pass
+
+
+def _refuse_unsupported_gpu(message_box) -> bool:
+    """True when the graphics card is below the minimum. The dialog is shown and the window must not open.
+
+    ``VOXPRINT_SKIP_GPU_GATE`` skips the check for tests and the CI smoke run.
+    """
+    if gate_skipped():
+        return False
+    available, capability, name = probe_torch()
+    block = startup_block(available, capability, name)
+    if block is None:
+        return False
+    key, params = startup_detail_key(block)
+    message_box.critical(None, tr("gpu.gate_title"), tr("gpu.gate_body", detail=tr(key, **params)))
+    return True
 
 
 def main(argv=None) -> int:
@@ -121,7 +140,7 @@ def main(argv=None) -> int:
         return 0
     from PySide6.QtCore import QTimer
     from PySide6.QtGui import QIcon
-    from PySide6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication, QMessageBox
 
     from dubber.appinfo import resource_dir
 
@@ -131,6 +150,8 @@ def main(argv=None) -> int:
     icon = resource_dir() / "assets" / "voxprint-dubber.ico"
     if icon.is_file():
         app.setWindowIcon(QIcon(str(icon)))
+    if _refuse_unsupported_gpu(QMessageBox):
+        return 1
     from dubber.ui import splash as splash_mod
 
     splash = splash_mod.show()                               # the first thing on screen: before the heavy UI imports below

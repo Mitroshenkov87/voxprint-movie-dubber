@@ -191,9 +191,9 @@ def test_separation_batch_size_and_overlapped_copy(tmp_path):
     assert sep.chunk_batch_size(24) == 8
     assert sep.chunk_batch_size(16.0, 2.5) == 2
     assert sep.chunk_batch_size(10, 1.0) == 1
-    assert sep.safe_compute_dtype(True, True, True) == "bf16"
-    assert sep.safe_compute_dtype(True, False, True) == "fp16"
-    assert sep.safe_compute_dtype(False, True, True) == "fp32"
+    assert sep.safe_compute_dtype(True, True) == "bf16"
+    assert sep.safe_compute_dtype(True, False) == "fp32"
+    assert sep.safe_compute_dtype(False, True) == "fp32"
 
     sr = 8000
     audio.write(tmp_path / "mix.wav", np.zeros(sr * 20, np.float32), sr)

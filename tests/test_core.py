@@ -142,6 +142,10 @@ def test_bundled_clip_assets_present():
 
 # ------------------------------------------------------------------ workers run in-process on CPU
 def test_gpu_worker_without_gpu_does_not_crash():
+    pytest.importorskip(
+        "torch",
+        reason="PyTorch is not importable. CI installs the CPU build, which is what this check exercises.",
+    )
     from dubber.workers import w_gpu
     out = w_gpu.run({}, common.WorkerContext())
     assert out["status"] in ("OK", "WARN") and out["details"]

@@ -56,18 +56,24 @@ def engine_cfg() -> Dict[str, Any]:
 
 
 def device() -> str:
-    """auto | cuda | cpu - shared by all Voxprint programs (suite.json ``gpu``); our own older setting counts until it is set."""
+    """auto | cuda. Shared suite.json may still say ``cpu`` (an older choice or the sibling app); this program reads that as auto."""
     from dubber.infra import suite
 
     if suite.has("gpu"):
-        return suite.device_setting()
-    v = str(load().get("device") or "auto")
-    return v if v in ("auto", "cuda", "cpu") else "auto"
+        v = suite.device_setting()
+    else:
+        v = str(load().get("device") or "auto")
+    if v == "cpu":
+        return "auto"
+    return v if v in ("auto", "cuda") else "auto"
 
 
 def set_device(value: str) -> None:
+    """Remember auto or cuda in the shared suite file. ``cpu`` is not a choice this program offers."""
     from dubber.infra import suite
 
+    if value not in ("auto", "cuda"):
+        value = "auto"
     suite.set_quietly("gpu", {"cuda": "cuda:0"}.get(value, value))
 
 

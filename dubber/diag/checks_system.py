@@ -20,6 +20,7 @@ from dubber import ffmpeg, paths
 from dubber.appinfo import version_line
 from dubber.diag.procs import find_nvidia_smi
 from dubber.diag.report import CheckResult, Status
+from dubber.infra.gpu_policy import GpuFact, evaluate_gpus, parse_compute, parse_driver_branch
 
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 
@@ -246,13 +247,18 @@ def check_ffmpeg() -> CheckResult:
     return r
 
 
+def _mib(text: str) -> Optional[float]:
+    return round(float(text) / 1024, 2) if text.replace(".", "").isdigit() else None
+
+
 def query_nvidia_smi() -> dict:
-    """Static facts from nvidia-smi: driver, CUDA version, GPU name/VRAM/power limit/clock maxima.  {} when absent."""
+    """Static facts from nvidia-smi: name, compute capability, driver branch, VRAM, power and clocks.  {} when absent."""
     smi = find_nvidia_smi()
     if not smi:
         return {}
-    q = _run([smi, "--query-gpu=name,driver_version,memory.total,memory.used,power.limit,power.max_limit,clocks.max.sm,clocks.max.mem,"
-                   "pcie.link.gen.current,pcie.link.width.current,temperature.gpu,utilization.gpu,persistence_mode,display_active",
+    q = _run([smi, "--query-gpu=name,compute_cap,driver_version,memory.total,memory.used,power.limit,power.max_limit,"
+                   "clocks.max.sm,clocks.max.mem,pcie.link.gen.current,pcie.link.width.current,temperature.gpu,"
+                   "utilization.gpu,persistence_mode,display_active",
               "--format=csv,noheader,nounits"])
     out: dict = {"smi": smi}
     rows = [ln for ln in q.splitlines() if ln.strip()]
@@ -262,12 +268,13 @@ def query_nvidia_smi() -> dict:
     gpus = []
     for row in rows:
         c = [x.strip() for x in row.split(",")]
-        if len(c) < 14:
+        if len(c) < 15:
             continue
-        gpus.append(dict(name=c[0], driver=c[1], vram_total_gb=round(float(c[2]) / 1024, 2) if c[2].replace('.', '').isdigit() else None,
-                         vram_used_gb=round(float(c[3]) / 1024, 2) if c[3].replace('.', '').isdigit() else None,
-                         power_limit_w=c[4], power_max_w=c[5], sm_max_mhz=c[6], mem_max_mhz=c[7], pcie=f"gen{c[8]} x{c[9]}",
-                         temp_c=c[10], util=c[11], persistence=c[12], display_active=c[13]))
+        branch = parse_driver_branch(c[2])
+        gpus.append(dict(name=c[0], compute_cap=c[1], driver=c[2], driver_branch=branch,
+                         vram_total_gb=_mib(c[3]), vram_used_gb=_mib(c[4]),
+                         power_limit_w=c[5], power_max_w=c[6], sm_max_mhz=c[7], mem_max_mhz=c[8],
+                         pcie=f"gen{c[9]} x{c[10]}", temp_c=c[11], util=c[12], persistence=c[13], display_active=c[14]))
     out["gpus"] = gpus
     full = _run([smi])
     m = re.search(r"CUDA (?:UMD )?Version:\s*([\d.]+)", full)      # drivers 6xx write "CUDA UMD Version"
@@ -275,29 +282,63 @@ def query_nvidia_smi() -> dict:
     return out
 
 
+def _gpu_facts(rows: List[dict]) -> tuple[GpuFact, ...]:
+    found: List[GpuFact] = []
+    for row in rows:
+        name = str(row.get("name") or "").strip()
+        compute = parse_compute(str(row.get("compute_cap") or ""))
+        branch = row.get("driver_branch")
+        if not isinstance(branch, int):
+            branch = parse_driver_branch(str(row.get("driver") or ""))
+        if not name or compute is None or branch is None:
+            continue
+        found.append(GpuFact(name, compute, str(row.get("driver") or ""), branch))
+    return tuple(found)
+
+
 def check_gpu_smi() -> CheckResult:
     r = CheckResult("gpu.smi", "NVIDIA driver (nvidia-smi)", Status.OK)
     d = query_nvidia_smi()
     if not d:
-        r.status = Status.WARN
-        r.summary = "nvidia-smi not found: no NVIDIA driver installed (or the NVIDIA GPU is not used) - GPU speed tests will be skipped"
+        decision = evaluate_gpus(())
+        r.status = Status.FAIL
+        r.summary = decision.summary
         r.line("nvidia-smi was not found on PATH, in System32 or in 'C:\\Program Files\\NVIDIA Corporation\\NVSMI'.")
+        r.line(decision.summary)
         return r
     if d.get("error") or not d.get("gpus"):
+        decision = evaluate_gpus(())
         r.status = Status.FAIL
-        r.summary = "nvidia-smi exists but failed: " + (d.get("error", "")[:100])
-        r.line(d.get("error", ""))
+        r.summary = decision.summary
+        r.line(d.get("error", "") or decision.summary)
         return r
-    g = d["gpus"][0]
-    r.metrics.update(name=g["name"], driver=g["driver"], vram_total_gb=g["vram_total_gb"], cuda_driver_api=d.get("cuda_driver_api", ""))
+    facts = _gpu_facts(d["gpus"])
+    decision = evaluate_gpus(facts)
+    shown = facts[0] if facts else None
+    if shown is not None:
+        r.metrics.update(name=shown.name, driver=shown.driver, compute_cap=f"{shown.compute[0]}.{shown.compute[1]}",
+                         driver_branch=shown.driver_branch, vram_total_gb=d["gpus"][0]["vram_total_gb"],
+                         cuda_driver_api=d.get("cuda_driver_api", ""))
     r.kv("nvidia-smi", d["smi"])
     for i, g in enumerate(d["gpus"]):
+        cap = g.get("compute_cap") or "?"
+        branch = g.get("driver_branch")
         r.line(f"GPU {i}: {g['name']}")
-        r.kv("  driver version", g["driver"]).kv("  CUDA version (driver API)", d.get("cuda_driver_api") or "?")
+        r.kv("  compute capability", str(cap)).kv("  driver version", g["driver"]).kv("  driver branch", str(branch if branch is not None else "?"))
+        r.kv("  CUDA version (driver API)", d.get("cuda_driver_api") or "?")
         r.kv("  VRAM total / used now", f"{g['vram_total_gb']} GB / {g['vram_used_gb']} GB")
         r.kv("  power limit (current/max)", f"{g['power_limit_w']} W / {g['power_max_w']} W")
         r.kv("  max clocks (SM / memory)", f"{g['sm_max_mhz']} / {g['mem_max_mhz']} MHz").kv("  PCIe link now", g["pcie"])
         r.kv("  temperature / util now", f"{g['temp_c']} C / {g['util']} %").kv("  display attached", g["display_active"])
+    if not decision.ok:
+        r.status = Status.FAIL
+        r.summary = decision.summary
+        r.line(decision.summary)
+        return r
+    if decision.qualifying:
+        best = decision.qualifying[0]
+        r.metrics.update(name=best.name, driver=best.driver, compute_cap=f"{best.compute[0]}.{best.compute[1]}",
+                         driver_branch=best.driver_branch)
     try:
         used = float(d["gpus"][0]["vram_used_gb"])
         if used > 2.5:
@@ -305,8 +346,36 @@ def check_gpu_smi() -> CheckResult:
             r.line(f"NOTE: {used:.1f} GB of VRAM are already in use by other programs (browser, games, other AI tools) - close them for a clean benchmark.")
     except (TypeError, ValueError):
         pass
-    r.summary = f"{g['name']}, {g['vram_total_gb']} GB, driver {g['driver']}, CUDA {d.get('cuda_driver_api') or '?'}" + (
-        "; " + str(r.details[-1])[6:100] if r.status == Status.WARN else "")
+    cap = r.metrics.get("compute_cap", "?")
+    branch = r.metrics.get("driver_branch", "?")
+    g = d["gpus"][0]
+    if decision.qualifying:
+        g = next((row for row in d["gpus"] if row.get("name") == decision.qualifying[0].name), g)
+    r.summary = (f"{r.metrics.get('name', g['name'])}, compute capability {cap}, "
+                 f"driver {r.metrics.get('driver', g['driver'])} (branch {branch}), "
+                 f"{g['vram_total_gb']} GB, CUDA {d.get('cuda_driver_api') or '?'}")
+    if r.status == Status.WARN and r.details:
+        r.summary += "; " + str(r.details[-1])[6:100]
+    return r
+
+
+def check_ctranslate2() -> CheckResult:
+    """CTranslate2 (faster-whisper) must see a CUDA device. The CUDA 12 DLLs are registered first."""
+    from dubber.infra import cuda_dlls
+
+    r = CheckResult("gpu.ctranslate2", "CTranslate2 CUDA", Status.OK)
+    dirs = cuda_dlls.expose()
+    if dirs:
+        r.kv("CUDA 12 DLL folders", "; ".join(dirs))
+        r.kv("cublas64_12.dll", "yes" if cuda_dlls.has_cublas12([Path(d) for d in dirs]) else "no")
+    count = cuda_dlls.cuda_device_count()
+    ok, summary = cuda_dlls.cuda_device_summary(count)
+    r.summary = summary
+    if count is not None:
+        r.kv("CUDA devices", str(count))
+    if not ok:
+        r.status = Status.FAIL
+        r.line(summary)
     return r
 
 
