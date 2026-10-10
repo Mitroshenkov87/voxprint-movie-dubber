@@ -8,7 +8,7 @@ This is the 1.0.0 release candidate. The build number and the codename (Bochan) 
 
 ## Install
 
-**Requirements:** Windows 11 24H2 or newer (64-bit), an NVIDIA GeForce RTX 40-series graphics card or newer with an NVIDIA driver from the 600 branch or newer, about 25 GB of free disk space and an internet connection for the first model download. The setup and the program stop with a clear message on older hardware; there is no processor-only mode. A Linux package (distributions released in 2025 or later) is on the [roadmap](ROADMAP.md).
+**Requirements:** Windows 11 24H2 or newer (64-bit), an NVIDIA GeForce RTX 40-series graphics card or newer with an NVIDIA driver from the 600 branch or newer, about 25 GB of free disk space and an internet connection for the first model download. The setup and the program stop with a clear message on older hardware; there is no processor-only mode. Linux (x86_64) is available as a preview tarball, see [Linux](#linux-preview) below.
 
 1. Download the installer from the [latest release](https://github.com/Mitroshenkov87/voxprint-movie-dubber/releases):
    - **Full installer** (offline, recommended): `VoxprintMovieDubber-Full-Setup.exe` together with every `VoxprintMovieDubber-Full-Setup-N.bin` part, all in the same folder. It carries Python and PyTorch, so setup needs no internet.
@@ -17,6 +17,18 @@ This is the 1.0.0 release candidate. The build number and the codename (Bochan) 
 3. Start **Voxprint AI Movie Dubber** from the Start menu (folder "Voxprint").
 
 <!-- screenshot: setup wizard -->
+
+### Linux (preview)
+
+The release also has `VoxprintMovieDubber-Linux-x86_64.tar.gz`. It needs x86_64 Linux (a distribution released in 2025 or later), an NVIDIA GeForce RTX 40-series card or newer and an NVIDIA driver from the 600 branch or newer.
+
+```
+tar -xzf VoxprintMovieDubber-Linux-x86_64.tar.gz
+cd VoxprintMovieDubber-Linux-x86_64
+./install.sh
+```
+
+`install.sh` installs for your user only, into `~/.local`. It checks the driver and the GPU, creates a Python 3.14 environment with [uv](https://docs.astral.sh/uv/) (downloaded if it is missing), installs PyTorch 2.11.0 (CUDA 13.0) and the other packages, and adds the `voxprint-movie-dubber` command, a menu entry and the `.vxdub` file type. `./install.sh --uninstall` removes it and keeps the downloaded models. `--skip-gpu-check` is only for CI machines that have no GPU.
 
 ## Use
 
