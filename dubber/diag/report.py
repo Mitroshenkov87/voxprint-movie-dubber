@@ -268,7 +268,11 @@ def key_numbers(results: Sequence[CheckResult]) -> List[str]:
     if gm or smi:
         name = gm.get("name") or smi.get("name") or "no NVIDIA GPU detected"
         vram = gm.get("vram_total_gb") or smi.get("vram_total_gb")
-        out.append(f"GPU: {name}; VRAM {fmt_gb(vram)}; driver {smi.get('driver', '-')}; "
+        cc = smi.get("compute_cap") or "-"
+        branch = smi.get("driver_branch")
+        branch_txt = "-" if branch in (None, "") else str(branch)
+        out.append(f"GPU: {name}; compute capability {cc}; VRAM {fmt_gb(vram)}; "
+                   f"driver {smi.get('driver', '-')} (branch {branch_txt}); "
                    f"torch {gm.get('torch', '-')} (CUDA {gm.get('cuda', '-')}); "
                    f"FlashAttention pkg: {gm.get('flash_attn', '-')}; CUDA Graphs: {gm.get('cuda_graphs', '-')}")
     sysr = by.get("system.hw")

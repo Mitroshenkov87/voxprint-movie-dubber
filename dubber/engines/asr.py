@@ -183,7 +183,7 @@ def transcribe_faster_whisper(wav16: str, language: Optional[str], repo: str, de
     from dubber.infra import cuda_dlls
 
     if device == "cuda":
-        cuda_dlls.expose()                   # cublas64_12.dll from torch\lib (cu128) before CTranslate2 needs it
+        cuda_dlls.expose()                   # nvidia-cublas-cu12 / nvidia-cudnn-cu12 bin dirs before CTranslate2 loads cublas64_12.dll
     from dubber.core import audio, segment
 
     x, _ = audio.read(wav16, 16000)

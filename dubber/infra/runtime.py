@@ -2,11 +2,14 @@
 
 Agreed rules (Audiobook Builder, project-notes/voxprint/DECISIONS.md):
 
-* Pins: ``runtime_lock.json`` next to this file is a VERBATIM copy of ``infra/runtime_lock.json`` of
-  Mitroshenkov87/voxprint-audiobook-builder (Source: voxprint-audiobook-builder@578646515234, build 704): Python 3.11, win_amd64,
-  torch 2.11.0 in the flavors cu128 / cu126 / cpu.  The installer takes the torch version and the flavors from it; cu128 is the
-  build whose ``torch\\lib`` ships ``cublas64_12.dll`` + cuDNN 9, which CTranslate2 (faster-whisper) needs for the GPU, and it also
-  covers RTX 50 (Blackwell).  ``installer/runtime-constraints.txt`` adds the few pins that follow from torch (torchcodec).
+* Pins: ``runtime_lock.json`` next to this file keeps the Audiobook Builder lock schema (so the two files can be aligned
+  later). The sibling lock on main is still Python 3.11 / torch 2.11 cu128, which this app does not copy. This lock is
+  Python 3.14, win_amd64, torch 2.11.0. The only GPU flavor is cu130. The cu130 index and the PyTorch
+  previous-versions install commands have no torchaudio for 2.12, 2.13, or 2.14, so the newest consistent set is
+  torch 2.11.0+cu130 with torchaudio 2.11.0+cu130. torchcodec 0.17.0+cu130 is the newest codec whose table allows
+  torch >= 2.11. The cpu flavor remains only so CI can pass ``-Backend cpu``.
+  CTranslate2 still needs CUDA 12, so the lock also pins ``nvidia-cublas-cu12`` and ``nvidia-cudnn-cu12``.
+  ``installer/runtime-constraints.txt`` records that those torch pins are applied by the installer.
 * Key: :func:`runtime_key` = SHA-256 over Python version, platform, torch version + flavor, our requirements and constraints
   (comments and blank lines ignored), 12 hex digits.  ``installer/install-runtime.ps1`` computes the same key.
 * Reuse only on an exact key match: ``<Voxprint home>\\runtime-<key>`` (``%LOCALAPPDATA%\\Voxprint\\runtime-<key>``) with a
@@ -68,9 +71,17 @@ def runtime_key(flavor: str, requirements: str, constraints: str, lock: Optional
     return _sha(key_material(flavor, requirements, constraints, lock))[:12]
 
 
-def choose_flavor(lock: Dict[str, Any], driver_cuda: Optional[tuple]) -> str:
-    """Newest CUDA flavor of the lock that the driver supports (``driver_cuda`` = (12, 8) from nvidia-smi), else cpu."""
-    best, best_cu = "cpu", (0, 0)
+def choose_flavor(lock: Dict[str, Any], driver_cuda: Optional[tuple]) -> Optional[str]:
+    """Newest CUDA flavor of the lock that the driver supports (``driver_cuda`` = (13, 0) from nvidia-smi).
+
+    cu130 needs a driver that can run CUDA 13.0 (driver branch 580 or newer). The hardware gate already
+    requires branch 600, which is above that line.
+
+    None when the driver cannot run one. The CPU flavor is never chosen here: a user install does not
+    offer it, and CI passes ``-Backend cpu`` to the installer on its own.
+    """
+    best: Optional[str] = None
+    best_cu = (0, 0)
     for f in lock.get("flavors", []):
         m = re.fullmatch(r"cu(\d+)(\d)", f)
         if not m or not driver_cuda:

@@ -112,6 +112,7 @@ def test_medium_advisory_does_not_block_and_package_limit_is_honoured():
 def test_cpu_torch_local_version_is_audited_as_the_pypi_release():
     assert audit._pypi_version("2.11.0+cpu") == "2.11.0"
     assert audit._pypi_version("2.11.0+cu128") == "2.11.0"
+    assert audit._pypi_version("2.14.1+cu130") == "2.14.1"
     assert audit._pypi_version("1.2.3") == "1.2.3"
 
 

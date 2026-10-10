@@ -167,6 +167,7 @@ class DiagnosticRunner:
             Step("system.network", "Network", cs.check_network, 1.0, "network"),
             Step("system.ffmpeg", "ffmpeg", cs.check_ffmpeg, 0.5, "system"),
             Step("gpu.smi", "NVIDIA driver", cs.check_gpu_smi, 0.5, "gpu"),
+            Step("gpu.ctranslate2", "CTranslate2 CUDA", cs.check_ctranslate2, 0.5, "gpu"),
             Step("gpu.adapters", "Video adapters", cs.check_gpu_wmi, 0.5, "gpu"),
             Step("gpu.torch", "PyTorch / CUDA / FlashAttention / CUDA Graphs", self._check_gpu_torch, 3.0, "gpu"),
             Step("models.fetch", "Models on disk", self._check_models, 6.0, "models"),

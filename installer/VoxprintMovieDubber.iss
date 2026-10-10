@@ -3,7 +3,7 @@
 ;
 ; The installer is small: it contains only the program's own files (Python sources, icon, licences) and a download script.
 ; While it installs, install-runtime.ps1 installs (or reuses, on an exact match of the pinned versions) the shared runtime
-; LOCALAPPDATA\Voxprint\runtime-<key> (Python 3.11, PyTorch 2.11 pinned like Voxprint AI Audiobook Builder, the other
+; LOCALAPPDATA\Voxprint\runtime-<key> (Python 3.14, PyTorch 2.11.0+cu130, the other
 ; dependencies) and links it as the runtime sub-folder of the program folder; the AI models are downloaded as the last
 ; (optional) step into the models folder shared with Voxprint AI Audiobook Builder (one copy for both programs).
 ; Start menu: the folder "Voxprint", shared with the Audiobook Builder.  The uninstaller never touches the Audiobook Builder's
@@ -12,7 +12,8 @@
 ; Per-machine install (Program Files), Start menu entries, an entry in Apps & features and a full uninstaller.
 ;
 ; Command-line switches of the setup program:
-;   /TORCH=auto|cpu|cu126|cu128   PyTorch flavor from the runtime lock (default: auto = the newest the driver supports, CPU without an NVIDIA GPU)
+;   /TORCH=auto|cu130         PyTorch flavor (default auto = cu130 when the GPU passes the gate)
+;   /TORCH=cpu                CI only: CPU build for a GPU-less test runner. Not offered to users.
 ;   /TASKS=""                do not download the AI models during the setup (they are downloaded when first needed)
 ;   /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=<folder>    unattended install
 
@@ -102,6 +103,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 RuntimeStatus=Installing Python and PyTorch, or reusing the copy shared with other Voxprint programs (several minutes, depends on your connection)...
 SiblingFound=Voxprint AI Audiobook Builder is installed on this PC: its AI models and voice library are shared with this program (nothing is downloaded twice).
 RuntimeFailed=The Python environment could not be installed.%n%nCheck the internet connection and run the setup again. Details: %1
+HardwareRequired=Voxprint AI Movie Dubber needs an NVIDIA GeForce RTX 40-series graphics card or newer (Ada Lovelace or later, compute capability 8.9 or higher) and an NVIDIA driver from the 600 branch or newer.%n%nThis PC does not meet that requirement, so setup stopped and nothing was installed. A processor-only copy is not offered.%n%nInstall a supported graphics card and driver, then run setup again.
 UninstallDataQuestion=Also delete the dubbing projects, logs and reports (%1)?
 UninstallModelsQuestion=No other Voxprint program uses the downloaded AI models any more.%n%nDelete them too (%1, several gigabytes)? Choose No to keep them for a later installation.
 
@@ -174,10 +176,11 @@ end;
 { Runs before the program files are copied: fetches Python, PyTorch and the dependencies.  A non-empty result stops the setup. }
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
-  Script, Req, LogFile, Params: String;
+  Script, Req, LogFile, Params, HwFile, Hw: String;
   Rc: Integer;
   Page: TOutputMarqueeProgressWizardPage;
   Show: Integer;
+  Raw: AnsiString;
 begin
   Result := '';
   ExtractTemporaryFile('install-runtime.ps1');
@@ -187,10 +190,11 @@ begin
   Script := ExpandConstant('{tmp}\install-runtime.ps1');
   Req := ExpandConstant('{tmp}\requirements.txt');
   LogFile := ExpandConstant('{%TEMP}\VoxprintMovieDubber-setup.log');
+  HwFile := ExpandConstant('{%TEMP}\VoxprintMovieDubber-hardware.txt');
   Params := '-NoProfile -ExecutionPolicy Bypass -File "' + Script + '" -AppDir "' + ExpandConstant('{app}') +
             '" -Requirements "' + Req + '" -Constraints "' + ExpandConstant('{tmp}\runtime-constraints.txt') +
             '" -Lock "' + ExpandConstant('{tmp}\runtime_lock.json') +
-            '" -Backend "' + CmdParam('TORCH', 'auto') + '" -Log "' + LogFile + '"';
+            '" -Backend "' + CmdParam('TORCH', 'auto') + '" -HardwareFile "' + HwFile + '" -Log "' + LogFile + '"';
   if WizardSilent then Show := SW_HIDE else Show := SW_SHOWNORMAL;   { the console shows the download progress }
   Page := CreateOutputMarqueeProgressPage('Installing', CustomMessage('RuntimeStatus'));
   Page.Show;
@@ -201,7 +205,16 @@ begin
   finally
     Page.Hide;
   end;
-  if Rc <> 0 then
+  if Rc = 2 then
+  begin
+    Result := CustomMessage('HardwareRequired');
+    Hw := '';
+    if LoadStringFromFile(HwFile, Raw) then
+      Hw := Trim(String(Raw));
+    if Hw <> '' then
+      Result := Hw;
+  end
+  else if Rc <> 0 then
     Result := FmtMessage(CustomMessage('RuntimeFailed'), [LogFile]);
 end;
 

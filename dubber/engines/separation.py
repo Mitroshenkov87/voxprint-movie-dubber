@@ -32,14 +32,12 @@ def chunk_batch_size(total_gb: float, budget_gb: Optional[float] = None) -> int:
     return n
 
 
-def safe_compute_dtype(cuda: bool, bf16: bool, fp16: bool) -> str:
-    """Network dtype.  Half precision only on CUDA, bf16 first (wider range), else fp16.  Otherwise fp32.
+def safe_compute_dtype(cuda: bool, bf16: bool) -> str:
+    """Network dtype. Half precision only as bf16 on CUDA. RTX 40 / Ada and newer always have bf16.
 
-    Callers cast the waveform back to fp32.  The half-precision math stays inside the network."""
+    Callers cast the waveform back to fp32. The half-precision math stays inside the network."""
     if cuda and bf16:
         return "bf16"
-    if cuda and fp16:
-        return "fp16"
     return "fp32"
 
 
@@ -146,13 +144,11 @@ def build_tiger(device: str, allow_download: bool, log: Callable[[str], None]):
     model.eval().to(device)
     cuda = device == "cuda" and torch.cuda.is_available()
     bf16 = bool(cuda and getattr(torch.cuda, "is_bf16_supported", lambda: False)())
-    dtype = safe_compute_dtype(cuda, bf16, cuda)
+    dtype = safe_compute_dtype(cuda, bf16)
 
     def _cast():
         if dtype == "bf16":
             return torch.autocast(device_type="cuda", dtype=torch.bfloat16)
-        if dtype == "fp16":
-            return torch.autocast(device_type="cuda", dtype=torch.float16)
         return contextlib.nullcontext()
 
     def _forward(batch: torch.Tensor):
