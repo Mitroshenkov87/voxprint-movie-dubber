@@ -1,4 +1,5 @@
 """Shared Voxprint infrastructure: folders, model store (lock, manifest, users), GPU lock, stdio guard."""
+import hashlib
 import json
 import os
 import threading
@@ -7,7 +8,10 @@ from pathlib import Path
 
 import pytest
 
+from dubber import models
+from dubber.engines.separation import _expose_roformer
 from dubber.infra import gpu_lock, model_store, shared_paths, stdio_guard
+from dubber.ui.pages import TARGET_LANGS
 
 
 def test_models_dir_env_file_and_fallback(tmp_path, monkeypatch):
@@ -86,8 +90,6 @@ def test_ensure_downloads_into_partial_then_renames(tmp_path):
 
 
 def test_manifest_mismatch_deletes_bad_file_and_keeps_partial(tmp_path, monkeypatch):
-    import hashlib
-
     good = b"weights"
     manifest = {"org/m": {"revision": "a" * 40, "files": {"config.json": {"size": 2, "sha256": hashlib.sha256(b"{}").hexdigest()},
                                                          "model.safetensors": {"size": len(good), "sha256": hashlib.sha256(good).hexdigest()}}}}
@@ -132,7 +134,79 @@ def test_bundled_manifest_is_well_formed():
     assert "Qwen/Qwen3-TTS-12Hz-1.7B-Base" in m
     for repo, e in m.items():
         assert len(e["revision"]) == 40, repo
+        assert e.get("license"), repo
         assert all(len(f["sha256"]) == 64 and f["size"] > 0 for f in e["files"].values())
+
+
+def test_registry_licences_match_manifest_and_tc_big_pairs():
+    manifest = model_store.load_manifest()
+    assert "Qwen/Qwen3-ForcedAligner-0.6B" not in manifest
+    for spec in models.SPECS.values():
+        assert spec.license
+        if spec.repo not in manifest:
+            continue
+        assert manifest[spec.repo]["license"] == spec.license
+        pinned = set(manifest[spec.repo]["files"])
+        if spec.patterns:
+            assert set(spec.patterns) == pinned
+    for repo in manifest:
+        assert any(s.repo == repo for s in models.SPECS.values()), repo
+    assert models.mt_spec("en", "ru").repo == "Helsinki-NLP/opus-mt-tc-big-en-zle"
+    assert models.mt_spec("en", "ru").target_token == ">>rus<<"
+    assert models.mt_spec("ru", "en").repo == "Helsinki-NLP/opus-mt-tc-big-zle-en"
+    assert models.mt_spec("ru", "en").target_token == ""
+    assert models.mt_spec("ru", "de").repo == "Helsinki-NLP/opus-mt-tc-big-zle-de"
+    assert models.mt_spec("de", "ru").repo == "Helsinki-NLP/opus-mt-tc-big-de-zle"
+    assert models.mt_spec("de", "ru").target_token == ">>rus<<"
+    assert models.mt_spec("en", "de").repo == "Helsinki-NLP/opus-mt-tc-bible-big-deu_eng_fra_por_spa-gmw"
+    assert models.mt_spec("en", "de").target_token == ">>deu<<"
+    assert models.mt_spec("en", "de").license == "Apache-2.0"
+    assert models.mt_spec("de", "en").repo == "Helsinki-NLP/opus-mt-tc-bible-big-gmw-deu_eng_fra_por_spa"
+    assert models.mt_spec("de", "en").target_token == ">>eng<<"
+    assert models.mt_spec("de", "en").license == "Apache-2.0"
+    for src in TARGET_LANGS:
+        for tgt in TARGET_LANGS:
+            if src == tgt:
+                assert models.mt_spec(src, tgt) is None
+            else:
+                spec = models.mt_spec(src, tgt)
+                assert spec is not None and spec.repo in manifest, f"{src}->{tgt}"
+    assert models.mt_inputs(">>rus<<", ["Hello"]) == [">>rus<< Hello"]
+    assert models.mt_inputs("", ["Hello"]) == ["Hello"]
+    joined = " ".join(str(models.SPECS[k].repo) for k in models.SPECS)
+    assert "opus-mt-en-ru" not in joined and "opus-mt-en-de" not in joined
+    assert "opus-mt-de-en" not in joined and "opus-mt-ru-en" not in joined
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "docs" / "MODELS.md").read_text(encoding="utf-8") + (root / "NOTICE").read_text(encoding="utf-8")
+    assert "https://creativecommons.org/licenses/by/4.0/" in text
+    assert "https://www.apache.org/licenses/LICENSE-2.0" in text
+    assert "https://huggingface.co/Helsinki-NLP" in text
+    assert "ac9b0614ab3cd7f77219e18ba494dfd93956c348" in text
+    assert "en → de" in text or "en->de" in text
+
+
+def test_checkpoint_model_is_checksummed_without_a_config(tmp_path, monkeypatch):
+    payload = b"ckpt-bytes"
+    repo = "org/ckpt"
+    digest = hashlib.sha256(payload).hexdigest()
+    manifest = {repo: {"revision": "b" * 40, "license": "MIT",
+                       "files": {"weights.ckpt": {"size": len(payload), "sha256": digest}}}}
+    monkeypatch.setattr(model_store, "load_manifest", lambda path=None: manifest)
+    folder = tmp_path / "done"
+    folder.mkdir()
+    (folder / "weights.ckpt").write_bytes(payload)
+    assert not model_store.verify_structure(folder, ("*.ckpt",), require_config=True)
+    assert model_store.is_ready(folder, repo, ("*.ckpt",), ("weights.ckpt",), require_config=False)
+    (folder / "weights.ckpt").write_bytes(b"nope")
+    assert model_store.is_ready(folder, repo, ("*.ckpt",), ("weights.ckpt",), require_config=False) is False
+    info = model_store.ensure_model(repo, root=tmp_path, weights=("*.ckpt",), patterns=("weights.ckpt",),
+                                    require_config=False, downloader=_fake_downloader({"weights.ckpt": payload}))
+    assert info.source == "downloaded" and (info.path / ".verified").exists()
+    linked = tmp_path / "link"
+    linked.mkdir()
+    (linked / "MelBandRoformer.ckpt").write_bytes(payload)
+    assert _expose_roformer(linked, "vocals_mel_band_roformer.ckpt") == "vocals_mel_band_roformer.ckpt"
+    assert (linked / "vocals_mel_band_roformer.ckpt").resolve() == (linked / "MelBandRoformer.ckpt").resolve()
 
 
 # ------------------------------------------------------------------ GPU lock

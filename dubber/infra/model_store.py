@@ -8,7 +8,7 @@ here); change locations only in :mod:`dubber.infra.shared_paths`.
 * Lock: empty file ``<models>/.<owner>--<name>.lock``, ``msvcrt.locking(LK_NBLCK, 1 byte)`` / ``fcntl.flock(LOCK_EX|LOCK_NB)``,
   held for the whole download and removed after it.  :func:`sweep_stale_locks` deletes unheld leftovers.
 * Manifest: ``model_manifest.json`` next to this file: pinned revision + size + SHA-256 per file.  A model without a manifest entry
-  is checked structurally (config + weights).
+  is checked structurally (weights, and a config file unless the model is checkpoint-only).
 * Users: ``<models>/.users.json`` ``{"audiobook-builder": true, "movie-dubber": true}`` - the installer adds our key, the uninstaller
   removes it and deletes models only when no other key remains AND the user agrees.
 * Watchdog: while a download runs, the size of the ``.partial`` folder is reported every few seconds; no progress for
@@ -54,24 +54,29 @@ def folder_name(repo: str) -> str:
     return repo.replace("/", "--")
 
 
-def local_dir_for(repo: str, root: Optional[Path] = None) -> Path:
+def local_dir_for(repo: str, root: Optional[Path] = None, weights: Sequence[str] = DEFAULT_WEIGHTS,
+                  require_config: bool = True) -> Path:
     """``Qwen/X`` -> ``<models>/Qwen--X``; with a user-chosen folder a model complete only in the default folder is used there."""
     name = folder_name(repo)
     if root is not None:
         return Path(root) / name
     target = models_root() / name
-    if not verify_structure(target):
+    if not verify_structure(target, weights, require_config):
         default = shared_paths.default_models_dir() / name
-        if default != target and verify_structure(default):
+        if default != target and verify_structure(default, weights, require_config):
             return default
     return target
 
 
-def verify_structure(path: Path, weights: Sequence[str] = DEFAULT_WEIGHTS) -> bool:
-    """A config file and at least one weights file."""
+def verify_structure(path: Path, weights: Sequence[str] = DEFAULT_WEIGHTS, require_config: bool = True) -> bool:
+    """At least one weights file, and a config file unless the model is a checkpoint with no config."""
     if not path.is_dir():
         return False
-    return any((path / n).exists() for n in CONFIG_NAMES) and any(any(path.glob(w)) for w in weights)
+    if not any(any(path.glob(w)) for w in weights):
+        return False
+    if not require_config:
+        return True
+    return any((path / n).exists() for n in CONFIG_NAMES)
 
 
 # ---------------------------------------------------------------------------------------------- manifest (size + SHA-256)
@@ -132,8 +137,9 @@ def write_verified_marker(folder: Path, repo: str) -> None:
         pass
 
 
-def is_ready(folder: Path, repo: str, weights: Sequence[str] = DEFAULT_WEIGHTS, patterns: Optional[Iterable[str]] = None) -> bool:
-    if not verify_structure(folder, weights):
+def is_ready(folder: Path, repo: str, weights: Sequence[str] = DEFAULT_WEIGHTS, patterns: Optional[Iterable[str]] = None,
+             require_config: bool = True) -> bool:
+    if not verify_structure(folder, weights, require_config):
         return False
     bad = manifest_bad_files(folder, repo, patterns, full_hash=not (folder / ".verified").exists())
     return not bad
@@ -360,10 +366,10 @@ def _watched(func: Callable[[], None], part: Path, size_gb: float, log_fn: Calla
 def ensure_model(repo: str, *, allow_download: bool = True, token: Optional[str] = None, patterns: Optional[Sequence[str]] = None,
                  weights: Sequence[str] = DEFAULT_WEIGHTS, gated: bool = False, size_gb: float = 0.0,
                  log_fn: Callable[[str], None] = lambda m: None, downloader: Optional[Downloader] = None,
-                 root: Optional[Path] = None, stall_s: float = STALL_SECONDS) -> EnsureInfo:
+                 root: Optional[Path] = None, stall_s: float = STALL_SECONDS, require_config: bool = True) -> EnsureInfo:
     """Return the folder of a complete model, downloading it (under the per-model lock) when allowed."""
-    target = local_dir_for(repo, root)
-    if is_ready(target, repo, weights, patterns):
+    target = local_dir_for(repo, root, weights, require_config)
+    if is_ready(target, repo, weights, patterns, require_config):
         return EnsureInfo(target, "present")
     if not allow_download:
         raise ModelUnavailable(f"{repo} is not on this computer and downloading is switched off")
@@ -375,7 +381,7 @@ def ensure_model(repo: str, *, allow_download: bool = True, token: Optional[str]
     lock.acquire(lambda s: log_fn(f"waiting for another program downloading {repo} ({s:.0f} s)") if int(s) % 10 == 0 else None)
     done = False
     try:
-        if is_ready(target, repo, weights, patterns):            # the other process finished it meanwhile
+        if is_ready(target, repo, weights, patterns, require_config):            # the other process finished it meanwhile
             done = True
             return EnsureInfo(target, "present")
         part = target.with_name(target.name + ".partial")
@@ -390,7 +396,7 @@ def ensure_model(repo: str, *, allow_download: bool = True, token: Optional[str]
         except Exception as exc:  # noqa: BLE001
             raise ModelUnavailable(f"download of {repo} failed: {type(exc).__name__}: {' '.join(str(exc).split())[:200]}") from exc
         log_fn(f"verifying {repo} (checksums)")
-        if not verify_structure(part, weights):
+        if not verify_structure(part, weights, require_config):
             raise ModelUnavailable(f"{repo}: the download finished but the folder looks incomplete ({part})")
         bad = manifest_bad_files(part, repo, patterns)
         if bad:

@@ -6,6 +6,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 
 import numpy as np
 
+from dubber import models
 from dubber.core import audio
 from dubber.core.project import Line
 from dubber.core.script import cluster_speakers
@@ -15,8 +16,6 @@ def pyannote_turns(wav16: str, device: str, allow_download: bool, log: Callable[
                    num_speakers: Optional[int] = None) -> List[Dict[str, Any]]:
     import torch
     from pyannote.audio import Pipeline
-
-    from dubber import models
 
     repo = models.SPECS["diar"].repo
     folder, _ = models.ensure(repo, allow_download, token=os.environ.get("HF_TOKEN") or None, log=log)
@@ -46,7 +45,9 @@ def try_speaker_embeddings(segments: Sequence[np.ndarray], sr: int) -> Optional[
     if not segments:
         return []
     try:
-        model = Model.from_pretrained("pyannote/embedding")
+        spec = models.SPECS["embed"]
+        folder, _ = models.ensure(spec.repo, token=os.environ.get("HF_TOKEN") or None)
+        model = Model.from_pretrained(str(folder))
         infer = Inference(model, window="whole")
         out: List[np.ndarray] = []
         for seg in segments:

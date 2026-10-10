@@ -9,6 +9,7 @@ from typing import Callable, List, Optional, Sequence, Tuple
 
 import numpy as np
 
+from dubber import models
 from dubber.core import audio
 
 Window = Tuple[float, float]
@@ -134,7 +135,6 @@ def build_tiger(device: str, allow_download: bool, log: Callable[[str], None]):
     import torch
     from safetensors.torch import load_file
 
-    from dubber import models
     from dubber.third_party.look2hear.models import TIGERDNR
 
     folder, _ = models.ensure(models.SPECS["sep"].repo, allow_download, log=log)
@@ -213,15 +213,34 @@ def tiger_model(device: str, allow_download: bool, log: Callable[[str], None]):
     return build()
 
 
-def roformer_model(device: str, model_dir: Path, model_file: str, log: Callable[[str], None]):
-    """Mel-Band RoFormer (MIT) through the ``audio-separator`` package (optional dependency; its models are kept in the shared
-    models folder under ``audio-separator``).  Not verified on this machine (no GPU): see DECISIONS.md."""
+def _expose_roformer(folder: Path, model_file: str) -> str:
+    """Name the pinned checkpoint the way audio-separator looks it up, so it does not fetch another copy of the weights."""
+    src = folder / "MelBandRoformer.ckpt"
+    name = model_file or "vocals_mel_band_roformer.ckpt"
+    dest = folder / Path(name).name
+    if dest.name != src.name and not dest.exists() and not dest.is_symlink():
+        try:
+            dest.symlink_to(src.name)
+        except OSError:
+            dest.hardlink_to(src)
+    return dest.name if dest.exists() else src.name
+
+
+def roformer_model(device: str, allow_download: bool, log: Callable[[str], None],
+                   model_file: str = "vocals_mel_band_roformer.ckpt"):
+    """Mel-Band RoFormer (MIT, KimberleyJSN/melbandroformer at the 2026-04-22 relicence) through ``audio-separator``.
+
+    The checkpoint is the pinned file in the shared model store. audio-separator still loads its own yaml for that filename
+    and skips the weight download when the file is already there. ``device`` is unused: the package picks the device.
+    """
     import tempfile
 
     from audio_separator.separator import Separator
 
-    sep = Separator(model_file_dir=str(model_dir), output_dir=tempfile.mkdtemp(prefix="vmd-rof-"), output_single_stem=None)
-    sep.load_model(model_filename=model_file)
+    folder, _ = models.ensure(models.SPECS["roformer"].repo, allow_download, log=log)
+    filename = _expose_roformer(folder, model_file)
+    sep = Separator(model_file_dir=str(folder), output_dir=tempfile.mkdtemp(prefix="vmd-rof-"), output_single_stem=None)
+    sep.load_model(model_filename=filename)
 
     def run(seg: np.ndarray, sr: int):
         d = tempfile.mkdtemp(prefix="vmd-rofseg-")
