@@ -72,12 +72,11 @@ jobs:
 
       - name: voxprint-movie-dubber --dry-run --json
         run: |
-          set -uo pipefail
-          "$HOME/.local/bin/voxprint-movie-dubber" --dry-run --json > dry-run.json 2> dry-run.err
-          code=$?
+          set -euo pipefail
+          code=0
+          "$HOME/.local/bin/voxprint-movie-dubber" --dry-run --json > dry-run.json 2> dry-run.err || code=$?
           echo "exit code: $code"
           cat dry-run.err
-          set -e
           python3 - "$code" <<'PY'
           import json, sys
           code = int(sys.argv[1])
