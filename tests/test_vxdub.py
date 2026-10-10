@@ -322,6 +322,8 @@ def test_file_menu_saves_and_opens(tmp_path, clip):
     assert window.act_open.text() == "Open…"
     assert window.act_save.text() == "Save"
     assert window.act_save_as.text() == "Save As…"
+    assert not window.act_save.icon().isNull()
+    assert not window.act_save_as.icon().isNull()
     assert not window.act_save.isEnabled()
     window.set_source(clip)
     dest = tmp_path / "clip.vxdub"
