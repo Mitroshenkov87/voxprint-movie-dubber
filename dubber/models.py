@@ -57,12 +57,16 @@ SPECS: Dict[str, ModelSpec] = {s.key: s for s in (
     ModelSpec("mt_ru_de", "Helsinki-NLP/opus-mt-tc-big-zle-de", "Opus-MT tc-big ru->de", 0.5, "CC-BY-4.0", patterns=TC_BIG_FILES),
     ModelSpec("mt_de_ru", "Helsinki-NLP/opus-mt-tc-big-de-zle", "Opus-MT tc-big de->ru", 0.5, "CC-BY-4.0",
               patterns=TC_BIG_FILES, target_token=">>rus<<"),
+    ModelSpec("mt_en_de", "Helsinki-NLP/opus-mt-tc-bible-big-deu_eng_fra_por_spa-gmw", "Opus-MT tc-bible-big en->de", 0.9,
+              "Apache-2.0", patterns=TC_BIG_FILES, target_token=">>deu<<"),
+    ModelSpec("mt_de_en", "Helsinki-NLP/opus-mt-tc-bible-big-gmw-deu_eng_fra_por_spa", "Opus-MT tc-bible-big de->en", 0.9,
+              "Apache-2.0", patterns=TC_BIG_FILES, target_token=">>eng<<"),
 )}
 
 
 #: Models fetched by the installer. Gated models (diarization, speaker embedding) need a Hugging Face token and are left out.
-#: Mel-Band RoFormer is optional and is fetched when separation is set to it. en->de and de->en have no tc-big model.
-INSTALL_MODELS = ("tts_1_7b", "asr", "sep", "mt_en_ru", "mt_ru_en", "mt_ru_de", "mt_de_ru")
+#: Mel-Band RoFormer is optional and is fetched when separation is set to it.
+INSTALL_MODELS = ("tts_1_7b", "asr", "sep", "mt_en_ru", "mt_ru_en", "mt_en_de", "mt_de_en", "mt_ru_de", "mt_de_ru")
 
 
 def mt_spec(source: str, target: str) -> Optional[ModelSpec]:

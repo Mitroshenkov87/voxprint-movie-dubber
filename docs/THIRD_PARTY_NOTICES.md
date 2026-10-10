@@ -8,7 +8,8 @@
 | Qwen3-TTS-12Hz Base models (Qwen) | TTS with voice cloning, downloaded on demand | Apache-2.0 |
 | faster-whisper, CTranslate2, `deepdml/faster-whisper-large-v3-turbo-ct2` | speech recognition | MIT |
 | Silero VAD | voice activity detection | MIT |
-| Opus-MT tc-big (`Helsinki-NLP/opus-mt-tc-big-en-zle`, `-zle-en`, `-zle-de`, `-de-zle`) | translation (en↔ru, ru↔de). No tc-big model for en→de or de→en | CC-BY-4.0. University of Helsinki (Helsinki-NLP), https://huggingface.co/Helsinki-NLP, https://creativecommons.org/licenses/by/4.0/ |
+| Opus-MT tc-big (`Helsinki-NLP/opus-mt-tc-big-en-zle`, `-zle-en`, `-zle-de`, `-de-zle`) | translation (en↔ru, ru↔de) | CC-BY-4.0. University of Helsinki (Helsinki-NLP), https://huggingface.co/Helsinki-NLP, https://creativecommons.org/licenses/by/4.0/ |
+| Opus-MT tc-bible-big (`Helsinki-NLP/opus-mt-tc-bible-big-deu_eng_fra_por_spa-gmw`, `Helsinki-NLP/opus-mt-tc-bible-big-gmw-deu_eng_fra_por_spa`) | translation (en→de with `>>deu<<`, de→en with `>>eng<<`) | Apache-2.0. University of Helsinki (Helsinki-NLP), https://huggingface.co/Helsinki-NLP, https://www.apache.org/licenses/LICENSE-2.0 |
 | pyannote speaker-diarization community-1 | speaker diarization (gated, optional) | CC-BY-4.0; https://huggingface.co/pyannote/speaker-diarization-community-1, https://creativecommons.org/licenses/by/4.0/; needs a Hugging Face token and accepted terms |
 | pyannote/embedding | speaker embeddings (gated, optional) | MIT |
 | Mel-Band RoFormer (`KimberleyJSN/melbandroformer` @ `ac9b0614ab3cd7f77219e18ba494dfd93956c348`, 2026-04-22) | optional vocal separation | MIT (model card relicensed MIT on that commit) |

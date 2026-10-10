@@ -23,9 +23,11 @@ is checked (size, then SHA-256) before the folder is used.
 | `mt_ru_en` | `Helsinki-NLP/opus-mt-tc-big-zle-en` | `09a40f722d6d8b76aaad6fe51a06c914622a13d1` | CC-BY-4.0 | pinned, verified on download |
 | `mt_ru_de` | `Helsinki-NLP/opus-mt-tc-big-zle-de` | `b2e247f0c413ca6aa51a32f2f2be8666cf72405e` | CC-BY-4.0 | pinned, verified on download |
 | `mt_de_ru` | `Helsinki-NLP/opus-mt-tc-big-de-zle` | `d4db2a2cbaa6c2f1ea57d0ed40924d35767b05f9` | CC-BY-4.0 | pinned, verified on download |
+| `mt_en_de` | `Helsinki-NLP/opus-mt-tc-bible-big-deu_eng_fra_por_spa-gmw` | `0a10a154b1d057720d03d8227bc59ea9633c590b` | Apache-2.0 | pinned, verified on download |
+| `mt_de_en` | `Helsinki-NLP/opus-mt-tc-bible-big-gmw-deu_eng_fra_por_spa` | `a6933ed14d06d91d797809258bdb2d52f5487a36` | Apache-2.0 | pinned, verified on download |
 
 The 2020 Helsinki-NLP `opus-mt-en-ru` and `opus-mt-de-en` cards are Apache-2.0. `opus-mt-ru-en` and `opus-mt-en-de` are
-CC-BY-4.0. Those four checkpoints are not used. Translation uses the tc-big models only.
+CC-BY-4.0. Those four checkpoints are not used. en↔ru and ru↔de use tc-big. en↔de uses tc-bible-big.
 
 ## Mel-Band RoFormer
 
@@ -47,8 +49,10 @@ tc-big models, the same repositories as Voxprint AI Audiobook Builder:
 | ru → en | `Helsinki-NLP/opus-mt-tc-big-zle-en` | none |
 | ru → de | `Helsinki-NLP/opus-mt-tc-big-zle-de` | none |
 | de → ru | `Helsinki-NLP/opus-mt-tc-big-de-zle` | `>>rus<<` |
+| en → de | `Helsinki-NLP/opus-mt-tc-bible-big-deu_eng_fra_por_spa-gmw` | `>>deu<<` |
+| de → en | `Helsinki-NLP/opus-mt-tc-bible-big-gmw-deu_eng_fra_por_spa` | `>>eng<<` |
 
-There is no tc-big model for **en → de** or **de → en**. Those directions are not translated. The 2020 Opus-MT checkpoints are not kept as a fallback.
+en→de and de→en use the tc-bible-big models. The model cards list `>>deu<<` and `>>eng<<` among the valid target-language labels. The 2020 Opus-MT checkpoints are not used.
 
 ## CC BY 4.0 attributions
 
@@ -58,6 +62,13 @@ These components are used unmodified under [CC BY 4.0](https://creativecommons.o
 Source: [https://huggingface.co/Helsinki-NLP](https://huggingface.co/Helsinki-NLP).
 Licence: [https://creativecommons.org/licenses/by/4.0/](https://creativecommons.org/licenses/by/4.0/).
 Tiedemann, Aulamo, Bakshandaeva, Boggia, Grönroos, Nieminen, Raganato, Scherrer, Vázquez, Virpioja: "Democratizing neural machine translation with OPUS-MT", Language Resources and Evaluation 58 (2024).
+
+## Apache-2.0 attributions
+
+**Opus-MT tc-bible-big** (en→de, de→en). Language Technology Research Group at the University of Helsinki (Helsinki-NLP).
+Source: [https://huggingface.co/Helsinki-NLP/opus-mt-tc-bible-big-deu_eng_fra_por_spa-gmw](https://huggingface.co/Helsinki-NLP/opus-mt-tc-bible-big-deu_eng_fra_por_spa-gmw) and [https://huggingface.co/Helsinki-NLP/opus-mt-tc-bible-big-gmw-deu_eng_fra_por_spa](https://huggingface.co/Helsinki-NLP/opus-mt-tc-bible-big-gmw-deu_eng_fra_por_spa).
+Licence: [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0).
+Both model cards list the licence as Apache-2.0. en→de requires the sentence-initial token `>>deu<<`. de→en requires `>>eng<<`.
 
 **pyannote speaker-diarization-community-1**. pyannote.
 Source: [https://huggingface.co/pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1).

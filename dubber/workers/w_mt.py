@@ -1,7 +1,7 @@
 """Worker ``mt``: offline machine translation with Opus-MT tc-big (Marian).
 
 Input (args): ``source``, ``target`` (en/ru/de), ``sentences`` (list of str), ``out_json``, ``allow_download``, ``device``.
-Direct tc-big pairs are en<->ru and ru<->de. en->de and de->en have no tc-big model and are SKIP here
+Direct pairs among en/ru/de are en<->ru, en<->de and ru<->de. Any other pair is SKIP here
 (the pipeline pivots through English only when both sides are non-English and a direct model is missing).
 """
 from __future__ import annotations

@@ -12,6 +12,12 @@ Not covered by that licence (each has its own terms):
     Research Group at the University of Helsinki (Helsinki-NLP), from https://huggingface.co/Helsinki-NLP,
     licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/), used unmodified.
     Tiedemann et al., "Democratizing neural machine translation with OPUS-MT", Language Resources and Evaluation 58 (2024).
+  * Opus-MT tc-bible-big translation models (downloaded): Helsinki-NLP/opus-mt-tc-bible-big-deu_eng_fra_por_spa-gmw
+    (revision 0a10a154b1d057720d03d8227bc59ea9633c590b, en->de, target token >>deu<<) and
+    Helsinki-NLP/opus-mt-tc-bible-big-gmw-deu_eng_fra_por_spa (revision a6933ed14d06d91d797809258bdb2d52f5487a36,
+    de->en, target token >>eng<<): (c) Language Technology Research Group at the University of Helsinki (Helsinki-NLP),
+    from https://huggingface.co/Helsinki-NLP, licensed under Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0),
+    used unmodified.
   * pyannote speaker-diarization-community-1 (gated, downloaded when a Hugging Face token is set): (c) pyannote,
     from https://huggingface.co/pyannote/speaker-diarization-community-1, licensed under CC BY 4.0
     (https://creativecommons.org/licenses/by/4.0/). pyannote/embedding is MIT.

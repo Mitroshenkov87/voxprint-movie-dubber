@@ -11,6 +11,7 @@ import pytest
 from dubber import models
 from dubber.engines.separation import _expose_roformer
 from dubber.infra import gpu_lock, model_store, shared_paths, stdio_guard
+from dubber.ui.pages import TARGET_LANGS
 
 
 def test_models_dir_env_file_and_fallback(tmp_path, monkeypatch):
@@ -157,7 +158,19 @@ def test_registry_licences_match_manifest_and_tc_big_pairs():
     assert models.mt_spec("ru", "de").repo == "Helsinki-NLP/opus-mt-tc-big-zle-de"
     assert models.mt_spec("de", "ru").repo == "Helsinki-NLP/opus-mt-tc-big-de-zle"
     assert models.mt_spec("de", "ru").target_token == ">>rus<<"
-    assert models.mt_spec("en", "de") is None and models.mt_spec("de", "en") is None
+    assert models.mt_spec("en", "de").repo == "Helsinki-NLP/opus-mt-tc-bible-big-deu_eng_fra_por_spa-gmw"
+    assert models.mt_spec("en", "de").target_token == ">>deu<<"
+    assert models.mt_spec("en", "de").license == "Apache-2.0"
+    assert models.mt_spec("de", "en").repo == "Helsinki-NLP/opus-mt-tc-bible-big-gmw-deu_eng_fra_por_spa"
+    assert models.mt_spec("de", "en").target_token == ">>eng<<"
+    assert models.mt_spec("de", "en").license == "Apache-2.0"
+    for src in TARGET_LANGS:
+        for tgt in TARGET_LANGS:
+            if src == tgt:
+                assert models.mt_spec(src, tgt) is None
+            else:
+                spec = models.mt_spec(src, tgt)
+                assert spec is not None and spec.repo in manifest, f"{src}->{tgt}"
     assert models.mt_inputs(">>rus<<", ["Hello"]) == [">>rus<< Hello"]
     assert models.mt_inputs("", ["Hello"]) == ["Hello"]
     joined = " ".join(str(models.SPECS[k].repo) for k in models.SPECS)
@@ -166,6 +179,7 @@ def test_registry_licences_match_manifest_and_tc_big_pairs():
     root = Path(__file__).resolve().parents[1]
     text = (root / "docs" / "MODELS.md").read_text(encoding="utf-8") + (root / "NOTICE").read_text(encoding="utf-8")
     assert "https://creativecommons.org/licenses/by/4.0/" in text
+    assert "https://www.apache.org/licenses/LICENSE-2.0" in text
     assert "https://huggingface.co/Helsinki-NLP" in text
     assert "ac9b0614ab3cd7f77219e18ba494dfd93956c348" in text
     assert "en → de" in text or "en->de" in text

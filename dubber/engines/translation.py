@@ -1,7 +1,7 @@
-"""Offline translation with Opus-MT tc-big (Marian models through transformers).
+"""Offline translation with Opus-MT (Marian models through transformers).
 
-Direct pairs are en<->ru and ru<->de. en->de and de->en have no tc-big model. A pair of two non-English
-languages with no direct model still pivots through English.
+Direct pairs among en/ru/de are en<->ru, en<->de and ru<->de. A pair of two non-English languages with no
+direct model still pivots through English.
 
 Completeness first (real case: "Yeah, that sounds cool! Learning sucks!" came back as "Да, звучит круто!" and "...Destroy it all.
 Destroy." lost "Destroy"): Marian models tend to drop a short trailing sentence when given several at once.  So every line is
