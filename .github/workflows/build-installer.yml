@@ -24,7 +24,7 @@ jobs:
       QT_QPA_PLATFORM: offscreen
       VOXPRINT_SKIP_GPU_GATE: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Check the release tag (tag builds only)
         if: startsWith(github.ref, 'refs/tags/')
