@@ -246,6 +246,9 @@ class MockTTS(BaseTTS):
 class QwenTTS(BaseTTS):
     """Qwen3-TTS Base (voice cloning). ``auto`` tries CUDA Graphs, then FA2, then SDPA."""
 
+    #: lines per generate call at most; set from the VRAM tier (dubber.infra.vram_tier) by the speech stage
+    batch_cap: int = MAX_BATCH
+
     def __init__(self, base_dir: Path, language: str, device: str = "auto", prefer: str = "auto", need_adapters: bool = False,
                  log_fn: Callable[[str], None] = lambda m: None) -> None:
         import torch
@@ -333,7 +336,7 @@ class QwenTTS(BaseTTS):
         if budget is None:
             return 1
         try:
-            return resources.tts_batch("cuda", budget.left(), budget.ram_budget)
+            return min(self.batch_cap, resources.tts_batch("cuda", budget.left(), budget.ram_budget))
         except Exception:  # noqa: BLE001
             return 1
 

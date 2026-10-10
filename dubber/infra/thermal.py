@@ -1,19 +1,27 @@
 """Cooling pauses between blocks, and the GPU line written for each stage.
 
-Full speed for the first 2.5 hours of a job.  After that, a pause is inserted between blocks only when the GPU
-is at 87 C or above, or a thermal / power-brake throttle reason has lasted more than 60 seconds.  Work resumes
-at 75 C or below (and when the throttle reason has cleared).  There is no user-facing mode: the rule runs on
-its own.  A missing sensor never pauses the job.
+Suite thermal rule (project-notes suite/COLLABORATION.md, section 3): full speed for the first ~2.5 h of a job;
+after that, pause between batches while the GPU 5-min median is >= 83 C or it keeps throttling for > 60 s;
+resume at <= 75 C.  Hardware longevity beats speed.
+
+The 2.5 hours count from the start of the whole dub (``job_started`` in the stage config), not from the start of
+the speech stage.  The median is taken over the temperature samples of the last five minutes (one per block and
+one every few seconds during a pause).  There is no user-facing mode: the rule runs on its own.  A missing sensor
+never pauses the job.
 """
 from __future__ import annotations
 
 import os
+import statistics
 import subprocess
 import time
-from typing import Callable, Optional, Tuple
+from collections import deque
+from typing import Callable, Deque, Optional, Tuple
 
 FULL_SPEED_S = 2.5 * 3600
-HOT_C = 87.0
+#: pause while the median GPU temperature over MEDIAN_WINDOW_S is at or above HOT_C
+HOT_C = 83.0
+MEDIAN_WINDOW_S = 300.0
 COOL_C = 75.0
 THROTTLE_HOLD_S = 60.0
 MAX_PAUSE_S = 600.0
@@ -67,10 +75,13 @@ def read_nvidia() -> Sample:
 class Guard:
     """Tracks one job from its start and decides the pause between blocks."""
 
-    def __init__(self, now: Callable[[], float] = time.monotonic) -> None:
+    def __init__(self, now: Callable[[], float] = time.monotonic, started_ago_s: float = 0.0) -> None:
+        """``started_ago_s``: how long the dub has already been running when this stage starts (its full-speed window
+        is shared with the stages before)."""
         self._now = now
-        self.t0 = now()
+        self.t0 = now() - max(0.0, float(started_ago_s or 0.0))
         self.temp: Optional[float] = None
+        self._temps: Deque[Tuple[float, float]] = deque()
         self.power: Optional[float] = None
         self.mask = 0
         self._throttle_since: Optional[float] = None
@@ -84,11 +95,21 @@ class Guard:
         self.temp = None if temp_c is None else float(temp_c)
         self.power = None if power_w is None else float(power_w)
         self.mask = int(mask or 0)
+        if self.temp is not None:
+            self._temps.append((t, self.temp))
+        while self._temps and t - self._temps[0][0] > MEDIAN_WINDOW_S:
+            self._temps.popleft()
         if self.mask & THROTTLE_BITS:
             if self._throttle_since is None:
                 self._throttle_since = t
         else:
             self._throttle_since = None
+
+    def median_temp(self) -> Optional[float]:
+        """Median of the temperature samples of the last five minutes; None when there is none."""
+        if not self._temps:
+            return None
+        return float(statistics.median(v for _t, v in self._temps))
 
     def throttle_seconds(self, now: Optional[float] = None) -> float:
         if self._throttle_since is None:
@@ -97,11 +118,12 @@ class Guard:
         return max(0.0, t - self._throttle_since)
 
     def should_pause(self, now: Optional[float] = None) -> bool:
-        """True only after the full-speed window, and only for heat or a throttle that has lasted."""
+        """True only after the full-speed window, and only for a hot 5-min median or a throttle that has lasted."""
         t = self._now() if now is None else now
         if self.elapsed(t) < FULL_SPEED_S:
             return False
-        if self.temp is not None and self.temp >= HOT_C:
+        median = self.median_temp()
+        if median is not None and median >= HOT_C:
             return True
         return self.throttle_seconds(t) > THROTTLE_HOLD_S
 
@@ -124,7 +146,9 @@ class Guard:
             log(stage_telemetry_line(stage, self.temp, self.power, _mask_text(self.mask)))
         if not self.should_pause():
             return 0.0
-        log(f"{stage}: cooling pause (GPU {self.temp if self.temp is not None else '-'} C)")
+        median = self.median_temp()
+        log(f"{stage}: cooling pause (GPU {self.temp if self.temp is not None else '-'} C, "
+            f"5-min median {'-' if median is None else f'{median:.0f}'} C)")
         paused = 0.0
         while paused < MAX_PAUSE_S:
             sleep(PAUSE_STEP_S)
@@ -132,6 +156,7 @@ class Guard:
             temp, power, mask = sample()
             self.update(temp, power, mask)
             if self.cool_enough():
+                self._temps.clear()                    # a fresh median after the pause: the hot samples are history
                 log(f"{stage}: cooling pause ended after {paused:.0f} s")
                 return paused
         log(f"{stage}: cooling pause stopped after {paused:.0f} s")

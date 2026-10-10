@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -551,9 +552,11 @@ def make_tts(p: Project, cfg: Dict[str, Any], need_adapters: bool, emit: Emit):
         return tts_mod.QwenTTS(folder, p.settings["target_lang"], _device(cfg), cfg.get("tts_backend", "auto"), need_adapters,
                                lambda m: emit("log", text=m))
 
-    if resident.enabled():
-        return resident.slot("tts", MODEL_VRAM_GB.get(model_name, 5.0), build)
-    return build()
+    from dubber.infra import vram_tier
+
+    engine = resident.slot("tts", MODEL_VRAM_GB.get(model_name, 5.0), build) if resident.enabled() else build()
+    engine.batch_cap = vram_tier.batch_cap(str(cfg.get("vram_tier") or ""))      # the VRAM tier's cap on lines per call
+    return engine
 
 
 def _blocks(lines: List[Line], block_s: float) -> List[Tuple[float, List[Line]]]:
@@ -613,7 +616,8 @@ def st_tts(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
 
     from dubber.infra.thermal import Guard
 
-    guard = Guard()
+    started = float(cfg.get("job_started") or 0.0)
+    guard = Guard(started_ago_s=max(0.0, time.time() - started) if started else 0.0)
     blocks = _blocks(lines, BLOCK_S)
     for bi, (bend, blines) in enumerate(blocks):
         for ln in blines:

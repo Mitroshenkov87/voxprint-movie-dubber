@@ -28,6 +28,23 @@ def _combo(items, current: str) -> QComboBox:
     return c
 
 
+def _limit(c: QComboBox, allowed) -> None:
+    """Disable the items this card cannot run (VRAM tiers, dubber.infra.vram_tier); move off a disabled current item."""
+    model = c.model()
+    for i in range(c.count()):
+        if c.itemData(i) in allowed:
+            continue
+        item = model.item(i) if hasattr(model, "item") else None
+        if item is not None:
+            item.setEnabled(False)
+            item.setToolTip(tr("settings.unfit"))
+    if c.currentData() not in allowed:
+        for i in range(c.count()):
+            if c.itemData(i) in allowed:
+                c.setCurrentIndex(i)
+                break
+
+
 def _secret() -> QLineEdit:
     e = QLineEdit()
     e.setEchoMode(QLineEdit.EchoMode.Password)
@@ -66,6 +83,15 @@ class SettingsDialog(QDialog):
         self.cmb_sep = _combo([("tiger", "TIGER-DnR"), ("roformer", "Mel-Band RoFormer"), ("none", tr("settings.off"))], s["separation"])
         self.cmb_diar = _combo([("pyannote", "pyannote"), ("cluster", tr("settings.diar_simple"))], s["diarization"])
         self.cmb_tts = _combo([("tts_1_7b", "Qwen3-TTS 1.7B"), ("tts_0_6b", "Qwen3-TTS 0.6B")], s["tts_model"])
+        from dubber.infra import resources, vram_tier
+
+        vram = resources.snapshot(use_torch=False).vram_total_gb
+        detected = vram_tier.TIERS[vram_tier.detect(vram)].title
+        self.cmb_tier = _combo([(vram_tier.AUTO, tr("settings.vram_tier_auto").format(tier=detected))]
+                               + [(k, t.title) for k, t in vram_tier.TIERS.items()], str(s.get("vram_tier") or vram_tier.AUTO))
+        _limit(self.cmb_tier, [vram_tier.AUTO, *vram_tier.choices(vram)])
+        _limit(self.cmb_tts, vram_tier.tts_models(vram))
+        _limit(self.cmb_sep, vram_tier.separation_choices(vram))
         self.cmb_backend = _combo([("auto", tr("settings.auto")), ("standard/flash_attention_2", "FlashAttention 2"),
                                    ("graphs/sdpa", "CUDA Graphs"), ("standard/sdpa", "SDPA")], s["tts_backend"])
         self.cmb_device = _combo([("auto", tr("settings.auto")), ("cuda", "CUDA")], settings.device())
@@ -76,7 +102,8 @@ class SettingsDialog(QDialog):
             form.addRow(tr(label), w)
         form.addRow(tr("settings.models_dir"), row)
         for label, box in (("settings.separation", self.cmb_sep), ("settings.diarization", self.cmb_diar), ("settings.tts", self.cmb_tts),
-                           ("settings.backend", self.cmb_backend), ("settings.device", self.cmb_device)):
+                           ("settings.backend", self.cmb_backend), ("settings.device", self.cmb_device),
+                           ("settings.vram_tier", self.cmb_tier)):
             form.addRow(tr(label), box)
         form.addRow("", self.chk_download)
         lay.addLayout(form)
@@ -102,7 +129,7 @@ class SettingsDialog(QDialog):
                 "hf_token": self.edt_hf.text().strip(), "separation": self.cmb_sep.currentData(),
                 "diarization": self.cmb_diar.currentData(), "tts_model": self.cmb_tts.currentData(),
                 "tts_backend": self.cmb_backend.currentData(), "device": self.cmb_device.currentData(),
-                "allow_download": self.chk_download.isChecked()}
+                "allow_download": self.chk_download.isChecked(), "vram_tier": self.cmb_tier.currentData()}
 
     def accept(self) -> None:
         vals = self.values()

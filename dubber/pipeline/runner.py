@@ -55,6 +55,7 @@ class Runner:
         self._done_w = 0.0
         self._watch_written: set = set()
         self._gpu_cm: Any = None
+        self._t_start = 0.0
 
     # ------------------------------------------------------------------ public
     def run(self, until_stage: str = "mux", from_stage: Optional[str] = None) -> RunResult:
@@ -63,6 +64,7 @@ class Runner:
         prev = ""
         res = RunResult(True)
         t_start = time.time()
+        self._t_start = t_start
         try:
             return self._run_keys(keys, total_w, prev, res, t_start, from_stage)
         finally:
@@ -216,12 +218,23 @@ class Runner:
             from dubber import models
 
             lighter_ok = models.locate(models.SPECS["tts_0_6b"].repo) is not None
-        plan = resources.plan_stage(key, snap, device, self.cfg.get("tts_model", "tts_1_7b"), lighter_ok)
+        from dubber.infra import vram_tier
+
+        tier = vram_tier.resolve(snap.vram_total_gb, str(self.cfg.get("vram_tier") or vram_tier.AUTO))
+        preferred = str(self.cfg.get("tts_model", "tts_1_7b"))
+        tts_model = vram_tier.tts_model_for(snap.vram_total_gb, preferred) if snap.has_gpu else preferred
+        if key == "tts":
+            self.cb.log(vram_tier.describe(snap.vram_total_gb, str(self.cfg.get("vram_tier") or vram_tier.AUTO)))
+            if tts_model != preferred:
+                self.cb.log(f"tts: {preferred} does not fit this card with the VRAM headroom - using {tts_model}")
+        plan = resources.plan_stage(key, snap, device, tts_model, lighter_ok)
         if key in S.GPU:
             self.cb.log(f"{key}: {snap.describe()} -> {plan.device}" + (f", {plan.tts_model}" if key == "tts" else ""))
         for note in plan.notes:
             self.cb.log(note)
         cfg = dict(self.cfg)
+        cfg["job_started"] = self._t_start or time.time()      # the thermal rule's full-speed window counts from here
+        cfg["vram_tier"] = tier
         if key in S.GPU:
             cfg["device"] = plan.device
         if key == "tts" and plan.tts_model:

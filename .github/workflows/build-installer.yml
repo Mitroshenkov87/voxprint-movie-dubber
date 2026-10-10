@@ -1,11 +1,13 @@
-# Builds the small online installer of Voxprint AI Movie Dubber on a free GitHub-hosted Windows runner (no secrets are used),
-# installs it silently, checks the installed program, uninstalls it and publishes the installer as a workflow artifact.
-# A pushed tag "v*" additionally attaches the installer to a pre-release of this repository.
-# Runners have no GPU: /TORCH=cpu is the CI-only switch that installs the CPU build of PyTorch.
+# Builds both installers of Voxprint AI Movie Dubber on free GitHub-hosted Windows runners (no secrets are used):
+#   online: the small installer that downloads Python, PyTorch and the dependencies during setup;
+#   full:   the offline installer that carries them (installer/make-full-payload.ps1), split into parts below 2 GB.
+# Each one is installed silently, the installed program is checked and tested, then uninstalled; the installers are kept
+# as workflow artifacts. A pushed tag "v*" additionally publishes both on one pre-release, with their SHA-256 in the notes.
+# Runners have no GPU: /TORCH=cpu (online) and /SKIPGPUGATE=1 (full, keeps its cu130 build) are CI-only switches.
 # VOXPRINT_SKIP_GPU_GATE lets the window self-test open on that same runner.
 # The audit job runs first. The installer is not built when ruff, mypy, bandit (high), gitleaks, or an
 # un-allowlisted pip-audit high/critical finding fails that job. Vulture and radon do not fail it.
-name: Build online installer
+name: Build installers
 on:
   workflow_dispatch:
   push:
@@ -18,7 +20,11 @@ jobs:
   installer:
     needs: audit
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        kind: [online, full]
     env:
       PYTHONUTF8: "1"
       QT_QPA_PLATFORM: offscreen
@@ -44,7 +50,7 @@ jobs:
             built = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
             run = "${{ github.run_number }}"
             ref = "${{ github.ref_name }}"
-            flavour = "online installer"
+            flavour = "${{ matrix.kind }} installer"
           }
           [IO.File]::WriteAllText("$PWD\build_info.json", ($info | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
           Get-Content build_info.json
@@ -53,24 +59,59 @@ jobs:
         shell: pwsh
         run: choco install innosetup --no-progress -y
 
+      - uses: actions/setup-python@v7
+        if: matrix.kind == 'full'
+        with:
+          python-version: "3.14"
+
+      - name: Build the full installer's payload (uv, Python 3.14, wheels incl. PyTorch 2.11.0+cu130, ffmpeg)
+        if: matrix.kind == 'full'
+        shell: pwsh
+        run: |
+          Get-PSDrive -PSProvider FileSystem | Format-Table Name, @{n="free GB";e={[math]::Round($_.Free/1GB,1)}}
+          & installer\make-full-payload.ps1 -Out build\payload -Requirements requirements.txt -Constraints installer\runtime-constraints.txt `
+              -Lock dubber\infra\runtime_lock.json -Python (Get-Command python).Source -Flavor cu130
+
       - name: Compile the installer
         shell: pwsh
         run: |
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { $iscc = "$env:ProgramFiles\Inno Setup 6\ISCC.exe" }
-          & $iscc installer\VoxprintMovieDubber.iss
-          if ($LASTEXITCODE -ne 0) { throw "ISCC failed ($LASTEXITCODE)" }
-          $setup = Get-Item installer\Output\VoxprintMovieDubber-Setup.exe
-          "installer size: {0:N2} MB" -f ($setup.Length / 1MB)
-          if ($setup.Length -gt 50MB) { throw "the online installer must stay small" }
-          $h = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
-          "$h  VoxprintMovieDubber-Setup.exe" | Out-File -Encoding ascii installer\Output\VoxprintMovieDubber-Setup.exe.sha256
+          if ("${{ matrix.kind }}" -eq "full") {
+            & $iscc /DFull installer\VoxprintMovieDubber.iss
+            if ($LASTEXITCODE -ne 0) { throw "ISCC failed ($LASTEXITCODE)" }
+            $parts = @(Get-ChildItem installer\Output -File | Where-Object { $_.Name -like "VoxprintMovieDubber-Full-Setup*" } | Sort-Object Name)
+            $sums = @()
+            foreach ($f in $parts) {
+              "{0}: {1:N2} MB" -f $f.Name, ($f.Length / 1MB)
+              if ($f.Length -ge 2000000000) { throw "$($f.Name) is over the 2 GB GitHub release asset limit" }
+              $sums += "$((Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower())  $($f.Name)"
+            }
+            if ($parts.Count -lt 2) { throw "expected the setup .exe and at least one .bin part" }
+            $sums | Out-File -Encoding ascii installer\Output\VoxprintMovieDubber-Full-Setup.sha256
+            Remove-Item build\payload -Recurse -Force          # disk space for the install test
+          } else {
+            & $iscc installer\VoxprintMovieDubber.iss
+            if ($LASTEXITCODE -ne 0) { throw "ISCC failed ($LASTEXITCODE)" }
+            $setup = Get-Item installer\Output\VoxprintMovieDubber-Setup.exe
+            "installer size: {0:N2} MB" -f ($setup.Length / 1MB)
+            if ($setup.Length -gt 50MB) { throw "the online installer must stay small" }
+            $h = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
+            "$h  VoxprintMovieDubber-Setup.exe" | Out-File -Encoding ascii installer\Output\VoxprintMovieDubber-Setup.exe.sha256
+          }
+          Get-Content installer\Output\*.sha256
 
-      - name: Silent install (downloads Python, PyTorch CPU build and dependencies)
+      - name: Silent install (online - CPU PyTorch build downloaded; full - cu130 runtime from the installer, no download)
         shell: pwsh
         run: |
-          $setup = (Resolve-Path installer\Output\VoxprintMovieDubber-Setup.exe).Path
-          $p = Start-Process $setup -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/DIR=C:\vmd","/TORCH=cpu",'/TASKS=""',"/LOG=C:\vmd-install.log" -Wait -PassThru
+          if ("${{ matrix.kind }}" -eq "full") {
+            $setup = (Resolve-Path installer\Output\VoxprintMovieDubber-Full-Setup.exe).Path
+            $ci = "/SKIPGPUGATE=1"
+          } else {
+            $setup = (Resolve-Path installer\Output\VoxprintMovieDubber-Setup.exe).Path
+            $ci = "/TORCH=cpu"
+          }
+          $p = Start-Process $setup -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/DIR=C:\vmd",$ci,'/TASKS=""',"/LOG=C:\vmd-install.log" -Wait -PassThru
           "install exit code: $($p.ExitCode)"
           if ($p.ExitCode -ne 0) {
             if (Test-Path C:\vmd-install.log) { Get-Content C:\vmd-install.log -Tail 80 }
@@ -98,6 +139,11 @@ jobs:
           if (-not ((Get-Content "$($rt.FullName)\.users.json" -Raw | ConvertFrom-Json).'movie-dubber')) { throw "movie-dubber is not registered in the runtime users file" }
           & C:\vmd\runtime\Scripts\python.exe -c "import torch; print('torch', torch.__version__); assert torch.__version__.startswith('2.11.0')"
           if ($LASTEXITCODE -ne 0) { throw "the runtime does not have the pinned PyTorch 2.11.0" }
+          if ("${{ matrix.kind }}" -eq "full") {
+            & C:\vmd\runtime\Scripts\python.exe -c "import torch; print('torch', torch.__version__); assert torch.__version__.endswith('+cu130')"
+            if ($LASTEXITCODE -ne 0) { throw "the full installer did not install the cu130 build" }
+            if (Select-String -Path "$env:TEMP\VoxprintMovieDubber-setup.log" -Pattern "Downloading uv|Downloading ffmpeg" -Quiet) { throw "the full installer downloaded components" }
+          }
           $suite = "$env:LOCALAPPDATA\Voxprint\state\suite.json"
           if (-not (Test-Path $suite)) { throw "suite.json was not written" }
           "suite.json: " + (Get-Content $suite -Raw)
@@ -193,44 +239,60 @@ jobs:
       - name: Upload the installer
         uses: actions/upload-artifact@v4
         with:
-          name: VoxprintMovieDubber-Setup
+          name: ${{ matrix.kind == 'full' && 'VoxprintMovieDubber-Full-Setup' || 'VoxprintMovieDubber-Setup' }}
           path: |
-            installer/Output/VoxprintMovieDubber-Setup.exe
-            installer/Output/VoxprintMovieDubber-Setup.exe.sha256
+            installer/Output/*.exe
+            installer/Output/*.bin
+            installer/Output/*.sha256
+          if-no-files-found: error
           compression-level: 0
-          retention-days: 30
+          retention-days: ${{ matrix.kind == 'full' && 7 || 30 }}
 
       - name: Upload the diagnostics report and logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ci-report-and-logs
+          name: ci-report-and-logs-${{ matrix.kind }}
           path: |
             ci-report/*.txt
             ci-logs/*
           if-no-files-found: ignore
           retention-days: 14
 
-      - name: Publish a pre-release (tags only)
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: pwsh
+  release:
+    needs: installer
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish the pre-release (both installers, SHA-256 in the notes)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "${{ github.ref_name }}"
-          $notesFile = "docs/release-notes/$tag.md"
-          if (-not (Test-Path $notesFile)) {
-            $notesFile = "release-notes.md"
-            "Early pre-release of Voxprint AI Movie Dubber. Small online installer: it downloads Python, PyTorch and the other dependencies during the setup. Windows 10/11 x64; an NVIDIA GPU is needed for useful speed." | Out-File -Encoding utf8 $notesFile
-          }
-          # the built commit goes at the end of the notes
-          $notes = (Get-Content -Raw -Encoding utf8 $notesFile).TrimEnd() + "`n`nBuilt from commit ${{ github.sha }} (workflow run ${{ github.run_number }})."
-          $notesFile = "$PWD\release-notes-final.md"
-          [IO.File]::WriteAllText($notesFile, $notes, (New-Object Text.UTF8Encoding $false))
-          # the title has a non-ASCII middle dot: read Python's UTF-8 output as UTF-8, not the OEM code page
-          [Console]::OutputEncoding = New-Object Text.UTF8Encoding $false
-          # read the title from the checkout (installed copy is uninstalled by now); stay in the checkout so gh finds the repo and the files
-          $title = & python -c "from dubber.appinfo import release_title; print(release_title())"
-          "release title: $title"
-          if (-not $title) { throw "release title was empty" }
-          gh release create "$tag" --prerelease --title "$title" --verify-tag --notes-file "$notesFile" installer/Output/VoxprintMovieDubber-Setup.exe installer/Output/VoxprintMovieDubber-Setup.exe.sha256
+          set -euo pipefail
+          tag="${{ github.ref_name }}"
+          ls -l dist
+          notes="docs/release-notes/$tag.md"
+          if [ ! -f "$notes" ]; then
+            echo "Pre-release of Voxprint AI Movie Dubber. Windows 11 24H2 or newer; NVIDIA GeForce RTX 40-series or newer with a 600+ driver." > /tmp/notes.md
+          else
+            cp "$notes" /tmp/notes.md
+          fi
+          sed -i 's/\r$//' dist/*.sha256            # written by PowerShell with CRLF
+          (cd dist && sha256sum -c *.sha256)
+          {
+            printf '\n\n## Files and SHA-256\n\n| File | Size | SHA-256 |\n| --- | --- | --- |\n'
+            for f in $(cd dist && ls *.exe *.bin | sort); do
+              printf '| `%s` | %s bytes | `%s` |\n' "$f" "$(stat -c %s "dist/$f")" "$(sha256sum "dist/$f" | cut -d' ' -f1)"
+            done
+            printf '\nBuilt from commit %s (workflow run %s).\n' "${{ github.sha }}" "${{ github.run_number }}"
+          } >> /tmp/notes.md
+          title=$(python3 -c "from dubber.appinfo import release_title; print(release_title())")
+          echo "release title: $title"
+          test -n "$title"
+          gh release create "$tag" --prerelease --title "$title" --verify-tag --notes-file /tmp/notes.md dist/*.exe dist/*.bin dist/*.sha256

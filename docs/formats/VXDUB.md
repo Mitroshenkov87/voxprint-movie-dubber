@@ -36,7 +36,7 @@ A reader refuses `schema` greater than 1.
 ```json
 {
   "schema": 1,
-  "app": {"id": "movie-dubber", "version": "1.0.0-rc", "build": 999},
+  "app": {"id": "movie-dubber", "version": "1.0.0-rc", "build": 1000},
   "created": "2026-10-10T09:14:00Z",
   "modified": "2026-10-10T09:14:00Z",
   "source": {

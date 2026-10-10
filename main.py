@@ -1,4 +1,4 @@
-"""Voxprint AI Movie Dubber - entry point.
+r"""Voxprint AI Movie Dubber - entry point.
 
     main.py                       start the window
     main.py PROJECT.vxdub         start the window and open that dubbing project
@@ -185,7 +185,13 @@ def _fetch_models(argv) -> int:
     from dubber import models
 
     spec = _arg(argv, "--models", "")
-    keys = [k for k in spec.split(",") if k] or list(models.INSTALL_MODELS)
+    keys = [k for k in spec.split(",") if k]
+    if not keys:
+        from dubber.infra import resources, vram_tier
+
+        vram = resources.snapshot(use_torch=False).vram_total_gb
+        keys = vram_tier.install_models(vram, models.INSTALL_MODELS)      # a TTS model this card can run
+        print(vram_tier.describe(vram), flush=True)
     unknown = [k for k in keys if k not in models.SPECS]
     if unknown:
         print(f"Unknown model key(s): {', '.join(unknown)}.  Known: {', '.join(models.SPECS)}", flush=True)

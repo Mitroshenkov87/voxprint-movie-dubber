@@ -15,6 +15,8 @@ DEFAULTS: Dict[str, Any] = {
     "subdl_key": "", "opensubtitles_key": "", "opensubtitles_user": "", "opensubtitles_password": "", "hf_token": "",
     "separation": "tiger", "asr": "whisper", "diarization": "pyannote", "translation": "opus", "tts": "qwen",
     "tts_model": "tts_1_7b", "tts_backend": "auto", "device": "auto", "allow_download": True,
+    # VRAM tier (dubber.infra.vram_tier): "auto" picks it from the card; the advanced override can only pick a tier the card supports
+    "vram_tier": "auto",
     "output_format": "mkv", "projects_dir": "",
     # the Film screen's Options, remembered for the next film (a film's own project keeps what was used for it)
     "dub_target_lang": "", "dub_subtitles": "auto", "dub_profanity": "keep", "dub_multi_voice": False, "dub_original_volume": 0.15,
@@ -23,7 +25,7 @@ DEFAULTS: Dict[str, Any] = {
 #: keys of the Film screen's Options -> project setting they preset
 DUB_DEFAULTS = {"dub_target_lang": "target_lang", "dub_subtitles": "subtitle_choice", "dub_profanity": "profanity",
                 "dub_multi_voice": "multi_voice", "dub_original_volume": "original_volume", "output_format": "output_format"}
-ENGINE_KEYS = ("separation", "asr", "diarization", "translation", "tts", "tts_model", "tts_backend", "device", "allow_download",
+ENGINE_KEYS = ("separation", "asr", "diarization", "translation", "tts", "tts_model", "tts_backend", "device", "allow_download", "vram_tier",
                "subdl_key", "opensubtitles_key", "opensubtitles_user", "opensubtitles_password", "hf_token")
 
 

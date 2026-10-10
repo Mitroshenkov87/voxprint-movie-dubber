@@ -1,5 +1,10 @@
-﻿; Voxprint AI Movie Dubber - ONLINE installer (Inno Setup 6.x).
-;   ISCC installer\VoxprintMovieDubber.iss   ->   installer\Output\VoxprintMovieDubber-Setup.exe
+﻿; Voxprint AI Movie Dubber - ONLINE and FULL installers (Inno Setup 6.x).
+;   ISCC installer\VoxprintMovieDubber.iss                 ->   installer\Output\VoxprintMovieDubber-Setup.exe (online)
+;   ISCC /DFull installer\VoxprintMovieDubber.iss          ->   installer\Output\VoxprintMovieDubber-Full-Setup.exe + -N.bin parts
+;   The full (offline) build carries the payload made by installer\make-full-payload.ps1 (default folder build\payload, or
+;   /DPayloadDir=<folder>): uv, the Python 3.14 build, every wheel incl. PyTorch 2.11.0+cu130, and the LGPL ffmpeg.  The setup
+;   then downloads nothing except the optional AI models.  It is split into parts below 2 GB (GitHub release asset limit);
+;   keep all parts in one folder and start the .exe.
 ;
 ; The installer is small: it contains only the program's own files (Python sources, icon, licences) and a download script.
 ; While it installs, install-runtime.ps1 installs (or reuses, on an exact match of the pinned versions) the shared runtime
@@ -14,6 +19,7 @@
 ; Command-line switches of the setup program:
 ;   /TORCH=auto|cu130         PyTorch flavor (default auto = cu130 when the GPU passes the gate)
 ;   /TORCH=cpu                CI only: CPU build for a GPU-less test runner. Not offered to users.
+;   /SKIPGPUGATE=1            CI only, full installer only: install the cu130 runtime on a GPU-less test runner. Not offered to users.
 ;   /TASKS=""                do not download the AI models during the setup (they are downloaded when first needed)
 ;   /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=<folder>    unattended install
 
@@ -64,6 +70,17 @@
 #if AppCodename != ""
   #define VersionLabel VersionLabel + " " + Q + AppCodename + Q
 #endif
+#ifdef Full
+  #ifndef PayloadDir
+    #define PayloadDir AddBackslash(SourcePath) + "..\build\payload"
+  #endif
+  #if FileExists(AddBackslash(PayloadDir) + "payload.json") == 0
+    #error the full installer needs the payload (installer\make-full-payload.ps1); payload.json was not found
+  #endif
+  #define SetupBaseName "VoxprintMovieDubber-Full-Setup"
+#else
+  #define SetupBaseName "VoxprintMovieDubber-Setup"
+#endif
 #define PyW "{app}\runtime\Scripts\pythonw.exe"
 #define Py "{app}\runtime\Scripts\python.exe"
 
@@ -84,9 +101,17 @@ UninstallDisplayName={#AppDisplayName}
 UninstallDisplayIcon={app}\assets\voxprint-dubber.ico
 SetupIconFile=..\assets\voxprint-dubber-setup.ico
 OutputDir=Output
-OutputBaseFilename=VoxprintMovieDubber-Setup
+OutputBaseFilename={#SetupBaseName}
+#ifdef Full
+; the payload is already compressed (wheels, tar.gz, zip): stored as is, in parts below the 2 GB GitHub asset limit
+Compression=lzma2/fast
+SolidCompression=no
+DiskSpanning=yes
+DiskSliceSize=1900000000
+#else
 Compression=lzma2/max
 SolidCompression=yes
+#endif
 WizardStyle=modern
 LicenseFile=..\LICENSE
 PrivilegesRequired=admin
@@ -116,6 +141,13 @@ Source: "install-runtime.ps1"; DestDir: "{tmp}"; Flags: dontcopy
 Source: "..\requirements.txt"; DestDir: "{tmp}"; Flags: dontcopy
 Source: "runtime-constraints.txt"; DestDir: "{tmp}"; Flags: dontcopy
 Source: "..\dubber\infra\runtime_lock.json"; DestDir: "{tmp}"; Flags: dontcopy
+#ifdef Full
+Source: "{#PayloadDir}\payload.json"; DestDir: "{tmp}\payload"; Flags: dontcopy
+Source: "{#PayloadDir}\uv\*"; DestDir: "{tmp}\payload\uv"; Flags: dontcopy nocompression
+Source: "{#PayloadDir}\python\*"; DestDir: "{tmp}\payload\python"; Flags: dontcopy nocompression
+Source: "{#PayloadDir}\wheels\*"; DestDir: "{tmp}\payload\wheels"; Flags: dontcopy nocompression
+Source: "{#PayloadDir}\ffmpeg\*"; DestDir: "{tmp}\payload\ffmpeg"; Flags: dontcopy nocompression
+#endif
 ; the program
 Source: "..\main.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\requirements.txt"; DestDir: "{app}"; Flags: ignoreversion
@@ -195,11 +227,24 @@ begin
             '" -Requirements "' + Req + '" -Constraints "' + ExpandConstant('{tmp}\runtime-constraints.txt') +
             '" -Lock "' + ExpandConstant('{tmp}\runtime_lock.json') +
             '" -Backend "' + CmdParam('TORCH', 'auto') + '" -HardwareFile "' + HwFile + '" -Log "' + LogFile + '"';
+#ifdef Full
+  Params := Params + ' -Payload "' + ExpandConstant('{tmp}\payload') + '"';
+  if CmdParam('SKIPGPUGATE', '') = '1' then
+    Params := Params + ' -SkipGpuGate';
+#endif
   if WizardSilent then Show := SW_HIDE else Show := SW_SHOWNORMAL;   { the console shows the download progress }
   Page := CreateOutputMarqueeProgressPage('Installing', CustomMessage('RuntimeStatus'));
   Page.Show;
   try
     Page.Animate;
+#ifdef Full
+    { the payload (several GB) is unpacked from the setup parts first }
+    ExtractTemporaryFiles('{tmp}\payload\payload.json');
+    ExtractTemporaryFiles('{tmp}\payload\uv\*');
+    ExtractTemporaryFiles('{tmp}\payload\python\*');
+    ExtractTemporaryFiles('{tmp}\payload\wheels\*');
+    ExtractTemporaryFiles('{tmp}\payload\ffmpeg\*');
+#endif
     if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), Params, '', Show, ewWaitUntilTerminated, Rc) then
       Rc := -1;
   finally
