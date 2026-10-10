@@ -12,14 +12,14 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_version_label_quotes_hineni_and_omits_an_empty_codename():
+def test_version_label_quotes_the_codename_and_omits_an_empty_one():
     from dubber.appinfo import APP_BUILD, APP_VERSION, CODENAME, format_version, release_title, version_label
 
-    assert APP_VERSION == "1.0.0-rc" and APP_BUILD == 999 and CODENAME == "Hineni"
-    assert version_label() == '1.0.0 RC · build 999 "Hineni"'
-    assert format_version(codename="") == "1.0.0 RC · build 999"
-    assert format_version(codename="  ") == "1.0.0 RC · build 999"
-    assert release_title() == 'Voxprint AI Movie Dubber 1.0.0 RC · build 999 "Hineni"'
+    assert APP_VERSION == "1.0.0-rc" and APP_BUILD == 1000 and CODENAME == "Chazak"
+    assert version_label() == '1.0.0 RC · build 1000 "Chazak"'
+    assert format_version(codename="") == "1.0.0 RC · build 1000"
+    assert format_version(codename="  ") == "1.0.0 RC · build 1000"
+    assert release_title() == 'Voxprint AI Movie Dubber 1.0.0 RC · build 1000 "Chazak"'
 
 
 def test_installer_reads_appinfo_and_docs_state_the_codename_rule():
@@ -28,9 +28,9 @@ def test_installer_reads_appinfo_and_docs_state_the_codename_rule():
     assert '#define AppVersion "0.1.0-pre' not in iss
     assert "VersionLabel" in iss and "VersionInfoProductTextVersion" in iss
     building = (ROOT / "docs" / "BUILDING.md").read_text(encoding="utf-8")
-    assert "Hineni" in building and "Biblical Hebrew" in building and "not a theme" in building
+    assert "Chazak" in building and "Biblical Hebrew" in building and "not a theme" in building
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert "Windows 11 24H2" in readme and "2025" in readme and "Hineni" in readme
+    assert "Windows 11 24H2" in readme and "2025" in readme and "Chazak" in readme
     yml = (ROOT / ".github" / "workflows" / "build-installer.yml").read_text(encoding="utf-8")
     assert "release_title" in yml
     note = (ROOT / "dubber" / "assets" / "README.md").read_text(encoding="utf-8")
@@ -286,8 +286,11 @@ def test_prefetch_overlap_runs_beside_the_gpu_work():
 
 
 def test_thermal_full_speed_then_pause_and_resume():
-    from dubber.infra.thermal import COOL_C, FULL_SPEED_S, HOT_C, MAX_PAUSE_S, THROTTLE_BITS, THROTTLE_HOLD_S, Guard, stage_telemetry_line, telemetry_from_summary
+    from dubber.infra.thermal import (COOL_C, FULL_SPEED_S, HOT_C, MAX_PAUSE_S, MEDIAN_WINDOW_S, THROTTLE_BITS, THROTTLE_HOLD_S,
+                                      Guard, stage_telemetry_line, telemetry_from_summary)
 
+    # the suite rule (project-notes suite/COLLABORATION.md, section 3)
+    assert (FULL_SPEED_S, HOT_C, MEDIAN_WINDOW_S, THROTTLE_HOLD_S, COOL_C) == (2.5 * 3600, 83.0, 300.0, 60.0, 75.0)
     assert stage_telemetry_line("asr", 70, 120, "none") == "asr: GPU temperature 70 C, power 120 W, throttle none"
     assert telemetry_from_summary("asr", {}) == ""
     line = telemetry_from_summary("asr", {"n": 2, "temp_max_c": 81, "power_max_w": 140, "throttle": "HW thermal slowdown"})
@@ -295,14 +298,24 @@ def test_thermal_full_speed_then_pause_and_resume():
 
     clock = {"t": 0.0}
     guard = Guard(now=lambda: clock["t"])
+    guard.update(HOT_C + 5, 200, 0)
+    assert not guard.should_pause()                       # full speed for the first 2.5 hours, however hot
+    clock["t"] = FULL_SPEED_S + 400                       # the early sample has left the 5-minute window
     guard.update(HOT_C, 200, 0)
-    assert not guard.should_pause()
-    clock["t"] = FULL_SPEED_S + 1
-    guard.update(HOT_C, 200, 0)
-    assert guard.should_pause()
+    assert guard.median_temp() == HOT_C and guard.should_pause()
     guard.update(COOL_C, 100, 0)
     assert guard.cool_enough()
 
+    # one hot spike among cool samples does not pause: it is the 5-min median that counts
+    spiky = Guard(now=lambda: clock["t"], started_ago_s=FULL_SPEED_S + 1)
+    for temp in (78.0, 79.0, 95.0):
+        spiky.update(temp, 150, 0)
+    assert spiky.median_temp() == 79.0 and not spiky.should_pause()
+    spiky.update(90.0, 150, 0)
+    assert spiky.median_temp() == pytest.approx(84.5) and spiky.should_pause()
+
+    guard.update(70, 100, THROTTLE_BITS)
+    guard._temps.clear()
     guard.update(70, 100, THROTTLE_BITS)
     assert not guard.should_pause()
     clock["t"] += THROTTLE_HOLD_S + 1
@@ -312,6 +325,11 @@ def test_thermal_full_speed_then_pause_and_resume():
     quiet.update(None, None, 0)
     assert not quiet.should_pause()
 
+    # the full-speed window counts from the start of the dub, not of the speech stage
+    late = Guard(now=lambda: 0.0, started_ago_s=FULL_SPEED_S + 1)
+    late.update(HOT_C + 1, 200, 0)
+    assert late.should_pause()
+
     paused = {"n": 0.0}
 
     def sleep(step: float) -> None:
@@ -319,11 +337,16 @@ def test_thermal_full_speed_then_pause_and_resume():
         clock["t"] += step
 
     hot = Guard(now=lambda: clock["t"])
-    clock["t"] = 0.0
     hot.t0 = 0.0
     clock["t"] = FULL_SPEED_S + 5
     spent = hot.pause_after_block(sample=lambda: (90.0, 220.0, 0), sleep=sleep, log=lambda _m: None)
     assert spent == pytest.approx(MAX_PAUSE_S)
+
+    temps = iter([88.0] + [80.0] * 3 + [74.0] * 10)
+    cooled = Guard(now=lambda: clock["t"])
+    cooled.t0 = clock["t"] - FULL_SPEED_S - 1
+    spent = cooled.pause_after_block(sample=lambda: (next(temps), 200.0, 0), sleep=sleep, log=lambda _m: None)
+    assert 0 < spent < MAX_PAUSE_S and cooled.median_temp() is None     # resumed at <= 75 C with a fresh median
 
 
 def test_dialogue_groups_batch_only_long_lines():

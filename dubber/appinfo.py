@@ -4,8 +4,9 @@
 (``installer/VoxprintMovieDubber.iss``), the About line, diagnostics and the GitHub release title all read them from here.
 
 A codename is one Biblical Hebrew word in ASCII transliteration.  It describes the state of that build (readiness, a
-milestone), not a theme of the product.  It is shown only when it is not empty.  Build 999 is ``Hineni`` (Genesis 22:1,
-"here I am": readiness).
+milestone), not a theme of the product.  It is shown only when it is not empty.  Build 999 was ``Hineni`` (Genesis 22:1,
+"here I am": readiness).  Build 1000 is ``Chazak`` (Joshua 1:9, "be strong": steady and resolved before the first test
+on real hardware).
 """
 from __future__ import annotations
 
@@ -18,12 +19,12 @@ from typing import Any, Dict
 APP_NAME = "VoxprintMovieDubber"            # technical name: folders, exe, logs - never localised
 APP_DISPLAY_NAME = "Voxprint AI Movie Dubber"
 APP_VERSION = "1.0.0-rc"
-APP_BUILD = 999
-CODENAME = "Hineni"
+APP_BUILD = 1000
+CODENAME = "Chazak"
 
 
 def format_version(version: str = APP_VERSION, build: int = APP_BUILD, codename: str = CODENAME) -> str:
-    """Human version, e.g. ``1.0.0 RC · build 999 "Hineni"``.  The codename is omitted when it is empty."""
+    """Human version, e.g. ``1.0.0 RC · build 1000 "Chazak"``.  The codename is omitted when it is empty."""
     pretty = version[:-3] + " RC" if version.endswith("-rc") else version
     label = f"{pretty} · build {int(build)}"
     name = (codename or "").strip()
@@ -38,7 +39,7 @@ def version_label() -> str:
 
 
 def release_title() -> str:
-    """GitHub release title, e.g. ``Voxprint AI Movie Dubber 1.0.0 RC · build 999 "Hineni"``."""
+    """GitHub release title, e.g. ``Voxprint AI Movie Dubber 1.0.0 RC · build 1000 "Chazak"``."""
     return f"{APP_DISPLAY_NAME} {version_label()}"
 
 
@@ -58,7 +59,7 @@ def build_info() -> Dict[str, Any]:
 
 
 def version_line() -> str:
-    """One line for About and the diagnostics header, e.g. ``1.0.0 RC · build 999 "Hineni" (commit abc, run from source)``."""
+    """One line for About and the diagnostics header, e.g. ``1.0.0 RC · build 1000 "Chazak" (commit abc, run from source)``."""
     bi = build_info()
     parts = []
     if bi.get("commit"):
