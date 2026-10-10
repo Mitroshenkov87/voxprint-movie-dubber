@@ -1,0 +1,127 @@
+# Linux package of Voxprint AI Movie Dubber: a tar.gz of the program with install.sh (installer/linux/).
+# The job packs the tarball, installs it on a GPU-less runner with --skip-gpu-check (CI only), then runs
+# `voxprint-movie-dubber --dry-run --json` and checks the JSON: exit 3 (no GPU), the build number and codename
+# from BUILD.json, Python 3.14 and torch 2.11.0+cu130. The installer workflow calls this job and publishes the tarball.
+name: linux
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Write the build stamp (build_info.json)
+        run: |
+          set -euo pipefail
+          # Same formula as dubber.appinfo.resolve_build: GITHUB_RUN_NUMBER + BUILD.json offset.
+          python3 - <<'PY'
+          import datetime, json, os
+          spec = json.load(open("BUILD.json", encoding="utf-8"))
+          codename = str(spec.get("codename") or "").strip()
+          assert codename, "BUILD.json has no codename"
+          build = int(os.environ["GITHUB_RUN_NUMBER"]) + int(spec["offset"])
+          if os.environ["GITHUB_REF"].startswith("refs/tags/") and build < 1001:
+              raise SystemExit(f"build {build} is below 1001")
+          info = {
+              "commit": os.environ["GITHUB_SHA"][:7],
+              "built": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "run": os.environ["GITHUB_RUN_NUMBER"],
+              "build": build,
+              "codename": codename,
+              "ref": os.environ["GITHUB_REF_NAME"],
+              "flavour": "linux tarball",
+          }
+          open("build_info.json", "w", encoding="utf-8").write(json.dumps(info, indent=2) + "\n")
+          print(json.dumps(info, indent=2))
+          PY
+
+      - name: Pack the tarball
+        run: installer/linux/build-tarball.sh
+
+      - name: Install it (--skip-gpu-check, CI only)
+        run: |
+          set -euo pipefail
+          df -h "$HOME" | tail -1
+          mkdir -p /tmp/unpack
+          tar -C /tmp/unpack -xzf dist/VoxprintMovieDubber-Linux-x86_64.tar.gz
+          /tmp/unpack/VoxprintMovieDubber-Linux-x86_64/install.sh --skip-gpu-check
+          df -h "$HOME" | tail -1
+
+      - name: Check the installation (launcher, menu entry, .vxdub type)
+        run: |
+          set -euo pipefail
+          d="$HOME/.local/share"
+          for f in "$HOME/.local/bin/voxprint-movie-dubber" "$d/applications/voxprint-movie-dubber.desktop" \
+                   "$d/mime/packages/voxprint-movie-dubber.xml" "$d/icons/hicolor/256x256/apps/voxprint-movie-dubber.png" \
+                   "$d/icons/hicolor/256x256/mimetypes/application-vnd.voxprint.dub+zip.png" \
+                   "$d/voxprint-movie-dubber/app/main.py" "$d/voxprint-movie-dubber/app/build_info.json"; do
+            test -e "$f" || { echo "missing: $f"; exit 1; }
+          done
+          test -x "$HOME/.local/bin/voxprint-movie-dubber"
+          grep -q 'MimeType=application/vnd.voxprint.dub+zip;' "$d/applications/voxprint-movie-dubber.desktop"
+          grep -q 'glob pattern="\*.vxdub"' "$d/mime/packages/voxprint-movie-dubber.xml"
+          if command -v desktop-file-validate >/dev/null; then desktop-file-validate "$d/applications/voxprint-movie-dubber.desktop"; fi
+          echo "installation OK"
+
+      - name: voxprint-movie-dubber --dry-run --json
+        run: |
+          set -euo pipefail
+          code=0
+          "$HOME/.local/bin/voxprint-movie-dubber" --dry-run --json > dry-run.json 2> dry-run.err || code=$?
+          echo "exit code: $code"
+          cat dry-run.err
+          python3 - "$code" <<'PY'
+          import json, sys
+          code = int(sys.argv[1])
+          out = json.load(open("dry-run.json", encoding="utf-8"))
+          stamp = json.load(open("build_info.json", encoding="utf-8"))
+          print(json.dumps({k: out.get(k) for k in ("ok", "exit_code", "command", "dry_run", "label", "build", "codename", "runtime")}, indent=2))
+          print("gpu:", json.dumps(out.get("gpu")))
+          problems = []
+          def need(cond, what):
+              if not cond:
+                  problems.append(what)
+          for key in ("ok", "exit_code", "command", "dry_run", "version", "label", "build", "codename", "gpu", "models"):
+              need(key in out, f"missing key {key}")
+          need(out.get("command") == "dry-run" and out.get("dry_run") is True, "not a dry-run object")
+          # GitHub runners have no GPU: the documented result is exit 3 with gpu.ok false.
+          need(code == 3 and out.get("exit_code") == 3, f"exit code {code} / {out.get('exit_code')}, expected 3 (no GPU)")
+          need(out.get("ok") is False and out.get("gpu", {}).get("ok") is False, "gpu.ok should be false on a GPU-less runner")
+          need(out.get("build") == stamp["build"], f"build {out.get('build')} != stamp {stamp['build']}")
+          need(out.get("codename") == stamp["codename"], f"codename {out.get('codename')} != {stamp['codename']}")
+          need(f'build {stamp["build"]} "{stamp["codename"]}"' in str(out.get("label")), f"label {out.get('label')!r}")
+          rt = out.get("runtime", {})
+          need(str(rt.get("python", "")).startswith("3.14."), f"python {rt.get('python')}")
+          need(rt.get("torch") == "2.11.0+cu130", f"torch {rt.get('torch')}")
+          need(isinstance(out.get("models"), list) and out["models"], "no models listed")
+          if problems:
+              raise SystemExit("dry-run JSON check failed:\n- " + "\n- ".join(problems))
+          print("dry-run JSON OK")
+          PY
+
+      - name: Uninstall
+        run: |
+          set -euo pipefail
+          /tmp/unpack/VoxprintMovieDubber-Linux-x86_64/install.sh --uninstall
+          test ! -e "$HOME/.local/bin/voxprint-movie-dubber"
+          test ! -e "$HOME/.local/share/voxprint-movie-dubber"
+          test ! -e "$HOME/.local/share/applications/voxprint-movie-dubber.desktop"
+          echo "uninstall OK"
+
+      - name: Upload the tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoxprintMovieDubber-Linux-x86_64
+          path: |
+            dist/VoxprintMovieDubber-Linux-x86_64.tar.gz
+            dist/VoxprintMovieDubber-Linux-x86_64.tar.gz.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14

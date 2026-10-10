@@ -2,7 +2,9 @@
 #   online: the small installer that downloads Python, PyTorch and the dependencies during setup;
 #   full:   the offline installer that carries them (installer/make-full-payload.ps1), split into parts below 2 GB.
 # Each one is installed silently, the installed program is checked and tested, then uninstalled; the installers are kept
-# as workflow artifacts. A pushed tag "v*" additionally publishes both on one pre-release, with their SHA-256 in the notes.
+# as workflow artifacts. The linux job (linux.yml) packs the Linux tarball, installs it and checks --dry-run --json.
+# A pushed tag "v*" additionally publishes all of them on one pre-release, with their SHA-256 in the notes.
+# An RC tag must be v<APP_VERSION>.<build>, the build being this run's number + the BUILD.json offset.
 # Runners have no GPU: /TORCH=cpu (online) and /SKIPGPUGATE=1 (full, keeps its cu130 build) are CI-only switches.
 # VOXPRINT_SKIP_GPU_GATE lets the window self-test open on that same runner.
 # The audit job runs first. The installer is not built when ruff, mypy, bandit (high), gitleaks, or an
@@ -17,6 +19,9 @@ permissions:
 jobs:
   audit:
     uses: ./.github/workflows/audit.yml
+  linux:
+    needs: audit
+    uses: ./.github/workflows/linux.yml
   installer:
     needs: audit
     runs-on: windows-latest
@@ -40,6 +45,11 @@ jobs:
           if ($tag -notmatch '^v\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$') { throw "not a release tag: '$tag' (expected v<major>.<minor>.<patch>[-label])" }
           $ver = (Select-String -Path dubber\appinfo.py -Pattern '^APP_VERSION\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
           if (-not $tag.StartsWith("v$ver")) { throw "tag $tag does not match APP_VERSION $ver" }
+          if ($ver.EndsWith("-rc")) {
+            $spec = Get-Content -Raw -Encoding utf8 BUILD.json | ConvertFrom-Json
+            $want = "v$ver." + ([int]"${{ github.run_number }}" + [int]$spec.offset)
+            if ($tag -ne $want) { throw "tag $tag does not match the build this run makes: expected $want (run ${{ github.run_number }} + offset $($spec.offset))" }
+          }
           "release tag: $tag (APP_VERSION $ver)"
 
       - name: Write the build stamp (build_info.json)
@@ -272,7 +282,7 @@ jobs:
           retention-days: 14
 
   release:
-    needs: installer
+    needs: [installer, linux]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -282,7 +292,7 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - name: Publish the pre-release (both installers, SHA-256 in the notes)
+      - name: Publish the pre-release (Windows installers and the Linux tarball, SHA-256 in the notes)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -291,7 +301,7 @@ jobs:
           ls -l dist
           notes="docs/release-notes/$tag.md"
           if [ ! -f "$notes" ]; then
-            echo "Pre-release of Voxprint AI Movie Dubber. Windows 11 24H2 or newer; NVIDIA GeForce RTX 40-series or newer with a 600+ driver." > /tmp/notes.md
+            echo "Pre-release of Voxprint AI Movie Dubber. Windows 11 24H2 or newer, or x86_64 Linux; NVIDIA GeForce RTX 40-series or newer with a 600+ driver." > /tmp/notes.md
           else
             cp "$notes" /tmp/notes.md
           fi
@@ -299,7 +309,7 @@ jobs:
           (cd dist && sha256sum -c *.sha256)
           {
             printf '\n\n## Files and SHA-256\n\n| File | Size | SHA-256 |\n| --- | --- | --- |\n'
-            for f in $(cd dist && ls *.exe *.bin | sort); do
+            for f in $(cd dist && ls *.exe *.bin *.tar.gz | sort); do
               printf '| `%s` | %s bytes | `%s` |\n' "$f" "$(stat -c %s "dist/$f")" "$(sha256sum "dist/$f" | cut -d' ' -f1)"
             done
             printf '\nBuilt from commit %s (workflow run %s).\n' "${{ github.sha }}" "${{ github.run_number }}"
@@ -307,4 +317,7 @@ jobs:
           title=$(python3 -c "from dubber.appinfo import app_build, release_title; n=app_build(); assert isinstance(n, int) and n >= 1001, n; print(release_title())")
           echo "release title: $title"
           test -n "$title"
-          gh release create "$tag" --prerelease --title "$title" --verify-tag --notes-file /tmp/notes.md dist/*.exe dist/*.bin dist/*.sha256
+          want=$(python3 -c "from dubber.appinfo import APP_VERSION, app_build; print(f'v{APP_VERSION}.{app_build()}' if APP_VERSION.endswith('-rc') else '')")
+          if [ -n "$want" ] && [ "$tag" != "$want" ]; then echo "tag $tag does not match the build: expected $want"; exit 1; fi
+          ls dist/*.tar.gz >/dev/null
+          gh release create "$tag" --prerelease --title "$title" --verify-tag --notes-file /tmp/notes.md dist/*.exe dist/*.bin dist/*.tar.gz dist/*.sha256
