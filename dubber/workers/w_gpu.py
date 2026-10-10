@@ -12,6 +12,7 @@ import time
 import traceback
 from typing import Any, Dict, List
 
+from dubber.infra import cuda_dlls
 from dubber.workers.common import WorkerContext
 
 
@@ -230,6 +231,7 @@ def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
 def _optional_libs(lines: List[str], tbs: List[str], metrics: Dict[str, Any], ctx: WorkerContext) -> None:
     """CTranslate2 (faster-whisper) and onnxruntime: do they see CUDA?"""
     def ct2() -> None:
+        cuda_dlls.expose()
         import ctranslate2
 
         n = ctranslate2.get_cuda_device_count()

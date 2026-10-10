@@ -1,3 +1,4 @@
-# Extra pins on top of the PyTorch version of dubber/infra/runtime_lock.json (torch / torchaudio are pinned from the lock).
-# torchcodec (used by pyannote.audio) is built per PyTorch release: 0.11 is the line for torch 2.11.
-torchcodec==0.11.1
+# Extra pins on top of dubber/infra/runtime_lock.json.
+# torch 2.14.1, torchaudio 2.11.0 and torchcodec 0.14.0 are pinned from that lock (with the flavor
+# local tag, +cu130 or +cpu) by install-runtime.ps1. torchaudio 2.11.0 is the build published on the
+# cu130 index next to torch 2.14.1. torchcodec 0.14.0 is the matching codec and has a win_amd64 wheel.

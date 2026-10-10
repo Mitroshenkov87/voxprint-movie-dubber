@@ -24,7 +24,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.14"
       - name: Install gitleaks
         run: |
           ver=8.30.1
@@ -59,7 +59,7 @@ jobs:
           python -m pip install -q uv
           uv venv .app
           uv venv .tools
-          uv pip install --python .app/bin/python torch==2.11.0 torchaudio==2.11.0 --index-url https://download.pytorch.org/whl/cpu
+          uv pip install --python .app/bin/python torch==2.14.1 torchaudio==2.11.0 torchcodec==0.14.0 --index-url https://download.pytorch.org/whl/cpu
           uv pip install --python .app/bin/python -r requirements.txt -c installer/runtime-constraints.txt
           uv pip install --python .tools/bin/python -r tools/requirements-audit.txt
       - name: Audit

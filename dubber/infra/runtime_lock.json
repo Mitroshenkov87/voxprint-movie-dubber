@@ -1,16 +1,15 @@
 {
  "schema": 1,
- "generated": "2026-10-04",
- "python": "3.11",
+ "generated": "2026-10-10",
+ "python": "3.14",
  "platform": "win_amd64",
  "compat": {
-  "torch": ">=2.8,<2.13",
+  "torch": ">=2.14,<2.15",
   "python_minor_must_match": true
  },
- "torch_version": "2.11.0",
+ "torch_version": "2.14.1",
  "flavors": [
-  "cu128",
-  "cu126",
+  "cu130",
   "cpu"
  ],
  "group_titles": {
@@ -72,10 +71,10 @@
   {
    "dist": "charset-normalizer",
    "version": "3.5.2",
-   "file": "charset_normalizer-3.5.2-cp311-cp311-win_amd64.whl",
-   "url": "https://files.pythonhosted.org/packages/e8/fc/fdf8cf52ff21cd5bf158f20978991cf985325842f74283eb6df26c8a39d8/charset_normalizer-3.5.2-cp311-cp311-win_amd64.whl",
-   "size": 214932,
-   "sha256": "87e50a3e7cb90af586b6c5faf23e302a970415ac73bd7bd90a515a04b427ef96",
+   "file": "charset_normalizer-3.5.2-cp314-cp314-win_amd64.whl",
+   "url": "https://files.pythonhosted.org/packages/d1/78/5ed86f743d4bc350db307e7636419a0a5ee1d91806d30c7f667bd5c80dae/charset_normalizer-3.5.2-cp314-cp314-win_amd64.whl",
+   "size": 210965,
+   "sha256": "e4e81e09c1578b8df602e3db08b0b3ea0a6947ad612f52bf8dc5ea8d47691f0c",
    "group": "libs"
   },
   {
@@ -99,10 +98,10 @@
   {
    "dist": "cython",
    "version": "3.3.0",
-   "file": "cython-3.3.0-cp311-cp311-win_amd64.whl",
-   "url": "https://files.pythonhosted.org/packages/43/55/7408773fdadb2b3434501109696533555ba89f233366519c661372c69098/cython-3.3.0-cp311-cp311-win_amd64.whl",
-   "size": 2862883,
-   "sha256": "8566ea804cfc265f5e9dda71d1b716aa24ee4c3423a5da4b28a248a78c33e3f9",
+   "file": "cython-3.3.0-cp314-cp314-win_amd64.whl",
+   "url": "https://files.pythonhosted.org/packages/73/4e/26e0a584d06c5b3f345df491d2546479606c89217627ee163f1aa55e899f/cython-3.3.0-cp314-cp314-win_amd64.whl",
+   "size": 2925966,
+   "sha256": "51999fb834365721b6c7f689cf6e2ec7c8667aae783df9eb5e589c290a414d9c",
    "group": "text"
   },
   {
@@ -136,10 +135,10 @@
   {
    "dist": "dynet38",
    "version": "2.2",
-   "file": "dynet38-2.2-cp311-cp311-win_amd64.whl",
-   "url": "https://files.pythonhosted.org/packages/51/c0/be3c5934bba18fa0fa92e183158423687464e43c484d04fb51dfde3b9bf6/dynet38-2.2-cp311-cp311-win_amd64.whl",
-   "size": 1306616,
-   "sha256": "3d5a88d2ea7b518b422d57b3fbc123cd7f42e78c80357736f6f7b8f179fac6d9",
+   "file": "dynet38-2.2-cp314-cp314-win_amd64.whl",
+   "url": "https://files.pythonhosted.org/packages/98/9a/ca82dd18b93afd1c874b1a830a5391ecd0e0cdf6870cfa86bdab8dbaf39f/dynet38-2.2-cp314-cp314-win_amd64.whl",
+   "size": 1339156,
+   "sha256": "db9aa61b1e7337e1c83c54b7517150ee0478ed263b038a269d641a9126d31b08",
    "group": "libs"
   },
   {
@@ -263,19 +262,19 @@
   {
    "dist": "llvmlite",
    "version": "0.50.0",
-   "file": "llvmlite-0.50.0-cp311-cp311-win_amd64.whl",
-   "url": "https://files.pythonhosted.org/packages/6b/15/db28c1cb84314bdc416f7dbe7688aa9565d36d76c8244a1c8fbf6adf37bf/llvmlite-0.50.0-cp311-cp311-win_amd64.whl",
-   "size": 41865266,
-   "sha256": "ffe46ef508df226e54b5fe1f7bf11122e5297bcdbb3902cc5b670a429d56ff47",
+   "file": "llvmlite-0.50.0-cp314-cp314-win_amd64.whl",
+   "url": "https://files.pythonhosted.org/packages/d1/af/b2e5f9ee84f05a794e62626d83a934e6fccc7a83740918a90cec85df2d6f/llvmlite-0.50.0-cp314-cp314-win_amd64.whl",
+   "size": 42986708,
+   "sha256": "7ae211012c6849528a5f7cd17a78d8b2421a2813c7b4184d6c0b2ffa89a7d296",
    "group": "audio"
   },
   {
    "dist": "markupsafe",
    "version": "3.0.4",
-   "file": "markupsafe-3.0.4-cp311-cp311-win_amd64.whl",
-   "url": "https://files.pythonhosted.org/packages/91/89/f2b509f7bf79352e40117824c1070dbeafd4df67031d3fa98165a3134228/markupsafe-3.0.4-cp311-cp311-win_amd64.whl",
-   "size": 14328,
-   "sha256": "fdb4ca07ab75ffadab4a8b135ad59cdbb3156b99310f3d565370da74a15d6bd3",
+   "file": "markupsafe-3.0.4-cp314-cp314-win_amd64.whl",
+   "url": "https://files.pythonhosted.org/packages/80/f0/5792ff768a410f93ee3f84fc19345295ffc352d2c936b424cb37e514714c/markupsafe-3.0.4-cp314-cp314-win_amd64.whl",
+   "size": 14501,
+   "sha256": "c1bc67752d5f21013cfe430df4062441714eab79f65a6a05e01505957e9c35fe",
    "group": "libs"
   },
   {
@@ -290,19 +289,19 @@
   {
    "dist": "msgpack",
    "version": "1.2.3",
-   "file": "msgpack-1.2.3-cp311-cp311-win_amd64.whl",
-   "url": "https://files.pythonhosted.org/packages/63/8d/6f0cb2b84e484e96278455c26870196d025bb0cec312b226a663f1fa9000/msgpack-1.2.3-cp311-cp311-win_amd64.whl",
-   "size": 75850,
-   "sha256": "30e1522e4173230dca4d9ad896f038f73c0da6c1edd42f4dbad88ac583cf5d46",
+   "file": "msgpack-1.2.3-cp314-cp314-win_amd64.whl",
+   "url": "https://files.pythonhosted.org/packages/23/f9/9172ff3cdb85d160ad06df5e2708a5fce7682982a5eee8d31869b9f69d2e/msgpack-1.2.3-cp314-cp314-win_amd64.whl",
+   "size": 77778,
+   "sha256": "84a6616d396ec1bc18a1e83e67c96a393ec35dfe5e17434a5be7b9aa0fe988ab",
    "group": "audio"
   },
   {
    "dist": "nagisa",
    "version": "0.3.0",
-   "file": "nagisa-0.3.0-cp311-cp311-win_amd64.whl",
-   "url": "https://files.pythonhosted.org/packages/ce/57/839c6669b0448f65040391d12bc537ed4bbd6c33359585fb64cc056d940c/nagisa-0.3.0-cp311-cp311-win_amd64.whl",
-   "size": 21531888,
-   "sha256": "673333bc930b4102a3eaa29b404feee4dc5af4ac26ed662a48fd805cc3cb3b0a",
+   "file": "nagisa-0.3.0-cp314-cp314-win_amd64.whl",
+   "url": "https://files.pythonhosted.org/packages/93/c9/6018d5bdf0ca91676bc8c64dd6213fbef99b2e978c47819f09bbbb1b16a3/nagisa-0.3.0-cp314-cp314-win_amd64.whl",
+   "size": 21782363,
+   "sha256": "1cc25a1b6c071741fc2446668efbd32b8edd85a0d92dcd6389c7bb420ce287ea",
    "group": "text"
   },
   {
@@ -335,19 +334,19 @@
   {
    "dist": "numba",
    "version": "0.68.0",
-   "file": "numba-0.68.0-cp311-cp311-win_amd64.whl",
-   "url": "https://files.pythonhosted.org/packages/41/0e/369fc577564e07820d5f8ddddf9648cf3e31415313c323cbd611f7905101/numba-0.68.0-cp311-cp311-win_amd64.whl",
-   "size": 2830973,
-   "sha256": "d36f7c6a07c27fa175f5a4683083c6a830f7791fbda592a8676ce47a444965f7",
+   "file": "numba-0.68.0-cp314-cp314-win_amd64.whl",
+   "url": "https://files.pythonhosted.org/packages/0c/41/3e3528f3b0f9ffae69310d2e71f81ff74d272ee3b6c0600c4f4abaa31a80/numba-0.68.0-cp314-cp314-win_amd64.whl",
+   "size": 2832584,
+   "sha256": "9c03de7085f08ba11ab2444f252e822c14cee5fa02b73e84d5afd5e28b2bce0f",
    "group": "audio"
   },
   {
    "dist": "onnxruntime",
    "version": "1.30.0",
-   "file": "onnxruntime-1.30.0-cp311-cp311-win_amd64.whl",
-   "url": "https://files.pythonhosted.org/packages/66/68/b8aaade8c1883f569228f4b57201cce922bb7d4af6f977d619520a733430/onnxruntime-1.30.0-cp311-cp311-win_amd64.whl",
-   "size": 14309136,
-   "sha256": "0edd0145a6e3fce8a1276491dc784d615e3c58bcb952c9b4e5c876d5c6a12ad7",
+   "file": "onnxruntime-1.30.0-cp314-cp314-win_amd64.whl",
+   "url": "https://files.pythonhosted.org/packages/4d/0a/748b86000fbf9518b5dfc5bdc1b924eeaca976203740fd9d30649e568ee6/onnxruntime-1.30.0-cp314-cp314-win_amd64.whl",
+   "size": 14675319,
+   "sha256": "3bdd1752a8502ac1a7ccc6e878d16db6943df574d54ed7f01058a6806ae05be4",
    "group": "audio"
   },
   {
@@ -362,10 +361,10 @@
   {
    "dist": "pillow",
    "version": "12.3.0",
-   "file": "pillow-12.3.0-cp311-cp311-win_amd64.whl",
-   "url": "https://files.pythonhosted.org/packages/63/c6/4bad1b18d132a50b27e1365e1ab163616f7a5bb56d330f66f9d1d9d4f9d4/pillow-12.3.0-cp311-cp311-win_amd64.whl",
-   "size": 7233653,
-   "sha256": "8e95e1385e4998ae9694eeaa4730ba5457ff61185b3a55e2e7bea0880aef452a",
+   "file": "pillow-12.3.0-cp314-cp314-win_amd64.whl",
+   "url": "https://files.pythonhosted.org/packages/f1/e0/492879f69d94f91f60fc8cd05ba03650e9520afebb2fb7aa12777d7c7f38/pillow-12.3.0-cp314-cp314-win_amd64.whl",
+   "size": 7237707,
+   "sha256": "fdafc9cce40277e0f7a0feabce0ee50dd2fa1800f3b38015e51296b5e814048d",
    "group": "audio"
   },
   {
@@ -425,10 +424,10 @@
   {
    "dist": "pyyaml",
    "version": "6.0.3",
-   "file": "pyyaml-6.0.3-cp311-cp311-win_amd64.whl",
-   "url": "https://files.pythonhosted.org/packages/da/e3/ea007450a105ae919a72393cb06f122f288ef60bba2dc64b26e2646fa315/pyyaml-6.0.3-cp311-cp311-win_amd64.whl",
-   "size": 158763,
-   "sha256": "9f3bfb4965eb874431221a3ff3fdcddc7e74e3b07799e0e84ca4a0f867d449bf",
+   "file": "pyyaml-6.0.3-cp314-cp314-win_amd64.whl",
+   "url": "https://files.pythonhosted.org/packages/23/20/bb6982b26a40bb43951265ba29d4c246ef0ff59c9fdcdf0ed04e0687de4d/pyyaml-6.0.3-cp314-cp314-win_amd64.whl",
+   "size": 156429,
+   "sha256": "4a2e8cebe2ff6ab7d1050ecd59c25d4c8bd7e6f400f5f82b96557ac0abafd0ac",
    "group": "libs"
   },
   {
@@ -461,10 +460,10 @@
   {
    "dist": "regex",
    "version": "2026.9.29",
-   "file": "regex-2026.9.29-cp311-cp311-win_amd64.whl",
-   "url": "https://files.pythonhosted.org/packages/4d/4a/aab232183c70fdcf77bcf0c51819da02ec522e393e6a0bf00bcf2142e21f/regex-2026.9.29-cp311-cp311-win_amd64.whl",
-   "size": 280641,
-   "sha256": "1043aedf5917caa861bcb25a9c11460049656bdf0017a90a309fa8f255467725",
+   "file": "regex-2026.9.29-cp314-cp314-win_amd64.whl",
+   "url": "https://files.pythonhosted.org/packages/31/e2/c2b466924ccbeb874862968ca638051b15a8fd29d994a0e99004a5cbf78e/regex-2026.9.29-cp314-cp314-win_amd64.whl",
+   "size": 283817,
+   "sha256": "1c2a0026062abcc321a53db4a185ceba0b59a66b5d37b0808917a88b55a5257f",
    "group": "text"
   },
   {
@@ -515,28 +514,28 @@
   {
    "dist": "scikit-learn",
    "version": "1.9.1",
-   "file": "scikit_learn-1.9.1-cp311-cp311-win_amd64.whl",
-   "url": "https://files.pythonhosted.org/packages/29/8a/8d1e888fe3d0dd4e2a1f3356dad703eed569aaf673e222b6f647005ad30f/scikit_learn-1.9.1-cp311-cp311-win_amd64.whl",
-   "size": 8329877,
-   "sha256": "220fa18152852a5ce29c49e1eaba9d44ec44631cd2e5cf65f5a40eafa5ab3412",
+   "file": "scikit_learn-1.9.1-cp314-cp314-win_amd64.whl",
+   "url": "https://files.pythonhosted.org/packages/9a/13/31c6f8ba1b7eecef9dd9558576c752d2ec5785fd0e456bb9fc59305be23f/scikit_learn-1.9.1-cp314-cp314-win_amd64.whl",
+   "size": 8377024,
+   "sha256": "ca9051447455dae341d4d591eece7deb2d8e3d1020298fc87a81fc51e4da8f53",
    "group": "audio"
   },
   {
    "dist": "scipy",
    "version": "1.17.1",
-   "file": "scipy-1.17.1-cp311-cp311-win_amd64.whl",
-   "url": "https://files.pythonhosted.org/packages/95/da/0d1df507cf574b3f224ccc3d45244c9a1d732c81dcb26b1e8a766ae271a8/scipy-1.17.1-cp311-cp311-win_amd64.whl",
-   "size": 36607512,
-   "sha256": "d30e57c72013c2a4fe441c2fcb8e77b14e152ad48b5464858e07e2ad9fbfceff",
+   "file": "scipy-1.17.1-cp314-cp314-win_amd64.whl",
+   "url": "https://files.pythonhosted.org/packages/4b/39/f0e8ea762a764a9dc52aa7dabcfad51a354819de1f0d4652b6a1122424d6/scipy-1.17.1-cp314-cp314-win_amd64.whl",
+   "size": 37290984,
+   "sha256": "3877ac408e14da24a6196de0ddcace62092bfc12a83823e92e49e40747e52c19",
    "group": "audio"
   },
   {
    "dist": "sentencepiece",
    "version": "0.2.2",
-   "file": "sentencepiece-0.2.2-cp311-cp311-win_amd64.whl",
-   "url": "https://files.pythonhosted.org/packages/ab/62/9e2569867e3dcff7ad6d89642a9615b9801b5cd698abe7df3b490361f66e/sentencepiece-0.2.2-cp311-cp311-win_amd64.whl",
-   "size": 1246268,
-   "sha256": "70d4ca6f4d06df7f0ccab6fe4f49c8a712c8c8b6847b4f0af9a0e1dbb0e0337e",
+   "file": "sentencepiece-0.2.2-cp314-cp314-win_amd64.whl",
+   "url": "https://files.pythonhosted.org/packages/33/fe/4906f12c458274edd96387e4baaad7c6f064a2b7c11a1cc2401c8a7bd483/sentencepiece-0.2.2-cp314-cp314-win_amd64.whl",
+   "size": 1356144,
+   "sha256": "63250cfab8b80a1ef82a614eb2b3cadfec2c405f870cedc139d08e2f063eb708",
    "group": "text"
   },
   {
@@ -561,10 +560,10 @@
   {
    "dist": "soxr",
    "version": "1.1.0",
-   "file": "soxr-1.1.0-cp311-cp311-win_amd64.whl",
-   "url": "https://files.pythonhosted.org/packages/8f/29/371467eb86c7ba6810df0bfe9409bcd9c52ec5615b111190fafe23e4d2e1/soxr-1.1.0-cp311-cp311-win_amd64.whl",
-   "size": 176779,
-   "sha256": "ae30c48ac795378cf23ba3c7c640b8ff794af714ac388b9fd6b31a40b39e6e86",
+   "file": "soxr-1.1.0-cp312-abi3-win_amd64.whl",
+   "url": "https://files.pythonhosted.org/packages/b0/4d/621e4150e4815246ad552d215a8a294a90143fedd19ee442cf82d3b3abc8/soxr-1.1.0-cp312-abi3-win_amd64.whl",
+   "size": 174357,
+   "sha256": "6ae2a174bffea94e8ead857dad85999d3f49f091774dbad5b046c0417d7092f4",
    "group": "audio"
   },
   {
@@ -632,63 +631,81 @@
   },
   {
    "dist": "torch",
-   "version": "2.11.0+cu128",
-   "file": "torch-2.11.0+cu128-cp311-cp311-win_amd64.whl",
-   "url": "https://download.pytorch.org/whl/cu128/torch-2.11.0%2Bcu128-cp311-cp311-win_amd64.whl",
-   "size": 2753148611,
-   "sha256": "90ef0c2454e5296a9fb021ddd42252e4ce1abe2c0a4988a173ef90a6cded0bf5",
-   "flavor": "cu128",
+   "version": "2.14.1+cu130",
+   "file": "torch-2.14.1+cu130-cp314-cp314-win_amd64.whl",
+   "url": "https://download.pytorch.org/whl/cu130/torch-2.14.1%2Bcu130-cp314-cp314-win_amd64.whl",
+   "size": 1998854405,
+   "sha256": "e25757e423be3c107a36d7495fa5aeb021b9ab506457cd7c7e068505f0283ae0",
+   "flavor": "cu130",
    "group": "torch"
   },
   {
    "dist": "torchaudio",
-   "version": "2.11.0+cu128",
-   "file": "torchaudio-2.11.0+cu128-cp311-cp311-win_amd64.whl",
-   "url": "https://download.pytorch.org/whl/cu128/torchaudio-2.11.0%2Bcu128-cp311-cp311-win_amd64.whl",
-   "size": 1671592,
-   "sha256": "0f2995101f526a2220dc348d35b153f327ed59b247fa249adddc4c478cece566",
-   "flavor": "cu128",
+   "version": "2.11.0+cu130",
+   "file": "torchaudio-2.11.0+cu130-cp314-cp314-win_amd64.whl",
+   "url": "https://download.pytorch.org/whl/cu130/torchaudio-2.11.0%2Bcu130-cp314-cp314-win_amd64.whl",
+   "size": 1722736,
+   "sha256": "b345401d76a371031b2fe965bd9579b9621c9d87902ee3e586be665df04c179e",
+   "flavor": "cu130",
+   "group": "torch"
+  },
+  {
+   "dist": "torchcodec",
+   "version": "0.14.0+cu130",
+   "file": "torchcodec-0.14.0+cu130-cp314-cp314-win_amd64.whl",
+   "url": "https://download.pytorch.org/whl/cu130/torchcodec-0.14.0%2Bcu130-cp314-cp314-win_amd64.whl",
+   "size": 3598614,
+   "sha256": "26ed40fc26287e6d6f65268fdaf29017aee803763077e0746aa85fb8cd6a697b",
+   "flavor": "cu130",
    "group": "torch"
   },
   {
    "dist": "torch",
-   "version": "2.11.0+cu126",
-   "file": "torch-2.11.0+cu126-cp311-cp311-win_amd64.whl",
-   "url": "https://download.pytorch.org/whl/cu126/torch-2.11.0%2Bcu126-cp311-cp311-win_amd64.whl",
-   "size": 2596413186,
-   "sha256": "ce9aeead7950ae8eb48891568f9314a9a4130996b55e797c75e0c0d2846714ae",
-   "flavor": "cu126",
-   "group": "torch"
-  },
-  {
-   "dist": "torchaudio",
-   "version": "2.11.0+cu126",
-   "file": "torchaudio-2.11.0+cu126-cp311-cp311-win_amd64.whl",
-   "url": "https://download.pytorch.org/whl/cu126/torchaudio-2.11.0%2Bcu126-cp311-cp311-win_amd64.whl",
-   "size": 1519624,
-   "sha256": "bb5f58154b78c618006716d1eebbe38a161149e6b46f88a0b1b12ce6ede0acd3",
-   "flavor": "cu126",
-   "group": "torch"
-  },
-  {
-   "dist": "torch",
-   "version": "2.11.0+cpu",
-   "file": "torch-2.11.0+cpu-cp311-cp311-win_amd64.whl",
-   "url": "https://download.pytorch.org/whl/cpu/torch-2.11.0%2Bcpu-cp311-cp311-win_amd64.whl",
-   "size": 114432833,
-   "sha256": "51a221769d4a316f4b47a786c12e67c3f4807db8ed13c7b8817ebe73786acbbc",
+   "version": "2.14.1+cpu",
+   "file": "torch-2.14.1+cpu-cp314-cp314-win_amd64.whl",
+   "url": "https://download.pytorch.org/whl/cpu/torch-2.14.1%2Bcpu-cp314-cp314-win_amd64.whl",
+   "size": 125949396,
+   "sha256": "a93db7947d53caab62c2436205a60ddf9c3150c2e09eb9b24610c1c3f4cbaf99",
    "flavor": "cpu",
    "group": "torch"
   },
   {
    "dist": "torchaudio",
    "version": "2.11.0+cpu",
-   "file": "torchaudio-2.11.0+cpu-cp311-cp311-win_amd64.whl",
-   "url": "https://download.pytorch.org/whl/cpu/torchaudio-2.11.0%2Bcpu-cp311-cp311-win_amd64.whl",
-   "size": 326399,
-   "sha256": "abbff04127caf6e16e3a7c3e1ca2739b68899e14926d7cbec4bd8b40f72375d5",
+   "file": "torchaudio-2.11.0+cpu-cp314-cp314-win_amd64.whl",
+   "url": "https://download.pytorch.org/whl/cpu/torchaudio-2.11.0%2Bcpu-cp314-cp314-win_amd64.whl",
+   "size": 326401,
+   "sha256": "be19f467eb7a173264653369426e7ecc4745e28d15f9c52eea2ad5316ec685eb",
    "flavor": "cpu",
    "group": "torch"
+  },
+  {
+   "dist": "torchcodec",
+   "version": "0.14.0+cpu",
+   "file": "torchcodec-0.14.0+cpu-cp314-cp314-win_amd64.whl",
+   "url": "https://download.pytorch.org/whl/cpu/torchcodec-0.14.0%2Bcpu-cp314-cp314-win_amd64.whl",
+   "size": 3145309,
+   "sha256": "16bfc9bacbc1bead1fa23c06c1a70094d685eaad516fd51233bc6aea5f397a6d",
+   "flavor": "cpu",
+   "group": "torch"
+  },
+  {
+   "dist": "nvidia-cublas-cu12",
+   "version": "12.9.2.10",
+   "file": "nvidia_cublas_cu12-12.9.2.10-py3-none-win_amd64.whl",
+   "url": "https://files.pythonhosted.org/packages/20/e2/fc9a0e985249d873150276d5afb02e39a66817fedbf1a385724393e505ed/nvidia_cublas_cu12-12.9.2.10-py3-none-win_amd64.whl",
+   "size": 553162896,
+   "sha256": "623f43027d40d44ceadf0043f002bd25cf353e8f13ce90b9a87057019f560661",
+   "group": "libs"
+  },
+  {
+   "dist": "nvidia-cudnn-cu12",
+   "version": "9.27.0.42",
+   "file": "nvidia_cudnn_cu12-9.27.0.42-py3-none-win_amd64.whl",
+   "url": "https://files.pythonhosted.org/packages/aa/38/f856579877f7c1c5066e61182e7de7bc27bf35a78c8d1b0fa592e6985bc4/nvidia_cudnn_cu12-9.27.0.42-py3-none-win_amd64.whl",
+   "size": 743068852,
+   "sha256": "06e9b0026f3bad97d2b58666330fabec04fe1672f776661ecb0ce0029c27f142",
+   "group": "libs"
   }
  ]
 }

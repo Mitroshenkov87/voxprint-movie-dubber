@@ -25,6 +25,10 @@ def test_wcag_aa_contrast(fg, bg):
 def test_style_sheet_formats_cleanly():
     css = theme.build_style(True)
     assert "{{" not in css and "QPushButton" in css
+    assert theme.PRIMARY in css and theme.PRIMARY_HOVER in css and theme.TEXT_ON_PRIMARY in css
+    assert theme.MENU_BG in css and theme.MENU_SELECTION in css
+    from dubber.ui import splash
+    assert splash.BAR == "#b98cff"
 
 
 def _app():
@@ -229,11 +233,11 @@ def test_settings_and_diagnostics_dialogs(tmp_path):
     d = dialogs.SettingsDialog()
     d.edt_subdl.setText("k1")
     d.edt_hf.setText("hf_x")
-    d.cmb_device.setCurrentIndex(d.cmb_device.findData("cpu"))
+    d.cmb_device.setCurrentIndex(d.cmb_device.findData("cuda"))
     d._models_choice = tmp_path / "models-elsewhere"
     d.accept()
     s = settings.load()
-    assert s["subdl_key"] == "k1" and s["hf_token"] == "hf_x" and s["device"] == "cpu"
+    assert s["subdl_key"] == "k1" and s["hf_token"] == "hf_x" and s["device"] == "cuda"
     assert shared_paths.configured_models_dir() == tmp_path / "models-elsewhere"
     assert settings.redacted(s)["hf_token"] == "set"
     g = dialogs.DiagnosticsDialog(target_lang=lambda: "de")

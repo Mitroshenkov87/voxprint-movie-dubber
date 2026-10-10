@@ -20,6 +20,7 @@ def isolated_env(tmp_path, monkeypatch):
     monkeypatch.setenv("VOXPRINT_GPU_LOCK", str(tmp_path / "voxprint-gpu.lock"))
     monkeypatch.delenv("VOXPRINT_MODELS_DIR", raising=False)
     monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.setenv("VOXPRINT_SKIP_GPU_GATE", "1")               # the window gate is tested with the env removed
     from dubber import i18n
     i18n.reset()
     i18n.set_language("en", save=False)

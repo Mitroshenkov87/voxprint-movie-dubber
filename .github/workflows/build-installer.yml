@@ -1,7 +1,8 @@
 # Builds the small online installer of Voxprint AI Movie Dubber on a free GitHub-hosted Windows runner (no secrets are used),
 # installs it silently, checks the installed program, uninstalls it and publishes the installer as a workflow artifact.
 # A pushed tag "v*" additionally attaches the installer to a pre-release of this repository.
-# Runners have no GPU: the installer is tested with the CPU build of PyTorch (/TORCH=cpu).
+# Runners have no GPU: /TORCH=cpu is the CI-only switch that installs the CPU build of PyTorch.
+# VOXPRINT_SKIP_GPU_GATE lets the window self-test open on that same runner.
 # The audit job runs first. The installer is not built when ruff, mypy, bandit (high), gitleaks, or an
 # un-allowlisted pip-audit high/critical finding fails that job. Vulture and radon do not fail it.
 name: Build online installer
@@ -21,6 +22,7 @@ jobs:
     env:
       PYTHONUTF8: "1"
       QT_QPA_PLATFORM: offscreen
+      VOXPRINT_SKIP_GPU_GATE: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -94,8 +96,8 @@ jobs:
           if (-not $rt) { throw "no shared runtime-<key> folder" }
           "runtime: " + $rt.FullName + " " + (Get-Content "$($rt.FullName)\runtime-key.json" -Raw)
           if (-not ((Get-Content "$($rt.FullName)\.users.json" -Raw | ConvertFrom-Json).'movie-dubber')) { throw "movie-dubber is not registered in the runtime users file" }
-          & C:\vmd\runtime\Scripts\python.exe -c "import torch; print('torch', torch.__version__); assert torch.__version__.startswith('2.11.0')"
-          if ($LASTEXITCODE -ne 0) { throw "the runtime does not have the pinned PyTorch 2.11.0" }
+          & C:\vmd\runtime\Scripts\python.exe -c "import torch; print('torch', torch.__version__); assert torch.__version__.startswith('2.14.1')"
+          if ($LASTEXITCODE -ne 0) { throw "the runtime does not have the pinned PyTorch 2.14.1" }
           $suite = "$env:LOCALAPPDATA\Voxprint\state\suite.json"
           if (-not (Test-Path $suite)) { throw "suite.json was not written" }
           "suite.json: " + (Get-Content $suite -Raw)

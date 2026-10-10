@@ -1,11 +1,12 @@
-<#
+﻿<#
   Voxprint AI Movie Dubber - online part of the installer.
   Installs (or reuses) the shared Python runtime and links it into the program folder.  Nothing is installed system-wide.
     -AppDir        installation folder (gets the junction <AppDir>\runtime -> <runtime>\env, the uv tool and the LGPL ffmpeg)
     -Requirements  requirements.txt (everything except torch)
     -Constraints   installer\runtime-constraints.txt (pins that follow from the torch version)
-    -Lock          dubber\infra\runtime_lock.json (verbatim copy of the Audiobook Builder's lock: torch version, flavors, Python)
-    -Backend       PyTorch flavor: auto (newest flavor of the lock the NVIDIA driver supports, CPU without a GPU), cpu, cu126, cu128
+    -Lock          dubber\infra\runtime_lock.json (same schema as the Audiobook Builder lock: Python 3.14, torch 2.14.1, flavor cu130)
+    -Backend       auto (cu130 when the GPU passes the gate) or an explicit flavor. -Backend cpu is CI-only (GPU-less runners).
+    -HardwareFile  receives the English stop message when the GPU or driver is below the minimum
     -Log           log file (all output is copied there)
     -OutFile       receives the runtime folder (one line) for the setup program
   Rules agreed with Voxprint AI Audiobook Builder (dubber/infra/runtime.py has the same key logic):
@@ -20,6 +21,7 @@ param(
     [Parameter(Mandatory = $true)][string]$Constraints,
     [Parameter(Mandatory = $true)][string]$Lock,
     [string]$Backend = "auto",
+    [string]$HardwareFile = "",
     [string]$Log = (Join-Path $env:TEMP "VoxprintMovieDubber-setup.log"),
     [string]$OutFile = "",
     [switch]$KeyOnly
@@ -65,6 +67,10 @@ function RuntimeKey($lockObj, [string]$flavor) {
     return (Sha256Hex $material).Substring(0, 12)
 }
 
+# The setup wizard has no language catalog. The dialog is this English text; the same facts are also logged in Russian.
+$InstallerLead = "Voxprint AI Movie Dubber needs an NVIDIA GeForce RTX 40-series graphics card or newer (Ada Lovelace or later, compute capability 8.9 or higher) and an NVIDIA driver from the 600 branch or newer."
+$InstallerLeadRu = "Для Voxprint AI Movie Dubber нужна видеокарта NVIDIA GeForce RTX 40 или новее (Ada Lovelace и новее, вычислительная способность 8.9 или выше) и драйвер NVIDIA ветки 600 или новее."
+
 function DriverCuda {
     # "CUDA Version: 12.8" / "CUDA UMD Version: 13.4" from the nvidia-smi header = the newest CUDA the driver supports; $null without an NVIDIA GPU
     $smi = Get-Command nvidia-smi -ErrorAction SilentlyContinue
@@ -73,19 +79,20 @@ function DriverCuda {
         $txt = (& $smi.Source 2>$null) -join "`n"
         # older drivers: "CUDA Version: 12.8"; drivers 6xx (real case, 617.42): "CUDA UMD Version: 13.4"
         if ($txt -match 'CUDA (?:UMD )?Version:\s*(\d+)\.(\d+)') { return @([int]$Matches[1], [int]$Matches[2]) }
-        # no version in the header: the driver number tells the minimum (570+ runs CUDA 12.8, 560+ 12.6)
+        # no version in the header: CUDA 13.0 (the cu130 build) needs driver branch 580 or newer.
+        # The hardware gate already requires branch 600, which is above that line.
         $drv = ((& $smi.Source --query-gpu=driver_version --format=csv,noheader 2>$null) | Select-Object -First 1)
         if ($drv -match '^\s*(\d+)\.') {
             $major = [int]$Matches[1]
-            if ($major -ge 570) { return @(12, 8) }
-            if ($major -ge 560) { return @(12, 6) }
+            if ($major -ge 580) { return @(13, 0) }
         }
     } catch { }
     return $null
 }
 
 function ChooseFlavor($lockObj, $cuda) {
-    $best = "cpu"; $bestV = 0
+    # Newest CUDA flavor the driver supports. Never "cpu": that build is only -Backend cpu, for CI.
+    $best = ""; $bestV = 0
     foreach ($f in $lockObj.flavors) {
         if ($f -match '^cu(\d+)(\d)$' -and $cuda) {
             $v = [int]$Matches[1] * 10 + [int]$Matches[2]
@@ -93,6 +100,97 @@ function ChooseFlavor($lockObj, $cuda) {
         }
     }
     return $best
+}
+
+function LockWheelVersion($lockObj, [string]$dist, [string]$flavor) {
+    foreach ($w in $lockObj.wheels) {
+        if ($w.dist -eq $dist -and $w.flavor -eq $flavor) { return [string]$w.version }
+    }
+    return ""
+}
+
+function Convert-ComputeCap([string]$text) {
+    if ($text -match '^\s*(\d+)\.(\d+)\s*$') { return @([int]$Matches[1], [int]$Matches[2]) }
+    return $null
+}
+
+function Get-DriverBranch([string]$version) {
+    if ($version -match '^\s*(\d+)') { return [int]$Matches[1] }
+    return $null
+}
+
+function Get-PolicyGpus {
+    # nvidia-smi --query-gpu=name,compute_cap,driver_version
+    $smi = Get-Command nvidia-smi -ErrorAction SilentlyContinue
+    if (-not $smi) { return @() }
+    $lines = @()
+    try { $lines = @(& $smi.Source --query-gpu=name,compute_cap,driver_version --format=csv,noheader 2>$null) } catch { return @() }
+    $gpus = @()
+    foreach ($line in $lines) {
+        if (-not $line -or ($line -notmatch ',')) { continue }
+        $parts = @($line.Split(',') | ForEach-Object { $_.Trim() })
+        if ($parts.Count -lt 3) { continue }
+        $driver = $parts[$parts.Count - 1]
+        $cap = Convert-ComputeCap $parts[$parts.Count - 2]
+        $branch = Get-DriverBranch $driver
+        $name = ($parts[0..($parts.Count - 3)] -join ',').Trim()
+        if (-not $name -or -not $cap -or $null -eq $branch) { continue }
+        $gpus += [pscustomobject]@{ Name = $name; Major = $cap[0]; Minor = $cap[1]; Driver = $driver; Branch = $branch }
+    }
+    return $gpus
+}
+
+function Test-GpuMeetsPolicy($gpu) {
+    $capOk = ($gpu.Major -gt 8) -or (($gpu.Major -eq 8) -and ($gpu.Minor -ge 9))
+    return [bool]($capOk -and ($gpu.Branch -ge 600))
+}
+
+function Format-HardwareFound($gpus) {
+    $list = @($gpus)
+    if ($list.Count -eq 0) { return "No NVIDIA GPU was found." }
+    $bits = @()
+    foreach ($g in $list) {
+        $bits += "$($g.Name), compute capability $($g.Major).$($g.Minor), driver $($g.Driver) (branch $($g.Branch))"
+    }
+    $text = ($bits -join "; ")
+    if (-not $text.EndsWith(".")) { $text += "." }
+    return $text
+}
+
+function Get-InstallerStopMessage([string]$found) {
+    return @"
+$InstallerLead
+
+This PC does not meet that requirement, so setup stopped and nothing was installed. A processor-only copy is not offered.
+
+What we found: $found
+
+Install a supported graphics card and driver, then run setup again.
+"@.Trim()
+}
+
+function Get-InstallerStopMessageRu([string]$found) {
+    return @"
+$InstallerLeadRu
+
+Этот компьютер не подходит, поэтому установка остановлена и ничего не установлено. Вариант только для процессора не предлагается.
+
+Что обнаружено: $found
+
+Установите подходящую видеокарту и драйвер и запустите установку снова.
+"@.Trim()
+}
+
+function Stop-ForHardware([string]$message) {
+    Say $message
+    Say (Get-InstallerStopMessageRu (Format-HardwareFound @(Get-PolicyGpus)))
+    if ($HardwareFile) {
+        try {
+            # English dialog text. UTF-8 of this ASCII message is what Inno Setup reads back as ANSI.
+            [IO.File]::WriteAllText($HardwareFile, ($message + "`r`n"), (New-Object Text.UTF8Encoding $false))
+        } catch { }
+    }
+    exit 2
 }
 
 function ReadUsers([string]$file) {
@@ -132,13 +230,31 @@ if ($KeyOnly) {                                       # tests: print the key for
 try {
     New-Item -ItemType Directory -Force -Path $AppDir | Out-Null
     $tv = $lockObj.torch_version
-    $cuda = DriverCuda
-    if ($Backend -eq "auto") {
-        $flavor = ChooseFlavor $lockObj $cuda
-        if ($cuda) { Say ("NVIDIA driver supports CUDA {0}.{1}: PyTorch {2} {3}" -f $cuda[0], $cuda[1], $tv, $flavor) } else { Say "No NVIDIA GPU found: PyTorch $tv cpu" }
+    if (@($lockObj.flavors) -notcontains $Backend -and $Backend -ne "auto") {
+        throw "PyTorch flavor $Backend is not in the runtime lock (allowed: $($lockObj.flavors -join ', '))"
+    }
+    # -Backend cpu is the CI switch (.github/workflows passes /TORCH=cpu). Users are not offered a CPU install.
+    if ($Backend -eq "cpu") {
+        Say "CI switch -Backend cpu: installing the CPU build of PyTorch for an automated test machine. This build is not offered to users."
+        $flavor = "cpu"
     } else {
-        if (@($lockObj.flavors) -notcontains $Backend) { throw "PyTorch flavor $Backend is not in the runtime lock (allowed: $($lockObj.flavors -join ', '))" }
-        $flavor = $Backend
+        $policyGpus = @(Get-PolicyGpus)
+        $passed = @($policyGpus | Where-Object { Test-GpuMeetsPolicy $_ })
+        if ($passed.Count -eq 0) {
+            Stop-ForHardware (Get-InstallerStopMessage (Format-HardwareFound $policyGpus))
+        }
+        $cuda = DriverCuda
+        if ($Backend -eq "auto") {
+            $flavor = ChooseFlavor $lockObj $cuda
+            if (-not $flavor) {
+                $found = Format-HardwareFound $policyGpus
+                Stop-ForHardware (Get-InstallerStopMessage "$found The driver does not support CUDA 13.0, which is the only GPU build this program installs.")
+            }
+            Say ("NVIDIA driver supports CUDA {0}.{1}: PyTorch {2} {3}" -f $cuda[0], $cuda[1], $tv, $flavor)
+        } else {
+            $flavor = $Backend
+            Say "PyTorch $tv $flavor"
+        }
     }
     $key = RuntimeKey $lockObj $flavor
     $vxHome = if ($env:VOXPRINT_HOME) { $env:VOXPRINT_HOME } else { Join-Path $env:LOCALAPPDATA "Voxprint" }
@@ -186,13 +302,18 @@ try {
         New-Item -ItemType Directory -Force -Path $rt | Out-Null
         Remove-Item -LiteralPath (Join-Path $rt ".install-complete") -Force -ErrorAction SilentlyContinue
         Run "Creating the Python $($lockObj.python) environment" $uv @("venv", $envDir, "--python", $lockObj.python, "--allow-existing")
+        $taVer = LockWheelVersion $lockObj "torchaudio" $flavor
+        $tcVer = LockWheelVersion $lockObj "torchcodec" $flavor
+        if (-not $taVer -or -not $tcVer) { throw "runtime lock has no torchaudio/torchcodec wheel for flavor $flavor" }
+        $taBase = ($taVer -split '\+', 2)[0]
+        $tcBase = ($tcVer -split '\+', 2)[0]
         $pins = Join-Path $env:TEMP "vmd-constraints-$key.txt"
-        # the exact local build ("2.11.0+cu128") so the second step keeps the torch installed by the first
-        $pinText = "torch==$tv+$flavor`r`ntorchaudio==$tv+$flavor`r`n" + ((Get-Content -LiteralPath $Constraints -Encoding UTF8) -join "`r`n")
+        # exact local builds (2.14.1+cu130, torchaudio 2.11.0+cu130, torchcodec 0.14.0+cu130) so the second step keeps them
+        $pinText = "torch==$tv+$flavor`r`ntorchaudio==$taVer`r`ntorchcodec==$tcVer`r`n" + ((Get-Content -LiteralPath $Constraints -Encoding UTF8) -join "`r`n")
         [IO.File]::WriteAllText($pins, $pinText, (New-Object Text.UTF8Encoding $false))
-        Run "Installing PyTorch $tv ($flavor build) - this is the largest download" $uv @("pip", "install", "--python", $py, "--compile-bytecode", "torch==$tv", "torchaudio==$tv", "--torch-backend=$flavor")
+        Run "Installing PyTorch $tv ($flavor build), torchaudio $taBase and torchcodec $tcBase" $uv @("pip", "install", "--python", $py, "--compile-bytecode", "torch==$tv", "torchaudio==$taBase", "torchcodec==$tcBase", "--torch-backend=$flavor")
         Run "Installing the other packages" $uv @("pip", "install", "--python", $py, "--compile-bytecode", "-r", $Requirements, "-c", $pins)
-        # no --torch-backend here: with it uv takes torchcodec from the PyTorch index, which has no win_amd64 cu128 wheel (real case)
+        # no --torch-backend on this step: it would re-resolve every requirement against the PyTorch index
         Run "Checking the installation" $py $check
         $info = [ordered]@{ key = $key; python = $lockObj.python; platform = $lockObj.platform; torch = "$tv+$flavor"; flavor = $flavor
                             requirements = (Sha256Hex (NormalizeReq $Requirements)); constraints = (Sha256Hex (NormalizeReq $Constraints))

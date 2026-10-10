@@ -1,7 +1,7 @@
 # Building
 
 ## Run from source
-Python 3.11 is required; Windows x64 for the installer.
+Python 3.14 is required; Windows x64 for the installer.
 ```
 python -m venv .venv && .venv\Scripts\activate          (Linux: source .venv/bin/activate)
 pip install uv
@@ -18,14 +18,17 @@ Never run `uv run` without `--no-sync`: it can replace the CUDA build of PyTorch
 ISCC installer\VoxprintMovieDubber.iss
 ```
 The installer contains the program's own files only. During setup `installer/install-runtime.ps1` downloads `uv` and installs the
-runtime: Python 3.11 and PyTorch 2.11.0 pinned by `dubber/infra/runtime_lock.json` (a verbatim copy of the Voxprint AI Audiobook
-Builder lock; flavor cu128 / cu126 / cpu chosen from the driver), the dependencies from `requirements.txt` and the pins in
-`installer/runtime-constraints.txt`. The runtime lives in `%LOCALAPPDATA%\Voxprint\runtime-<key>` (key = hash of all pins, see
+runtime: Python 3.14 and PyTorch 2.14.1+cu130 pinned by `dubber/infra/runtime_lock.json` (the Audiobook Builder lock schema;
+the sibling main lock is still 3.11/cu128 and is not copied). torchaudio is 2.11.0+cu130 and torchcodec is 0.14.0+cu130.
+`nvidia-cublas-cu12` and `nvidia-cudnn-cu12` supply the CUDA 12 libraries CTranslate2 needs. The dependencies come from
+`requirements.txt` and the pins in `installer/runtime-constraints.txt`. The runtime lives in `%LOCALAPPDATA%\Voxprint\runtime-<key>` (key = hash of all pins, see
 `dubber/infra/runtime.py`): an existing folder with the same key is reused, a different set of versions gets its own folder side by
 side, and a shared runtime is never upgraded in place. `<install folder>\runtime` is a junction to it. `runtime-<key>\.users.json`
 counts the programs using it. An optional final step downloads the AI models (`main.py --fetch-models`).
 
-Setup switches: `/TORCH=auto|cpu|cu126|cu128` (PyTorch flavor), `/TASKS=""` (skip the model download), `/VERYSILENT /SUPPRESSMSGBOXES /DIR=<folder>`.
+Setup switches: `/TORCH=auto|cu130` (PyTorch flavor). `/TORCH=cpu` installs the CPU build and is only for the CI smoke run on a GPU-less runner; a user install stops instead of offering that build. `/TASKS=""` skips the model download. `/VERYSILENT /SUPPRESSMSGBOXES /DIR=<folder>`. cu130 needs NVIDIA driver branch 580 or newer; the hardware gate already requires branch 600.
+
+The setup stops, and installs nothing, when no NVIDIA GPU has compute capability 8.9 or higher (GeForce RTX 40 / Ada or newer) or the driver branch is below 600. The window does the same check with PyTorch before it opens (`VOXPRINT_SKIP_GPU_GATE=1` skips that check for tests and CI).
 The setup puts its shortcuts into the Start menu folder "Voxprint" (shared with the Audiobook Builder), adds an Apps & features entry
 and a full uninstaller. The uninstaller never touches the Audiobook Builder; it removes the shared runtime only when no other program
 uses it, and the shared models only when no other program uses them and you answer Yes (default: keep).

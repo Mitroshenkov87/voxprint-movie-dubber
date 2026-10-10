@@ -271,20 +271,21 @@ def test_mp4_remux_after_auto_language_reruns_only_mux(tmp_path, film_no_subs, m
 def test_runtime_lock_is_the_audiobook_builder_pin():
     from dubber.infra import runtime
     lock = runtime.load_lock()
-    assert lock["torch_version"] == "2.11.0" and lock["python"] == "3.11" and "cu128" in lock["flavors"]
-    assert any(w["dist"] == "torch" and w["version"] == "2.11.0+cu128" and "cp311" in w["file"] for w in lock["wheels"])
-    assert runtime.choose_flavor(lock, (12, 8)) == "cu128" and runtime.choose_flavor(lock, (13, 0)) == "cu128"
-    assert runtime.choose_flavor(lock, (12, 6)) == "cu126" and runtime.choose_flavor(lock, None) == "cpu"
+    assert lock["torch_version"] == "2.14.1" and lock["python"] == "3.14" and "cu130" in lock["flavors"]
+    assert any(w["dist"] == "torch" and w["version"] == "2.14.1+cu130" and "cp314" in w["file"] for w in lock["wheels"])
+    assert runtime.choose_flavor(lock, (12, 8)) is None and runtime.choose_flavor(lock, (13, 0)) == "cu130"
+    assert "cu126" not in lock["flavors"]
+    assert runtime.choose_flavor(lock, (12, 6)) is None and runtime.choose_flavor(lock, None) is None
 
 
 def test_runtime_key_is_exact_and_matches_the_installer_script():
     from dubber.infra import runtime
     req = (Path(__file__).resolve().parent.parent / "requirements.txt").read_text(encoding="utf-8")
     con = (Path(__file__).resolve().parent.parent / "installer" / "runtime-constraints.txt").read_text(encoding="utf-8")
-    k = runtime.runtime_key("cu128", req, con)
+    k = runtime.runtime_key("cu130", req, con)
     assert re.fullmatch(r"[0-9a-f]{12}", k)
-    assert runtime.runtime_key("cu128", req + "\n# a comment\n\n", con) == k            # comments / blank lines do not count
-    assert runtime.runtime_key("cu126", req, con) != k and runtime.runtime_key("cu128", req + "\nnumpy<3", con) != k
+    assert runtime.runtime_key("cu130", req + "\n# a comment\n\n", con) == k            # comments / blank lines do not count
+    assert runtime.runtime_key("cpu", req, con) != k and runtime.runtime_key("cu130", req + "\nnumpy<3", con) != k
     ps = (Path(__file__).resolve().parent.parent / "installer" / "install-runtime.ps1").read_text(encoding="utf-8")
     assert 'python=$($lockObj.python);platform=$($lockObj.platform);torch=$($lockObj.torch_version)+$flavor;' in ps
     assert "runtime-$key" in ps and ".users.json" in ps and "New-Item -ItemType Junction" in ps
@@ -350,8 +351,10 @@ def test_device_and_language_are_shared(monkeypatch):
     from dubber import i18n, settings
     from dubber.infra import suite
     assert settings.device() == "auto"
-    settings.set_device("cpu")
-    assert suite.gpu() == "cpu" and settings.engine_cfg()["device"] == "cpu"
+    settings.set_device("cuda")
+    assert suite.gpu() == "cuda:0" and settings.engine_cfg()["device"] == "cuda"
+    suite.set_value("gpu", "cpu")                                  # a sibling app may still store this
+    assert settings.device() == "auto" and settings.engine_cfg()["device"] == "auto"
     suite.set_value("ui_language", "ru")
     i18n.reset()
     monkeypatch.delenv("VOXPRINT_LANG", raising=False)
@@ -493,15 +496,17 @@ def test_driver_cuda_is_read_from_new_nvidia_smi_headers():
     assert rx.search("| NVIDIA-SMI 617.42   KMD Version: 617.42   CUDA UMD Version: 13.4 |").groups() == ("13", "4")
     assert rx.search("| NVIDIA-SMI 572.16   Driver Version: 572.16   CUDA Version: 12.8 |").groups() == ("12", "8")
     from dubber.infra import runtime
-    assert runtime.choose_flavor(runtime.load_lock(), (13, 4)) == "cu128"
+    assert runtime.choose_flavor(runtime.load_lock(), (13, 4)) == "cu130"
     assert "driver_version" in ps1
     src = (Path(__file__).resolve().parents[1] / "dubber" / "diag" / "checks_system.py").read_text(encoding="utf-8")
     assert "UMD" in src
 
 
 def test_other_packages_step_keeps_the_torch_build_and_uses_pypi():
-    # PC run 3 (pre.4): "torchcodec==0.11.1+cu128 has no wheels with a matching platform tag (win_amd64)" with --torch-backend
+    # The second install must not pass --torch-backend (that re-resolves every requirement against the PyTorch index).
+    # torchcodec 0.14.0+cu130 does have a win_amd64 wheel, so it is installed in the first step with that flag.
     ps1 = (Path(__file__).resolve().parents[1] / "installer" / "install-runtime.ps1").read_text(encoding="utf-8")
     step = [ln for ln in ps1.splitlines() if "Installing the other packages" in ln and "Run " in ln][0]
     assert "--torch-backend" not in step and '"-c", $pins' in step
-    assert 'torch==$tv+$flavor' in ps1 and 'torchaudio==$tv+$flavor' in ps1
+    assert 'torch==$tv+$flavor' in ps1 and 'torchaudio==$taVer' in ps1 and 'torchcodec==$tcVer' in ps1
+    assert 'torchcodec==$tcBase' in ps1 and '--torch-backend=$flavor' in ps1
