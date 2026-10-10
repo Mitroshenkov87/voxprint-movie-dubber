@@ -221,7 +221,14 @@ jobs:
             $notesFile = "release-notes.md"
             "Early pre-release of Voxprint AI Movie Dubber. Small online installer: it downloads Python, PyTorch and the other dependencies during the setup. Windows 10/11 x64; an NVIDIA GPU is needed for useful speed." | Out-File -Encoding utf8 $notesFile
           }
-          Set-Location C:\vmd
-          $title = & C:\vmd\runtime\Scripts\python.exe -c "from dubber.appinfo import release_title; print(release_title())"
+          # the built commit goes at the end of the notes
+          $notes = (Get-Content -Raw -Encoding utf8 $notesFile).TrimEnd() + "`n`nBuilt from commit ${{ github.sha }} (workflow run ${{ github.run_number }})."
+          $notesFile = "$PWD\release-notes-final.md"
+          [IO.File]::WriteAllText($notesFile, $notes, (New-Object Text.UTF8Encoding $false))
+          # the title has a non-ASCII middle dot: read Python's UTF-8 output as UTF-8, not the OEM code page
+          [Console]::OutputEncoding = New-Object Text.UTF8Encoding $false
+          # read the title from the checkout (installed copy is uninstalled by now); stay in the checkout so gh finds the repo and the files
+          $title = & python -c "from dubber.appinfo import release_title; print(release_title())"
+          "release title: $title"
           if (-not $title) { throw "release title was empty" }
           gh release create "$tag" --prerelease --title "$title" --verify-tag --notes-file "$notesFile" installer/Output/VoxprintMovieDubber-Setup.exe installer/Output/VoxprintMovieDubber-Setup.exe.sha256

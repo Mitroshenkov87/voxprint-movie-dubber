@@ -34,15 +34,16 @@
   #define AppInfoLine FileRead(AppInfoHandle)
   #if AppInfoLine != ""
     #if Pos("APP_VERSION", AppInfoLine) == 1
-      #define AppVersion Copy(AppInfoLine, Pos('"', AppInfoLine) + 1, Len(AppInfoLine) - Pos('"', AppInfoLine) - 1)
+      #define public AppVersion Copy(AppInfoLine, Pos('"', AppInfoLine) + 1, Len(AppInfoLine) - Pos('"', AppInfoLine) - 1)
     #elif Pos("APP_BUILD", AppInfoLine) == 1
-      #define AppBuild Trim(Copy(AppInfoLine, Pos("=", AppInfoLine) + 1, 16))
+      #define public AppBuild Trim(Copy(AppInfoLine, Pos("=", AppInfoLine) + 1, 16))
     #elif Pos("CODENAME", AppInfoLine) == 1
-      #define AppCodename Copy(AppInfoLine, Pos('"', AppInfoLine) + 1, Len(AppInfoLine) - Pos('"', AppInfoLine) - 1)
+      #define public AppCodename Copy(AppInfoLine, Pos('"', AppInfoLine) + 1, Len(AppInfoLine) - Pos('"', AppInfoLine) - 1)
     #endif
   #endif
 #endsub
-#for {AppInfoI = 0; AppInfoI < 80; AppInfoI++} ParseAppInfoLine
+#define AppInfoI 0
+#for {AppInfoI = 0; AppInfoI < 80 && !FileEof(AppInfoHandle); AppInfoI++} ParseAppInfoLine
 #expr FileClose(AppInfoHandle)
 #if AppVersion == ""
   #error APP_VERSION was not read from dubber\appinfo.py
