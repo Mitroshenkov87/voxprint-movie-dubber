@@ -10,6 +10,10 @@ The application is installed with a small online installer that downloads its co
 
 **License:** Apache-2.0, see `LICENSE` and `NOTICE`. Third-party components keep their own licenses (`docs/THIRD_PARTY_NOTICES.md`).
 
+## Philosophy
+
+Voxprint apps are complete: the choices about models, settings and pipelines are already made, so you install the app and start working. Like software used to be, there is no account, no subscription and no online sign-in, and your files stay on your computer. Voxprint looks forward. It is built for current operating systems and recent NVIDIA GPUs, and it drops old platforms after two to three years instead of carrying them. Free and open source (Apache-2.0), with modern open formats by default. [Read more](PHILOSOPHY.md)
+
 ## ☕ Support the Project
 
 If you find this project useful and would like to support its development, you can buy me a coffee!
