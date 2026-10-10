@@ -161,12 +161,12 @@ def test_lock_drops_cu126_and_auto_never_selects_cpu():
 
     lock = runtime.load_lock()
     assert "cu126" not in lock["flavors"] and "cu128" not in lock["flavors"]
-    assert lock["python"] == "3.14" and lock["torch_version"] == "2.14.1"
+    assert lock["python"] == "3.14" and lock["torch_version"] == "2.11.0"
     assert "cpu" in lock["flavors"] and "cu130" in lock["flavors"]
     assert not any(w.get("flavor") in ("cu126", "cu128") for w in lock["wheels"])
-    assert any(w["dist"] == "torch" and w["version"] == "2.14.1+cu130" and "cp314" in w["file"] for w in lock["wheels"])
+    assert any(w["dist"] == "torch" and w["version"] == "2.11.0+cu130" and "cp314" in w["file"] for w in lock["wheels"])
     assert any(w["dist"] == "torchaudio" and w["version"] == "2.11.0+cu130" for w in lock["wheels"])
-    assert any(w["dist"] == "torchcodec" and w["version"] == "0.14.0+cu130" for w in lock["wheels"])
+    assert any(w["dist"] == "torchcodec" and w["version"] == "0.17.0+cu130" for w in lock["wheels"])
     assert any(w["dist"] == "nvidia-cublas-cu12" for w in lock["wheels"])
     assert any(w["dist"] == "nvidia-cudnn-cu12" for w in lock["wheels"])
     assert runtime.choose_flavor(lock, (12, 8)) is None

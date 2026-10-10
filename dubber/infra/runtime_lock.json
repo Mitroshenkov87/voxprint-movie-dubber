@@ -4,10 +4,10 @@
  "python": "3.14",
  "platform": "win_amd64",
  "compat": {
-  "torch": ">=2.14,<2.15",
+  "torch": ">=2.11,<2.12",
   "python_minor_must_match": true
  },
- "torch_version": "2.14.1",
+ "torch_version": "2.11.0",
  "flavors": [
   "cu130",
   "cpu"
@@ -631,11 +631,11 @@
   },
   {
    "dist": "torch",
-   "version": "2.14.1+cu130",
-   "file": "torch-2.14.1+cu130-cp314-cp314-win_amd64.whl",
-   "url": "https://download.pytorch.org/whl/cu130/torch-2.14.1%2Bcu130-cp314-cp314-win_amd64.whl",
-   "size": 1998854405,
-   "sha256": "e25757e423be3c107a36d7495fa5aeb021b9ab506457cd7c7e068505f0283ae0",
+   "version": "2.11.0+cu130",
+   "file": "torch-2.11.0+cu130-cp314-cp314-win_amd64.whl",
+   "url": "https://download.pytorch.org/whl/cu130/torch-2.11.0%2Bcu130-cp314-cp314-win_amd64.whl",
+   "size": 1922365129,
+   "sha256": "d886f1c2f4406d7ad0c59f254ceb0a9c47a03e97a7c704b778a2066d752dde29",
    "flavor": "cu130",
    "group": "torch"
   },
@@ -651,21 +651,21 @@
   },
   {
    "dist": "torchcodec",
-   "version": "0.14.0+cu130",
-   "file": "torchcodec-0.14.0+cu130-cp314-cp314-win_amd64.whl",
-   "url": "https://download.pytorch.org/whl/cu130/torchcodec-0.14.0%2Bcu130-cp314-cp314-win_amd64.whl",
-   "size": 3598614,
-   "sha256": "26ed40fc26287e6d6f65268fdaf29017aee803763077e0746aa85fb8cd6a697b",
+   "version": "0.17.0+cu130",
+   "file": "torchcodec-0.17.0+cu130-cp314-cp314-win_amd64.whl",
+   "url": "https://download.pytorch.org/whl/cu130/torchcodec-0.17.0%2Bcu130-cp314-cp314-win_amd64.whl",
+   "size": 14675086,
+   "sha256": "49f7a7c76f6bb931cce0657601fb94a1b24da3222bf6c71e9757286d1003b204",
    "flavor": "cu130",
    "group": "torch"
   },
   {
    "dist": "torch",
-   "version": "2.14.1+cpu",
-   "file": "torch-2.14.1+cpu-cp314-cp314-win_amd64.whl",
-   "url": "https://download.pytorch.org/whl/cpu/torch-2.14.1%2Bcpu-cp314-cp314-win_amd64.whl",
-   "size": 125949396,
-   "sha256": "a93db7947d53caab62c2436205a60ddf9c3150c2e09eb9b24610c1c3f4cbaf99",
+   "version": "2.11.0+cpu",
+   "file": "torch-2.11.0+cpu-cp314-cp314-win_amd64.whl",
+   "url": "https://download.pytorch.org/whl/cpu/torch-2.11.0%2Bcpu-cp314-cp314-win_amd64.whl",
+   "size": 116375735,
+   "sha256": "7575af4c9f7f7500ed62b1dafeb069aa0ba35b368a5f09793b3976b3d50f4fe4",
    "flavor": "cpu",
    "group": "torch"
   },
@@ -681,11 +681,11 @@
   },
   {
    "dist": "torchcodec",
-   "version": "0.14.0+cpu",
-   "file": "torchcodec-0.14.0+cpu-cp314-cp314-win_amd64.whl",
-   "url": "https://download.pytorch.org/whl/cpu/torchcodec-0.14.0%2Bcpu-cp314-cp314-win_amd64.whl",
-   "size": 3145309,
-   "sha256": "16bfc9bacbc1bead1fa23c06c1a70094d685eaad516fd51233bc6aea5f397a6d",
+   "version": "0.17.0+cpu",
+   "file": "torchcodec-0.17.0+cpu-cp314-cp314-win_amd64.whl",
+   "url": "https://download.pytorch.org/whl/cpu/torchcodec-0.17.0%2Bcpu-cp314-cp314-win_amd64.whl",
+   "size": 6810239,
+   "sha256": "b4a33af2d0e049ef7872e06ea65305bbdb0e1fba15ba760cffdd06ac2de20955",
    "flavor": "cpu",
    "group": "torch"
   },

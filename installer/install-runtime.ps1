@@ -4,7 +4,7 @@
     -AppDir        installation folder (gets the junction <AppDir>\runtime -> <runtime>\env, the uv tool and the LGPL ffmpeg)
     -Requirements  requirements.txt (everything except torch)
     -Constraints   installer\runtime-constraints.txt (pins that follow from the torch version)
-    -Lock          dubber\infra\runtime_lock.json (same schema as the Audiobook Builder lock: Python 3.14, torch 2.14.1, flavor cu130)
+    -Lock          dubber\infra\runtime_lock.json (same schema as the Audiobook Builder lock: Python 3.14, torch 2.11.0, flavor cu130)
     -Backend       auto (cu130 when the GPU passes the gate) or an explicit flavor. -Backend cpu is CI-only (GPU-less runners).
     -HardwareFile  receives the English stop message when the GPU or driver is below the minimum
     -Log           log file (all output is copied there)
@@ -308,7 +308,7 @@ try {
         $taBase = ($taVer -split '\+', 2)[0]
         $tcBase = ($tcVer -split '\+', 2)[0]
         $pins = Join-Path $env:TEMP "vmd-constraints-$key.txt"
-        # exact local builds (2.14.1+cu130, torchaudio 2.11.0+cu130, torchcodec 0.14.0+cu130) so the second step keeps them
+        # exact local builds (2.11.0+cu130, torchaudio 2.11.0+cu130, torchcodec 0.17.0+cu130) so the second step keeps them
         $pinText = "torch==$tv+$flavor`r`ntorchaudio==$taVer`r`ntorchcodec==$tcVer`r`n" + ((Get-Content -LiteralPath $Constraints -Encoding UTF8) -join "`r`n")
         [IO.File]::WriteAllText($pins, $pinText, (New-Object Text.UTF8Encoding $false))
         Run "Installing PyTorch $tv ($flavor build), torchaudio $taBase and torchcodec $tcBase" $uv @("pip", "install", "--python", $py, "--compile-bytecode", "torch==$tv", "torchaudio==$taBase", "torchcodec==$tcBase", "--torch-backend=$flavor")

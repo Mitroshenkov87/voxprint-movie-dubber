@@ -4,8 +4,10 @@ Agreed rules (Audiobook Builder, project-notes/voxprint/DECISIONS.md):
 
 * Pins: ``runtime_lock.json`` next to this file keeps the Audiobook Builder lock schema (so the two files can be aligned
   later). The sibling lock on main is still Python 3.11 / torch 2.11 cu128, which this app does not copy. This lock is
-  Python 3.14, win_amd64, torch 2.14.1. The only GPU flavor is cu130. torchaudio stays 2.11.0+cu130 because that is the
-  build on the cu130 index, and torchcodec is 0.14.0+cu130. The cpu flavor remains only so CI can pass ``-Backend cpu``.
+  Python 3.14, win_amd64, torch 2.11.0. The only GPU flavor is cu130. The cu130 index and the PyTorch
+  previous-versions install commands have no torchaudio for 2.12, 2.13, or 2.14, so the newest consistent set is
+  torch 2.11.0+cu130 with torchaudio 2.11.0+cu130. torchcodec 0.17.0+cu130 is the newest codec whose table allows
+  torch >= 2.11. The cpu flavor remains only so CI can pass ``-Backend cpu``.
   CTranslate2 still needs CUDA 12, so the lock also pins ``nvidia-cublas-cu12`` and ``nvidia-cudnn-cu12``.
   ``installer/runtime-constraints.txt`` records that those torch pins are applied by the installer.
 * Key: :func:`runtime_key` = SHA-256 over Python version, platform, torch version + flavor, our requirements and constraints

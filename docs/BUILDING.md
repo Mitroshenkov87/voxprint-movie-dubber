@@ -18,8 +18,9 @@ Never run `uv run` without `--no-sync`: it can replace the CUDA build of PyTorch
 ISCC installer\VoxprintMovieDubber.iss
 ```
 The installer contains the program's own files only. During setup `installer/install-runtime.ps1` downloads `uv` and installs the
-runtime: Python 3.14 and PyTorch 2.14.1+cu130 pinned by `dubber/infra/runtime_lock.json` (the Audiobook Builder lock schema;
-the sibling main lock is still 3.11/cu128 and is not copied). torchaudio is 2.11.0+cu130 and torchcodec is 0.14.0+cu130.
+runtime: Python 3.14 and PyTorch 2.11.0+cu130 pinned by `dubber/infra/runtime_lock.json` (the Audiobook Builder lock schema;
+the sibling main lock is still 3.11/cu128 and is not copied). There is no torchaudio wheel for torch 2.14.1 on the cu130
+index, so the pin follows the newest official pair: torch 2.11.0+cu130 and torchaudio 2.11.0+cu130. torchcodec is 0.17.0+cu130.
 `nvidia-cublas-cu12` and `nvidia-cudnn-cu12` supply the CUDA 12 libraries CTranslate2 needs. The dependencies come from
 `requirements.txt` and the pins in `installer/runtime-constraints.txt`. The runtime lives in `%LOCALAPPDATA%\Voxprint\runtime-<key>` (key = hash of all pins, see
 `dubber/infra/runtime.py`): an existing folder with the same key is reused, a different set of versions gets its own folder side by

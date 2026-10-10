@@ -3,7 +3,7 @@
 ;
 ; The installer is small: it contains only the program's own files (Python sources, icon, licences) and a download script.
 ; While it installs, install-runtime.ps1 installs (or reuses, on an exact match of the pinned versions) the shared runtime
-; LOCALAPPDATA\Voxprint\runtime-<key> (Python 3.14, PyTorch 2.14.1+cu130, the other
+; LOCALAPPDATA\Voxprint\runtime-<key> (Python 3.14, PyTorch 2.11.0+cu130, the other
 ; dependencies) and links it as the runtime sub-folder of the program folder; the AI models are downloaded as the last
 ; (optional) step into the models folder shared with Voxprint AI Audiobook Builder (one copy for both programs).
 ; Start menu: the folder "Voxprint", shared with the Audiobook Builder.  The uninstaller never touches the Audiobook Builder's

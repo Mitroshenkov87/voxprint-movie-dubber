@@ -271,8 +271,8 @@ def test_mp4_remux_after_auto_language_reruns_only_mux(tmp_path, film_no_subs, m
 def test_runtime_lock_is_the_audiobook_builder_pin():
     from dubber.infra import runtime
     lock = runtime.load_lock()
-    assert lock["torch_version"] == "2.14.1" and lock["python"] == "3.14" and "cu130" in lock["flavors"]
-    assert any(w["dist"] == "torch" and w["version"] == "2.14.1+cu130" and "cp314" in w["file"] for w in lock["wheels"])
+    assert lock["torch_version"] == "2.11.0" and lock["python"] == "3.14" and "cu130" in lock["flavors"]
+    assert any(w["dist"] == "torch" and w["version"] == "2.11.0+cu130" and "cp314" in w["file"] for w in lock["wheels"])
     assert runtime.choose_flavor(lock, (12, 8)) is None and runtime.choose_flavor(lock, (13, 0)) == "cu130"
     assert "cu126" not in lock["flavors"]
     assert runtime.choose_flavor(lock, (12, 6)) is None and runtime.choose_flavor(lock, None) is None
@@ -504,7 +504,7 @@ def test_driver_cuda_is_read_from_new_nvidia_smi_headers():
 
 def test_other_packages_step_keeps_the_torch_build_and_uses_pypi():
     # The second install must not pass --torch-backend (that re-resolves every requirement against the PyTorch index).
-    # torchcodec 0.14.0+cu130 does have a win_amd64 wheel, so it is installed in the first step with that flag.
+    # torchcodec 0.17.0+cu130 does have a win_amd64 wheel, so it is installed in the first step with that flag.
     ps1 = (Path(__file__).resolve().parents[1] / "installer" / "install-runtime.ps1").read_text(encoding="utf-8")
     step = [ln for ln in ps1.splitlines() if "Installing the other packages" in ln and "Run " in ln][0]
     assert "--torch-backend" not in step and '"-c", $pins' in step
