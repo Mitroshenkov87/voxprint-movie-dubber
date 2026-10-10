@@ -16,12 +16,12 @@ from typing import Any, Dict, Optional
 
 from PySide6.QtCore import QTimer, Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QIcon
-from PySide6.QtWidgets import (QApplication, QFileDialog, QHBoxLayout, QLabel, QMenu, QPushButton, QStackedWidget, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (QApplication, QFileDialog, QHBoxLayout, QLabel, QMenu, QMessageBox, QPushButton, QStackedWidget,
+                               QVBoxLayout, QWidget)
 
 from dubber import i18n, paths, platform_win, settings
 from dubber.appinfo import APP_DISPLAY_NAME, resource_dir, version_label
-from dubber.core import audio, media, review, voices
+from dubber.core import audio, media, review, voices, vxdub
 from dubber.core.project import Project, Voice
 from dubber.core.watch import WatchState
 from dubber.i18n import tr
@@ -36,6 +36,7 @@ from dubber.ui.theme import build_style
 
 MIN_W, MIN_H = 720, 520
 VIDEO_EXTS = {".mkv", ".mp4", ".avi", ".mov", ".webm", ".m4v", ".ts", ".m2ts"}
+PROJECT_EXT = vxdub.EXTENSION
 SUB_EXTS = {".srt", ".vtt", ".ass", ".ssa"}
 PREPARE_UNTIL = "translation"
 PREVIEW_S = 60.0
@@ -61,6 +62,8 @@ class MainWindow(QWidget):
         self.watch_state: Optional[WatchState] = None
         self.preview_start: Optional[float] = None
         self.diag_dialog: Optional[dialogs.DiagnosticsDialog] = None
+        self.vxdub_path: Optional[Path] = None
+        self.vxdub_doc: Optional[vxdub.Document] = None
         self._cfg = cfg
         self._options_hook = options_hook
         self.setObjectName("root")
@@ -85,6 +88,15 @@ class MainWindow(QWidget):
         self.lbl_title.setObjectName("title")
         head.addWidget(self.lbl_title)
         head.addStretch(1)
+        self.btn_file = QPushButton()
+        self.btn_file.clicked.connect(self._file_menu)
+        self.file_menu = QMenu(self)
+        self.act_open = self.file_menu.addAction("")
+        self.act_save = self.file_menu.addAction("")
+        self.act_save_as = self.file_menu.addAction("")
+        self.act_open.triggered.connect(lambda _checked=False: self.choose_vxdub())
+        self.act_save.triggered.connect(lambda _checked=False: self.save_vxdub())
+        self.act_save_as.triggered.connect(lambda _checked=False: self.save_vxdub_as())
         self.btn_settings = QPushButton()
         self.btn_settings.clicked.connect(self.open_settings)
         self.btn_diag = QPushButton()
@@ -92,7 +104,7 @@ class MainWindow(QWidget):
         self.btn_gear = QPushButton("\u2699")
         self.btn_gear.setObjectName("gear")
         self.btn_gear.clicked.connect(self._language_menu)
-        for b in (self.btn_settings, self.btn_diag, self.btn_gear):
+        for b in (self.btn_file, self.btn_settings, self.btn_diag, self.btn_gear):
             head.addWidget(b)
         body.addLayout(head)
         self.lbl_tagline = QLabel()
@@ -173,6 +185,10 @@ class MainWindow(QWidget):
         if icon.is_file():
             self.setWindowIcon(QIcon(str(icon)))
         self.lbl_tagline.setText(tr("ui.tagline"))
+        self.btn_file.setText(tr("vxdub.file"))
+        self.act_open.setText(tr("vxdub.open"))
+        self.act_save.setText(tr("vxdub.save"))
+        self.act_save_as.setText(tr("vxdub.save_as"))
         self.btn_settings.setText(tr("ui.settings"))
         self.btn_diag.setText(tr("ui.btn_diag"))
         for i, key in enumerate(STEPS):
@@ -233,6 +249,8 @@ class MainWindow(QWidget):
         self.dubp.running(busy)
         self.dubp.btn_dub.setEnabled(ready and not busy)
         self.dubp.btn_preview.setEnabled(ready and not busy)
+        self.act_save.setEnabled(bool(self.project) and not busy)
+        self.act_save_as.setEnabled(bool(self.project) and not busy)
 
     def go(self, index: int) -> None:
         if index > 0 and not self._prepared():
@@ -248,13 +266,15 @@ class MainWindow(QWidget):
     # ------------------------------------------------------------------ film
     def dragEnterEvent(self, e) -> None:  # noqa: N802
         urls = e.mimeData().urls() if e.mimeData().hasUrls() else []
-        if any(Path(u.toLocalFile()).suffix.lower() in VIDEO_EXTS | SUB_EXTS for u in urls):
+        if any(Path(u.toLocalFile()).suffix.lower() in VIDEO_EXTS | SUB_EXTS | {PROJECT_EXT} for u in urls):
             e.acceptProposedAction()
 
     def dropEvent(self, e) -> None:  # noqa: N802
         for u in e.mimeData().urls():
             p = Path(u.toLocalFile())
-            if p.suffix.lower() in VIDEO_EXTS:
+            if p.suffix.lower() == PROJECT_EXT:
+                self.open_vxdub(p)
+            elif p.suffix.lower() in VIDEO_EXTS:
                 self.set_source(p)
             elif p.suffix.lower() in SUB_EXTS and self.project is not None:
                 self.film.set_subs_file(str(p))
@@ -264,6 +284,112 @@ class MainWindow(QWidget):
         path, _ = QFileDialog.getOpenFileName(self, tr("ui.file_dialog"), str(Path.home()), tr("ui.file_filter"))
         if path:
             self.set_source(Path(path))
+
+    def _file_menu(self) -> None:
+        self.file_menu.exec(self.btn_file.mapToGlobal(self.btn_file.rect().bottomLeft()))
+
+    def choose_vxdub(self) -> None:
+        start = str(self.vxdub_path.parent) if self.vxdub_path else str(Path.home())
+        path, _ = QFileDialog.getOpenFileName(self, tr("vxdub.open_title"), start, tr("vxdub.filter"))
+        if path:
+            self.open_vxdub(Path(path))
+
+    def save_vxdub_as(self) -> None:
+        if self.project is None:
+            return
+        start = self.vxdub_path or self.project.source.with_suffix(PROJECT_EXT)
+        path, _ = QFileDialog.getSaveFileName(self, tr("vxdub.save_title"), str(start), tr("vxdub.filter"))
+        if not path:
+            return
+        dest = Path(path)
+        if dest.suffix.lower() != PROJECT_EXT:
+            dest = dest.with_suffix(PROJECT_EXT)
+        self.save_vxdub(dest)
+
+    def save_vxdub(self, path: Optional[Path] = None) -> bool:
+        """Write the open dub to ``path`` (or the current project file).  Returns whether a file was written."""
+        if self.project is None or (self.job is not None and self.job.isRunning()):
+            return False
+        if path is None:
+            if self.vxdub_path is None:
+                self.save_vxdub_as()
+                return self.vxdub_path is not None
+            path = self.vxdub_path
+        self.film.store(self.project)
+        self.project.save()
+        try:
+            self.vxdub_doc = vxdub.write_project(self.project, path, previous=self.vxdub_doc)
+        except vxdub.VxdubError as exc:
+            self._vxdub_message(tr("vxdub.save_title"), tr("vxdub.save_failed", error=str(exc)))
+            return False
+        self.vxdub_path = Path(path)
+        self.film.lbl_prepare.setText(tr("vxdub.saved", name=self.vxdub_path.name))
+        return True
+
+    def open_vxdub(self, path: Path, locate=None, notify=None) -> bool:
+        """Open a ``.vxdub`` file, relink its video, and show that dub.
+
+        ``locate(saved_path)`` asks for the video when the saved path and the relative hint both miss.
+        ``notify(title, text)`` reports a problem.  Both default to dialogs.
+        """
+        if self.job is not None and self.job.isRunning():
+            return False
+        self.player.stop()
+        path = Path(path)
+        ask = locate if locate is not None else self._locate_video
+        try:
+            project, document = vxdub.open_project(path, self.projects_root(), ask)
+        except vxdub.SchemaTooNew as exc:
+            self._vxdub_message(tr("vxdub.schema_title"), tr("vxdub.schema_new", found=exc.found, supported=vxdub.SCHEMA), notify)
+            return False
+        except vxdub.FingerprintMismatch:
+            self._vxdub_message(tr("vxdub.moved_title"), tr("vxdub.fingerprint"), notify)
+            return False
+        except vxdub.SourceMissing:
+            self._vxdub_message(tr("vxdub.moved_title"), tr("vxdub.missing"), notify)
+            return False
+        except vxdub.VxdubError as exc:
+            self._vxdub_message(tr("vxdub.open_title"), tr("vxdub.open_failed", error=str(exc)), notify)
+            return False
+        try:
+            info = media.probe(project.source)
+        except Exception as exc:  # noqa: BLE001 - ffprobe failures are shown on the page
+            self.project = None
+            self.vxdub_path = None
+            self.vxdub_doc = None
+            self.film.set_media(project.source, None, str(exc))
+            self._update_steps()
+            return False
+        self.info = info
+        self.project = project
+        self.vxdub_path = path
+        self.vxdub_doc = document
+        self.film.set_media(project.source, info, "")
+        self.film.load(project)
+        self.watch_state = WatchState(info.duration)
+        self._reload_pages()
+        self.dubp.lbl_stage.setText("")
+        self.dubp.lbl_watch.setText("")
+        self.film.lbl_prepare.setText("")
+        out = project.settings.get("output_file") or ""
+        self.film.btn_show.setVisible(bool(out) and Path(out).exists())
+        self.film.btn_watch.hide()
+        self._refresh_plan()
+        self.go(0)
+        return True
+
+    def _locate_video(self, saved: str) -> Optional[Path]:
+        name = Path(saved).name if saved else ""
+        QMessageBox.information(self, tr("vxdub.moved_title"), tr("vxdub.moved", name=name or saved))
+        start = str(Path(saved).parent) if saved else str(Path.home())
+        path, _ = QFileDialog.getOpenFileName(self, tr("vxdub.moved_title"), start, tr("ui.file_filter"))
+        return Path(path) if path else None
+
+    def _vxdub_message(self, title: str, text: str, notify=None) -> None:
+        if notify is not None:
+            notify(title, text)
+            return
+        QMessageBox.warning(self, title, text)
 
     def choose_subtitles(self) -> None:
         start = str(self.project.source.parent) if self.project else str(Path.home())
@@ -280,6 +406,8 @@ class MainWindow(QWidget):
         """Open a film: read what is inside, open (or resume) its project folder."""
         if self.job is not None and self.job.isRunning():
             return
+        self.vxdub_path = None
+        self.vxdub_doc = None
         self.player.stop()
         path = Path(path)
         try:

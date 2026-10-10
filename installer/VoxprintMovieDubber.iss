@@ -119,6 +119,7 @@ Source: "..\main.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\requirements.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dubber\*"; DestDir: "{app}\dubber"; Excludes: "__pycache__,*.pyc"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "vxdub.ico"; DestDir: "{app}\assets"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\NOTICE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\docs\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
@@ -137,6 +138,14 @@ Filename: "{#Py}"; Parameters: """{app}\main.py"" --register-models-user"; Worki
 Filename: "{#Py}"; Parameters: """{app}\main.py"" --sync-suite-settings"; WorkingDir: "{app}"; StatusMsg: "Saving the shared Voxprint settings..."; Flags: runhidden runasoriginaluser
 Filename: "{#Py}"; Parameters: """{app}\main.py"" --fetch-models"; WorkingDir: "{app}"; Tasks: models; StatusMsg: "Downloading the AI models (this can take a while)..."; Flags: runasoriginaluser
 Filename: "{#PyW}"; Parameters: """{app}\main.py"" --diagnose"; WorkingDir: "{app}"; Description: "Start {#AppDisplayName} and run the diagnostics (a report is saved to the Desktop)"; Flags: nowait postinstall skipifsilent runasoriginaluser
+
+[Registry]
+; .vxdub opens in this program.  uninsdeletekey removes the type and the extension on uninstall.
+Root: HKLM; Subkey: "Software\Classes\.vxdub"; ValueType: string; ValueName: ""; ValueData: "Voxprint.MovieDubber.Project"; Flags: uninsdeletekey
+Root: HKLM; Subkey: "Software\Classes\.vxdub"; ValueType: string; ValueName: "Content Type"; ValueData: "application/vnd.voxprint.dub+zip"
+Root: HKLM; Subkey: "Software\Classes\Voxprint.MovieDubber.Project"; ValueType: string; ValueName: ""; ValueData: "Voxprint dubbing project"; Flags: uninsdeletekey
+Root: HKLM; Subkey: "Software\Classes\Voxprint.MovieDubber.Project\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\assets\vxdub.ico"
+Root: HKLM; Subkey: "Software\Classes\Voxprint.MovieDubber.Project\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{#PyW}"" ""{app}\main.py"" ""%1"""
 
 [InstallDelete]
 ; shortcuts of builds before 0.1.0-pre.3 (their own Start menu folder; now the shared "Voxprint" folder is used)

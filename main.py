@@ -1,6 +1,7 @@
 """Voxprint AI Movie Dubber - entry point.
 
     main.py                       start the window
+    main.py PROJECT.vxdub         start the window and open that dubbing project
     main.py --diagnose            start the window and run the diagnostics at once (the report goes to the Desktop)
     main.py --diagnose-cli        run the diagnostics without a window (console output), same report
     main.py --worker NAME ARGS    internal: one heavy step in its own process (used by the diagnostics and the pipeline)
@@ -67,6 +68,15 @@ def _setup_logging() -> None:
                             format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     except Exception:  # noqa: BLE001 - logging must never block the start
         pass
+
+
+def project_file_from_argv(argv) -> str | None:
+    """A ``.vxdub`` path passed as the first argument, or ``None``."""
+    if not argv or str(argv[0]).startswith("-"):
+        return None
+    if Path(argv[0]).suffix.lower() == ".vxdub":
+        return str(argv[0])
+    return None
 
 
 def main(argv=None) -> int:
@@ -140,6 +150,9 @@ def main(argv=None) -> int:
     splash.opening()
     win = MainWindow(autorun="--diagnose" in argv, options_hook=(lambda o: _apply_cli(o, argv)) if "--diagnose" in argv else None)
     win.show()
+    opened = project_file_from_argv(argv)
+    if opened:
+        win.open_vxdub(Path(opened))
     splash.finish(win)                                       # closes once the main window is on screen
     if "--selftest" in argv:
         QTimer.singleShot(400, app.quit)

@@ -8,8 +8,8 @@ of the Audiobook Builder cyan.  16/24/32 px are drawn separately (wave only, hea
     python tools/make_icon.py --splash-art FILE    also the splash: FILE (square art) graded + the icon tile on top
 
 Writes assets/voxprint-dubber.png (1024), assets/voxprint-dubber.ico and assets/voxprint-dubber-setup.ico
-(16, 24, 32, 48, 64, 128, 256), installer/linux/voxprint-dubber-256.png and, with --splash-art, assets/splash.jpg
-(1024 x 1024).
+(16, 24, 32, 48, 64, 128, 256), installer/linux/voxprint-dubber-256.png, installer/vxdub.ico (the .vxdub document
+icon, the application mark on a page) and, with --splash-art, assets/splash.jpg (1024 x 1024).
 """
 from __future__ import annotations
 
@@ -92,6 +92,20 @@ def icon(size: int) -> Image.Image:
     return img.resize((size, size), Image.LANCZOS).convert("RGBA")
 
 
+def write_document_icon() -> None:
+    """``.vxdub`` document icon: the existing application mark on a page, for the file association."""
+    mark = Image.open(ASSETS / "voxprint-dubber.png").convert("RGBA").resize((620, 620), Image.LANCZOS)
+    page = Image.new("RGBA", (1024, 1024), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(page)
+    draw.rounded_rectangle((72, 36, 952, 988), radius=56, fill=(244, 245, 250, 255))
+    draw.polygon([(700, 36), (952, 36), (952, 288)], fill=(214, 216, 226, 255))
+    draw.polygon([(700, 36), (700, 288), (952, 288)], fill=(232, 234, 242, 255))
+    page.alpha_composite(mark, (202, 250))
+    frames = [page.resize((size, size), Image.LANCZOS) for size in ICO_SIZES]
+    dest = ROOT / "installer" / "vxdub.ico"
+    frames[-1].save(dest, format="ICO", sizes=[(size, size) for size in ICO_SIZES], append_images=frames[:-1])
+
+
 def write_icons() -> None:
     ASSETS.mkdir(exist_ok=True)
     icon(1024).save(ASSETS / "voxprint-dubber.png", optimize=True)
@@ -132,6 +146,8 @@ if __name__ == "__main__":
     ap.add_argument("--splash-art", type=Path, help="square artwork for the splash background")
     a = ap.parse_args()
     write_icons()
+    if (ASSETS / "voxprint-dubber.png").is_file():
+        write_document_icon()
     if a.splash_art:
         write_splash(a.splash_art)
     print("written to", ASSETS)
