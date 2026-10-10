@@ -125,7 +125,8 @@ def main(argv=None) -> int:
 
     from dubber.appinfo import resource_dir
 
-    app = QApplication.instance() or QApplication(sys.argv)
+    running = QApplication.instance()
+    app = running if isinstance(running, QApplication) else QApplication(sys.argv)
     app.setApplicationName("Voxprint Movie Dubber")
     icon = resource_dir() / "assets" / "voxprint-dubber.ico"
     if icon.is_file():

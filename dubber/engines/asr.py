@@ -29,6 +29,51 @@ RETRY_PROMPTS = {
     "en": "\"Wait, what?\" \"No, listen to me.\" \"Okay, fine. Let's go!\"",
 }
 
+_FALLBACK_TEXT = (
+    "Speech recognition would run on the CPU even though an NVIDIA GPU is available. "
+    "faster-whisper / CTranslate2 could not use CUDA, so the dub stopped instead of falling back silently. "
+    "Install the CUDA build (cuBLAS 12) and run it again."
+)
+
+
+class AsrCudaFallback(RuntimeError):
+    """faster-whisper / CTranslate2 would run on the CPU while an NVIDIA GPU is available."""
+
+
+def cuda_gpu_present() -> bool:
+    """True when this machine has an NVIDIA GPU, even if this process's PyTorch build is CPU-only."""
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return True
+    except Exception:  # noqa: BLE001 - torch missing: ask nvidia-smi
+        pass
+    try:
+        from dubber.infra.resources import gpu_from_smi
+
+        found = gpu_from_smi()
+        return bool(found and found[1] > 0)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def ensure_cuda_asr(requested: str, resolved: str) -> None:
+    """Stop when recognition would use the CPU while a CUDA GPU is present.
+
+    An explicit ``cpu`` request is kept (the user asked for it).  A resolved CUDA device is kept too.
+    """
+    if requested == "cpu" or resolved == "cuda":
+        return
+    if cuda_gpu_present():
+        raise AsrCudaFallback(_FALLBACK_TEXT)
+
+
+def is_cuda_fallback_failure(message: str) -> bool:
+    """True when a pipeline error is the hard stop above (the window shows a warning for it)."""
+    text = message or ""
+    return "AsrCudaFallback" in text or "would run on the CPU even though" in text
+
 
 def decode_options(language: Optional[str], retry: bool = False) -> Dict[str, Any]:
     opts: Dict[str, Any] = dict(beam_size=5, word_timestamps=True, vad_filter=True, language=language or None,
@@ -108,18 +153,39 @@ def _detect(model, x, log) -> Optional[str]:
         return None
 
 
+def load_whisper(folder: str, device: str):
+    """The faster-whisper model itself (no transcription).  CUDA uses float16; the CPU uses int8."""
+    from faster_whisper import WhisperModel
+
+    if device == "cuda":
+        return WhisperModel(str(folder), device="cuda", compute_type="float16")
+    return WhisperModel(str(folder), device="cpu", compute_type="int8", cpu_threads=0)
+
+
+def load_whisper_cached(device: str, repo: str, allow_download: bool, log: Callable[[str], None]):
+    """Load (or reuse) the ASR model.  The resident cache keeps it for the next stage and the next clip."""
+    from dubber import models
+    from dubber.infra import resident
+
+    folder, _ = models.ensure(repo, allow_download, log=log)
+    resolved = device if device in ("cuda", "cpu") else "cpu"
+
+    def build():
+        return load_whisper(str(folder), resolved)
+
+    if resident.enabled():
+        return resident.slot("asr", 2.2, build)
+    return build()
+
+
 def transcribe_faster_whisper(wav16: str, language: Optional[str], repo: str, device: str, allow_download: bool,
-                              log: Callable[[str], None]) -> Dict[str, Any]:
+                              log: Callable[[str], None], requested: Optional[str] = None) -> Dict[str, Any]:
     from dubber.infra import cuda_dlls
 
     if device == "cuda":
         cuda_dlls.expose()                   # cublas64_12.dll from torch\lib (cu128) before CTranslate2 needs it
-    from faster_whisper import WhisperModel
-
-    from dubber import models
     from dubber.core import audio, segment
 
-    folder, _ = models.ensure(repo, allow_download, log=log)
     x, _ = audio.read(wav16, 16000)
 
     def decode(model, **opts):
@@ -154,11 +220,17 @@ def transcribe_faster_whisper(wav16: str, language: Optional[str], repo: str, de
         assert best is not None
         return best
 
+    asked = device if requested is None else requested
+    ensure_cuda_asr(asked, device)
     if device == "cuda":
         try:
-            return run(WhisperModel(str(folder), device="cuda", compute_type="float16"))
-        except Exception as exc:  # noqa: BLE001 - missing cuBLAS/cuDNN DLLs (e.g. cublas64_12.dll): the CPU still works
+            return run(load_whisper_cached("cuda", repo, allow_download, log))
+        except AsrCudaFallback:
+            raise
+        except Exception as exc:  # noqa: BLE001 - missing cuBLAS/cuDNN: do not hide it behind a silent CPU run
             if "out of memory" in str(exc).lower():
                 raise
-            log(f"ASR on GPU failed ({type(exc).__name__}: {str(exc)[:160]}); using the CPU")
-    return run(WhisperModel(str(folder), device="cpu", compute_type="int8", cpu_threads=0))
+            if cuda_gpu_present():
+                raise AsrCudaFallback(_FALLBACK_TEXT) from exc
+            log(f"ASR on GPU failed ({type(exc).__name__}: {str(exc)[:160]}); no NVIDIA GPU was found, using the CPU")
+    return run(load_whisper_cached("cpu", repo, allow_download, log))

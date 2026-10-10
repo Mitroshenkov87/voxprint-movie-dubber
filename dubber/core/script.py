@@ -310,6 +310,54 @@ def split_translation(sources: Sequence[str], translated: str) -> Optional[List[
     return out
 
 
+def fit_text_to_slot(text: str, lang: str, slot_s: float) -> str:
+    """The shortest acceptable wording of ``text`` that the estimate can say inside ``slot_s``, or the shortest one."""
+    if slot_s <= 0 or estimate_seconds(text, lang) <= slot_s + 1e-6:
+        return text
+    best = text
+    for variant in shorten(text, lang):
+        best = variant
+        if estimate_seconds(variant, lang) <= slot_s + 1e-6:
+            return variant
+    return best
+
+
+def prepare_for_voice(lines: List[Line], lang: str, total: Optional[float] = None) -> List[int]:
+    """Shorten lines that will not fit their slot, then merge one that is still too long into the next breath.
+
+    ``lines`` is updated in place. Absorbed ids are removed from the list and returned. A second call does not
+    shorten a line whose estimate already fits, and does not merge it again."""
+    dropped: List[int] = []
+    for ln in lines:
+        if ln.keep_original or not (ln.translation or "").strip():
+            continue
+        room = timefit.slot_for(ln, lines, total) * timefit.MAX_STRETCH
+        fitted = fit_text_to_slot(ln.translation, lang, room)
+        if fitted != ln.translation:
+            ln.translation = fitted
+        ln.spoken = ln.translation
+    i = 0
+    while i < len(lines) - 1:
+        ln, nxt = lines[i], lines[i + 1]
+        if ln.keep_original or not (ln.translation or "").strip() or nxt.keep_original:
+            i += 1
+            continue
+        room = timefit.slot_for(ln, lines, total) * timefit.MAX_STRETCH
+        if estimate_seconds(ln.translation, lang) <= room + 1e-6:
+            i += 1
+            continue
+        if nxt.speaker != ln.speaker or nxt.start - ln.end >= BREATH_GAP_S:
+            i += 1
+            continue
+        joined = f"{ln.translation.strip()} {(nxt.translation or '').strip()}".strip()
+        merged = merge_short_into_next(ln, nxt, joined)
+        merged.spoken = joined
+        lines[i] = merged
+        dropped.append(nxt.id)
+        del lines[i + 1]
+    return dropped
+
+
 def merge_short_into_next(short: Line, nxt: Line, translation: str) -> Line:
     """One line spanning both, texts joined. Used when a joint translation cannot be split back apart."""
     return Line(id=short.id, start=min(short.start, nxt.start), end=max(short.end, nxt.end),

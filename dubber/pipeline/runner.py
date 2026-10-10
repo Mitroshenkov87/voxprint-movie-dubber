@@ -1,4 +1,4 @@
-"""Runs a project through the stages: cache check, one worker process per model stage, the shared GPU lock, progress + ETA,
+"""Runs a project through the stages: cache check, one worker process for the model stages, the shared GPU lock, progress + ETA,
 Watch-mode chunks while the dub is being made, and the 1-minute preview fragment.
 
 The runner is Qt-free; the window drives it from a QThread and gets callbacks.  ``main.py --run-project DIR`` runs it without a
@@ -54,6 +54,7 @@ class Runner:
         self.eta = Eta()
         self._done_w = 0.0
         self._watch_written: set = set()
+        self._gpu_cm: Any = None
 
     # ------------------------------------------------------------------ public
     def run(self, until_stage: str = "mux", from_stage: Optional[str] = None) -> RunResult:
@@ -62,6 +63,13 @@ class Runner:
         prev = ""
         res = RunResult(True)
         t_start = time.time()
+        try:
+            return self._run_keys(keys, total_w, prev, res, t_start, from_stage)
+        finally:
+            self._release_gpu()
+
+    def _run_keys(self, keys: List[str], total_w: float, prev: str, res: RunResult, t_start: float,
+                  from_stage: Optional[str]) -> RunResult:
         for key in keys:
             if self.cancel.is_set():
                 return RunResult(False, "cancelled", res.stages)
@@ -125,18 +133,75 @@ class Runner:
             self._watch_written = set()
         if not self._isolated(key):
             summary = S.FUNCS[key](self.p, self.cfg, emit)
+            self._log_gpu(key, emit)
             self.p.save()
             return summary
         self.p.save()
+        cfg = self._stage_cfg(key)
+        if self.cfg.get("resident_models", True):
+            self._hold_gpu(key, cfg)
+            return self._session_stage(key, emit, cfg)
         from dubber.infra import gpu_lock
 
-        cfg = self._stage_cfg(key)
         if key in S.GPU and cfg.get("device") == "cuda":
             eta = TIMEOUT_PER_FILM_S.get(key, 1.0) * float(self.p.settings.get("duration") or 600) / 4
             with gpu_lock.gpu_job(f"dubbing:{key}", eta_s=eta, cancel=self.cancel.is_set,
                                   on_wait=lambda h, s: self.cb.log(f"waiting for the GPU: {h.get('owner', '?')} runs {h.get('job', '?')}")):
                 return self._worker(key, emit, cfg)
         return self._worker(key, emit, cfg)
+
+    def _hold_gpu(self, key: str, cfg: Dict[str, Any]) -> None:
+        """One lock for every CUDA stage of this run.  Released in :meth:`run` so the next film can take the GPU."""
+        if self._gpu_cm is not None or key not in S.GPU or cfg.get("device") != "cuda":
+            return
+        from dubber.infra import gpu_lock
+
+        eta = TIMEOUT_PER_FILM_S.get(key, 1.0) * float(self.p.settings.get("duration") or 600)
+        cm = gpu_lock.gpu_job(f"dubbing:{key}", eta_s=eta, cancel=self.cancel.is_set,
+                              on_wait=lambda h, s: self.cb.log(f"waiting for the GPU: {h.get('owner', '?')} runs {h.get('job', '?')}"))
+        cm.__enter__()
+        self._gpu_cm = cm
+
+    def _release_gpu(self) -> None:
+        cm = self._gpu_cm
+        self._gpu_cm = None
+        if cm is not None:
+            cm.__exit__(None, None, None)
+
+    def _log_gpu(self, key: str, emit: Callable[..., None]) -> None:
+        if key not in S.GPU:
+            return
+        from dubber.infra.thermal import _mask_text, read_nvidia, stage_telemetry_line
+
+        temp, power, mask = read_nvidia()
+        if temp is None and power is None and not mask:
+            return
+        emit("log", text=stage_telemetry_line(key, temp, power, _mask_text(mask)))
+
+    def _session_stage(self, key: str, emit: Callable[..., None], cfg: Dict[str, Any]) -> str:
+        """Run the stage in the shared model process, and do pending CPU work beside it."""
+        from dubber.pipeline import prefetch
+        from dubber.pipeline.session import get_session
+
+        def on_log(line: str) -> None:
+            try:
+                msg = json.loads(line)
+            except ValueError:
+                emit("log", text=line)
+                return
+            kind = msg.pop("kind", "log")
+            try:
+                emit(kind, **msg)
+            except Cancelled:
+                pass
+
+        def gpu() -> str:
+            return get_session(self.cfg).run_stage(self.p.folder, key, cfg, on_log, cancel=self.cancel.is_set)
+
+        def cpu() -> None:
+            prefetch.run_cpu(prefetch.plan(key).cpu, self.p, cfg, emit)
+
+        return prefetch.overlap(gpu, cpu)
 
     def _stage_cfg(self, key: str) -> Dict[str, Any]:
         """The VRAM / RAM policy for this stage, measured now (``dubber.infra.resources``): a model that does not fit the VRAM

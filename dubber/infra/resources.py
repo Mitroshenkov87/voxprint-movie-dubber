@@ -11,8 +11,8 @@ What the budget decides:
 * whether several voices (LoRA adapters) stay loaded at once or are swapped one after another;
 * per stage: a model that does not fit the GPU budget runs on the CPU (light stages), or the lighter TTS model is used.
 
-Models of different stages never share the GPU: every model stage is its own worker process, which frees all its memory on exit,
-so stages are always swapped sequentially.  The GUI process never imports torch: there the numbers come from ``nvidia-smi``.
+Model stages of one dub share one worker process. A model stays loaded while it fits in the VRAM budget and is unloaded
+only under pressure (``dubber.infra.resident``). The GUI process never imports torch: there the numbers come from ``nvidia-smi``.
 """
 from __future__ import annotations
 

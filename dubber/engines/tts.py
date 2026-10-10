@@ -5,11 +5,11 @@ FlashAttention-2 if that package exists, then standard SDPA.  ``auto`` tries Gra
 ``tts_backend`` is ``standard/sdpa`` (or ``standard/flash_attention_2``) and stays the fallback when Graphs cannot load.  Clip 3
 (16 short lines) measured graphs/sdpa at 67.5 s against batched standard/sdpa at 208.9 s.  On the CPU: SDPA.  Every step falls back
 to the next one if loading fails.
-Batching: up to ``MAX_BATCH`` (12) lines per generate call, sized by the VRAM budget in ``dubber.infra.resources`` (free memory minus
-a headroom, re-measured before each batch; about 1.2 GB per batched line).  Lines of similar length are batched together (sorted
-inside a small look-ahead window so the output stays close to film order for Watch mode); out-of-memory halves the batch.
+Batching: CUDA Graphs stay the default and synthesise one line at a time (static shapes).  The batched standard backend is used
+only for a group of at least four long lines (about 8 seconds or 120 characters), sorted by length.  Up to ``MAX_BATCH`` (12)
+lines per generate call, sized by the VRAM budget in ``dubber.infra.resources`` (free memory minus a headroom, re-measured
+before each batch; about 1.2 GB per batched line).  Out-of-memory halves the batch.
 Library voices (LoRA adapters) stay loaded side by side while the budget allows, else they are swapped one after another.
-The CUDA-Graphs backend synthesises one line at a time (static shapes).
 
 Voices: ``clone`` = reference clip + its text (ICL; without a text the x-vector-only mode is used); ``library`` = a LoRA adapter
 from the shared Voxprint voice library, applied to the talker with peft (several adapters can be loaded and switched).
@@ -32,6 +32,9 @@ MAX_SECONDS_PER_CHAR = 0.19
 MIN_TOKENS, MAX_TOKENS = 48, 2048
 MAX_BATCH = 12
 SORT_WINDOW_BATCHES = 3
+LONG_LINE_S = 8.0
+LONG_LINE_CHARS = 120
+MIN_LONG_BATCH = 4
 QWEN_LANG = {"ru": "Russian", "en": "English", "de": "German", "fr": "French", "es": "Spanish", "it": "Italian", "pt": "Portuguese",
              "ja": "Japanese", "ko": "Korean", "zh": "Chinese"}
 
@@ -82,6 +85,30 @@ def next_group(queue: List[int], texts: Dict[int, str], limit: int) -> List[int]
         first = window.index(queue[0])
         lo = max(0, min(first - limit // 2, len(window) - limit))
         group = window[lo:lo + limit]
+    for i in group:
+        queue.remove(i)
+    return group
+
+
+def is_long_line(text: str, seconds: Optional[float] = None) -> bool:
+    """A line long enough to batch: about 8 seconds of speech, or 120 characters."""
+    if seconds is not None and float(seconds) >= LONG_LINE_S:
+        return True
+    return len(text) >= LONG_LINE_CHARS
+
+
+def next_dialogue_group(queue: List[int], texts: Dict[int, str], limit: int,
+                        seconds: Optional[Dict[int, float]] = None, graphs: bool = False) -> List[int]:
+    """Next synthesis group.  Graphs, a batch of one, or fewer than four long lines: the earliest line alone.
+
+    Otherwise up to ``limit`` long lines, shortest first.  Short dialogue stays one line even on the standard backend."""
+    if graphs or limit <= 1:
+        return [queue.pop(0)]
+    sec = seconds or {}
+    long_ids = [i for i in queue if is_long_line(texts[i], sec.get(i))]
+    if len(long_ids) < MIN_LONG_BATCH:
+        return [queue.pop(0)]
+    group = sorted(long_ids, key=lambda i: (len(texts[i]), sec.get(i) or 0.0, i))[:limit]
     for i in group:
         queue.remove(i)
     return group
@@ -159,7 +186,9 @@ class BaseTTS:
                 budget.remeasure()
                 # keep an out-of-memory halving; do not grow back past what the fresh measurement allows
                 limit = max(1, min(limit, self.max_batch()))
-            group = next_group(queue, texts, limit)
+            seconds = getattr(self, "line_seconds", None)
+            graphs = bool(getattr(self, "graphs", False))
+            group = next_dialogue_group(queue, texts, limit, seconds, graphs)
             try:
                 wavs = self.synthesize_batch([texts[i] for i in group], voice)
             except Exception as exc:  # noqa: BLE001

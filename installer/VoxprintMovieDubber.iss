@@ -1,4 +1,4 @@
-; Voxprint AI Movie Dubber - ONLINE installer (Inno Setup 6.x).
+﻿; Voxprint AI Movie Dubber - ONLINE installer (Inno Setup 6.x).
 ;   ISCC installer\VoxprintMovieDubber.iss   ->   installer\Output\VoxprintMovieDubber-Setup.exe
 ;
 ; The installer is small: it contains only the program's own files (Python sources, icon, licences) and a download script.
@@ -18,7 +18,50 @@
 
 #define AppName "VoxprintMovieDubber"
 #define AppDisplayName "Voxprint AI Movie Dubber"
-#define AppVersion "0.1.0-pre.5"
+; APP_VERSION, APP_BUILD and CODENAME are read from dubber\appinfo.py (the only copy).
+#define AppInfoFile AddBackslash(SourcePath) + "..\dubber\appinfo.py"
+#if FileExists(AppInfoFile) == 0
+  #error dubber\appinfo.py was not found
+#endif
+#define AppInfoHandle FileOpen(AppInfoFile)
+#if AppInfoHandle == 0
+  #error dubber\appinfo.py could not be opened
+#endif
+#define AppVersion ""
+#define AppBuild ""
+#define AppCodename ""
+#sub ParseAppInfoLine
+  #define AppInfoLine FileRead(AppInfoHandle)
+  #if AppInfoLine != ""
+    #if Pos("APP_VERSION", AppInfoLine) == 1
+      #define AppVersion Copy(AppInfoLine, Pos('"', AppInfoLine) + 1, Len(AppInfoLine) - Pos('"', AppInfoLine) - 1)
+    #elif Pos("APP_BUILD", AppInfoLine) == 1
+      #define AppBuild Trim(Copy(AppInfoLine, Pos("=", AppInfoLine) + 1, 16))
+    #elif Pos("CODENAME", AppInfoLine) == 1
+      #define AppCodename Copy(AppInfoLine, Pos('"', AppInfoLine) + 1, Len(AppInfoLine) - Pos('"', AppInfoLine) - 1)
+    #endif
+  #endif
+#endsub
+#for {AppInfoI = 0; AppInfoI < 80; AppInfoI++} ParseAppInfoLine
+#expr FileClose(AppInfoHandle)
+#if AppVersion == ""
+  #error APP_VERSION was not read from dubber\appinfo.py
+#endif
+#if AppBuild == ""
+  #error APP_BUILD was not read from dubber\appinfo.py
+#endif
+#define Q """
+#if Pos("-rc", AppVersion) > 0
+  #define Pretty Copy(AppVersion, 1, Len(AppVersion) - 3) + " RC"
+  #define FileVersion Copy(AppVersion, 1, Len(AppVersion) - 3) + "." + AppBuild
+#else
+  #define Pretty AppVersion
+  #define FileVersion AppVersion + ".0"
+#endif
+#define VersionLabel Pretty + " · build " + AppBuild
+#if AppCodename != ""
+  #define VersionLabel VersionLabel + " " + Q + AppCodename + Q
+#endif
 #define PyW "{app}\runtime\Scripts\pythonw.exe"
 #define Py "{app}\runtime\Scripts\python.exe"
 
@@ -26,7 +69,10 @@
 AppId={{B3D84C11-52A7-4E5B-8F0D-6A9E2C41D7B5}
 AppName={#AppDisplayName}
 AppVersion={#AppVersion}
-AppVerName={#AppDisplayName} {#AppVersion}
+AppVerName={#AppDisplayName} {#VersionLabel}
+VersionInfoVersion={#FileVersion}
+VersionInfoProductVersion={#FileVersion}
+VersionInfoProductTextVersion={#VersionLabel}
 AppPublisher=Voxprint
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName=Voxprint

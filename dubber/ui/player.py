@@ -8,7 +8,7 @@ If Qt Multimedia cannot play the file, ``failed`` is emitted and the window offe
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from PySide6.QtCore import Qt, QTimer, QUrl, Signal
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout, QWidget
@@ -40,7 +40,9 @@ class Player(QWidget):
         self.watch: Optional[WatchState] = None
         self.end_s: Optional[float] = None
         self._cursor = 0.0                    # film time of the next frame written to the sink
-        self._sink = None
+        self.video: Any = None
+        self.media: Any = None
+        self._sink: Any = None
         self._io = None
         self._seeking = False
         lay = QVBoxLayout(self)

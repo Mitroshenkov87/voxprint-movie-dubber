@@ -221,4 +221,7 @@ jobs:
             $notesFile = "release-notes.md"
             "Early pre-release of Voxprint AI Movie Dubber. Small online installer: it downloads Python, PyTorch and the other dependencies during the setup. Windows 10/11 x64; an NVIDIA GPU is needed for useful speed." | Out-File -Encoding utf8 $notesFile
           }
-          gh release create "$tag" --prerelease --title "Voxprint AI Movie Dubber $tag (pre-release)" --verify-tag --notes-file "$notesFile" installer/Output/VoxprintMovieDubber-Setup.exe installer/Output/VoxprintMovieDubber-Setup.exe.sha256
+          Set-Location C:\vmd
+          $title = & C:\vmd\runtime\Scripts\python.exe -c "from dubber.appinfo import release_title; print(release_title())"
+          if (-not $title) { throw "release title was empty" }
+          gh release create "$tag" --prerelease --title "$title" --verify-tag --notes-file "$notesFile" installer/Output/VoxprintMovieDubber-Setup.exe installer/Output/VoxprintMovieDubber-Setup.exe.sha256

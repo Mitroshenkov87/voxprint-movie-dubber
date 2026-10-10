@@ -82,12 +82,15 @@ class Speaker:
     ref_text: str = ""
     seconds: float = 0.0              # total speech of the speaker
     key: Optional[bool] = None        # key character: None = automatic (share of the dialogue), True/False = set by the user
+    actor_weight: Optional[float] = None  # likeness for this character; None = the project default
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "Speaker":
+        raw = d.get("actor_weight")
+        weight = None if raw is None or raw == "" else float(raw)
         return cls(id=str(d["id"]), name=str(d.get("name") or d["id"]), voice=Voice.from_dict(d.get("voice")),
                    ref_audio=str(d.get("ref_audio") or ""), ref_text=str(d.get("ref_text") or ""), seconds=float(d.get("seconds") or 0.0),
-                   key=d.get("key") if isinstance(d.get("key"), bool) else None)
+                   key=d.get("key") if isinstance(d.get("key"), bool) else None, actor_weight=weight)
 
 
 DEFAULT_SETTINGS: Dict[str, Any] = {
@@ -96,13 +99,13 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
                                       # (source_lang_detected) so that detection never invalidates the cached stages
     "target_lang": "ru",
     "multi_voice": False,             # OFF: one voice for every line, diarization skipped
-    "single_voice": {"kind": "clone", "id": ""},
+    "single_voice": {"kind": "clone", "id": "", "actor_weight": 0.5},
     "original_volume": 0.15,          # original speech under the dub (voice-over style); 0 = removed
     "audio_track": 0,
     "audio_track_auto": True,         # the original-language track is picked automatically (dubber.core.media.pick_original_track)
     "subtitle_choice": "auto",        # auto | none | <path>
     "output_format": "mkv",           # mkv | mp4 (remux only; "same" from older projects = the film's container)
-    "actor_weight": 0.7,              # actor-like voices: share of the actor's own timbre (dubber.core.actor_voice)
+    "actor_weight": 0.5,              # default likeness when a character has not set one (dubber.core.actor_voice)
     "key_share": 0.2,                 # a speaker with >= this share of the dialogue time is a key character
     "profanity": "keep",              # keep (as in the original) | soften (no mat; see dubber.core.profanity)
 }

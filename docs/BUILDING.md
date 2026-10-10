@@ -33,6 +33,12 @@ uses it, and the shared models only when no other program uses them and you answ
 Shared settings: `%LOCALAPPDATA%\Voxprint\state\suite.json` (schema 1: `ui_language`, `theme`, `models_dir`, `gpu`), read and written by
 both programs (`dubber/infra/suite.py`).
 
+## Version and codename
+
+`APP_VERSION`, `APP_BUILD` and `CODENAME` in `dubber/appinfo.py` are the only copy of the release identity. The installer reads that file when it is compiled. The window, the splash, diagnostics and the GitHub release title use `version_label()` and `release_title()`.
+
+A codename is one Biblical Hebrew word in ASCII transliteration. It describes the state of that build (readiness, a milestone), not a theme of the product. It is shown only when it is not empty, in quotes: `1.0.0 RC · build 999 "Hineni"`. Build 999 is Hineni (Genesis 22:1, "here I am": readiness).
+
 ## GitHub Actions
 `.github/workflows/build-installer.yml` (manual run or a `v*` tag) builds the installer on a free `windows-latest` runner, installs it
 silently with the CPU build of PyTorch, runs the installed program and the tests, uninstalls it and uploads the installer as an artifact.

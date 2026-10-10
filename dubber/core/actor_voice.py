@@ -4,7 +4,7 @@ For one speaker it blends
 * the actor's own clean reference clip (built from his lines; Qwen3-TTS clones cross-lingually from it), and
 * the closest voice of the shared library (cosine similarity of speaker embeddings: the actor's x-vector against each library
   voice's ``speaker_centroid.safetensors``; voices of the other gender are skipped when the gender is known),
-by mixing the two speaker embeddings (``weight`` = share of the actor, default 0.7) and running the library LoRA adapter at a
+by mixing the two speaker embeddings (``weight`` = share of the actor, default 0.5) and running the library LoRA adapter at a
 reduced strength (``library scale x (1 - weight)``).  When the actor clip is too short or too noisy the library voice is used
 as is (fallback).
 
@@ -26,7 +26,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-DEFAULT_WEIGHT = 0.7          # share of the actor's timbre
+DEFAULT_WEIGHT = 0.5          # share of the actor's timbre; the rest is the closest library voice
 MIN_REF_S = 4.0               # shorter actor clips -> library fallback
 MIN_SNR_DB = 12.0             # noisier actor clips -> library fallback
 CENTROID_FILE = "speaker_centroid.safetensors"

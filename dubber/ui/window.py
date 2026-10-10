@@ -5,7 +5,7 @@ Lines are optional review tabs; after the analysis they get a small badge only w
 
 Same shell as the Voxprint Audiobook Builder: translucent root, Acrylic backdrop on Windows 11, cards with rounded corners,
 a gear menu for the UI language.  Heavy work never runs in the GUI thread: the pipeline runs in a QThread that starts one worker
-*process* per model stage (``dubber.pipeline.runner``); diagnostics live in their own dialog.
+process for the model stages (``dubber.pipeline.runner``); diagnostics live in their own dialog.
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (QApplication, QFileDialog, QHBoxLayout, QLabel, Q
                                QWidget)
 
 from dubber import i18n, paths, platform_win, settings
-from dubber.appinfo import APP_DISPLAY_NAME, APP_VERSION, resource_dir
+from dubber.appinfo import APP_DISPLAY_NAME, resource_dir, version_label
 from dubber.core import audio, media, review, voices
 from dubber.core.project import Project, Voice
 from dubber.core.watch import WatchState
@@ -154,7 +154,7 @@ class MainWindow(QWidget):
         self.dubp.open_result.connect(self.show_result)
         self.dubp.external.connect(self.open_external)
         self.dubp.volume.connect(self.set_original_volume)
-        self._sample_player = None
+        self._sample_player: Any = None
 
     def _fit(self) -> None:
         w, h = 1040, 760
@@ -181,7 +181,7 @@ class MainWindow(QWidget):
             page.retranslate()
         self._update_steps()
         self._refresh_plan()
-        self.lbl_footer.setText(f"{tr('ui.footer_main')}  ·  {APP_VERSION}")
+        self.lbl_footer.setText(f"{tr('ui.footer_main')}  ·  {version_label()}")
 
     def _language_menu(self) -> None:
         menu = QMenu(self)
@@ -346,8 +346,12 @@ class MainWindow(QWidget):
         if p.settings.get("audio_track_auto", True):
             p.settings["audio_track"] = media.pick_original_track(self.info, p.settings.get("target_lang", "ru"))
         if not p.settings.get("single_voice_user"):
+            prev = dict(p.settings.get("single_voice") or {})
+            weight = prev.get("actor_weight", p.settings.get("actor_weight", 0.5))
             lv = voices.default_single_voice(p.settings.get("target_lang", "ru"))
-            p.settings["single_voice"] = {"kind": "library", "id": lv.id} if lv else {"kind": "clone", "id": ""}
+            chosen = {"kind": "library", "id": lv.id} if lv else {"kind": "clone", "id": ""}
+            chosen["actor_weight"] = weight
+            p.settings["single_voice"] = chosen
 
     def _refresh_plan(self) -> None:
         if self.project is None:
@@ -555,7 +559,12 @@ class MainWindow(QWidget):
                                     + ("" if self.watch_state.ready else "  " + tr("dub.watch_wait")))
 
     def _on_done(self, ok: bool, message: str) -> None:
+        from dubber.engines.asr import is_cuda_fallback_failure
+
         kind = self.job_kind
+        cuda_stop = (not ok) and is_cuda_fallback_failure(message)
+        if cuda_stop:
+            message = tr("asr.cuda_fallback")
         folder = self.job.result_folder if self.job else None
         self.job_kind = ""
         project = self.project
@@ -593,6 +602,10 @@ class MainWindow(QWidget):
                 self._play_preview(folder)
             else:
                 self.dubp.lbl_stage.setText(tr("run.failed", error=message))
+        if cuda_stop:
+            from PySide6.QtWidgets import QMessageBox
+
+            QMessageBox.warning(self, tr("asr.cuda_fallback_title"), tr("asr.cuda_fallback"))
         self._update_steps()
 
     def _reload_pages(self) -> None:
