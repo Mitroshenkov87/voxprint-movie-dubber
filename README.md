@@ -8,7 +8,7 @@ This is the 1.0.0 release candidate. The build number and the codename (Bochan) 
 
 ## Install
 
-**Requirements:** Windows 11 24H2 or newer (64-bit), an NVIDIA GeForce RTX 40-series graphics card or newer with an NVIDIA driver from the 600 branch or newer, about 25 GB of free disk space and an internet connection for the first model download. The setup and the program stop with a clear message on older hardware; there is no processor-only mode. A Linux package (distributions released in 2025 or later) is on the roadmap.
+**Requirements:** Windows 11 24H2 or newer (64-bit), an NVIDIA GeForce RTX 40-series graphics card or newer with an NVIDIA driver from the 600 branch or newer, about 25 GB of free disk space and an internet connection for the first model download. The setup and the program stop with a clear message on older hardware; there is no processor-only mode. A Linux package (distributions released in 2025 or later) is on the [roadmap](ROADMAP.md).
 
 1. Download the installer from the [latest release](https://github.com/Mitroshenkov87/voxprint-movie-dubber/releases):
    - **Full installer** (offline, recommended): `VoxprintMovieDubber-Full-Setup.exe` together with every `VoxprintMovieDubber-Full-Setup-N.bin` part, all in the same folder. It carries Python and PyTorch, so setup needs no internet.
@@ -29,6 +29,10 @@ This is the 1.0.0 release candidate. The build number and the codename (Bochan) 
 You can listen to a one-minute preview first, start watching while the rest is still being dubbed, and review characters, voices and every line before dubbing. Step-by-step instructions are in the [User guide](docs/USER-GUIDE.md).
 
 Other programs can call it without the window. `python main.py --dry-run --json` prints one JSON object and does not load or download models. The commands and exit codes are in the [command-line reference](docs/CLI.md).
+
+## Roadmap
+
+Next: meaning-based translation with a local language model, full command-line control and a Linux package. See [ROADMAP.md](ROADMAP.md).
 
 **License:** Apache-2.0, see `LICENSE` and `NOTICE`. Third-party components keep their own licenses (`docs/THIRD_PARTY_NOTICES.md`).
 
