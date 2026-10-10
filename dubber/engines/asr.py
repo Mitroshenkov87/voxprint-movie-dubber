@@ -76,6 +76,7 @@ def is_cuda_fallback_failure(message: str) -> bool:
 
 
 def decode_options(language: Optional[str], retry: bool = False) -> Dict[str, Any]:
+    """Build one faster-whisper pass: word timestamps, temperatures from 0.0 to 0.4, and a punctuated prompt. ``retry`` uses the alternate prompt when one exists."""
     opts: Dict[str, Any] = dict(beam_size=5, word_timestamps=True, vad_filter=True, language=language or None,
                                 condition_on_previous_text=True, temperature=(0.0, 0.2, 0.4))
     prompt = (RETRY_PROMPTS if retry else PROMPTS).get(language or "") or (PROMPTS.get(language or "") if retry else None)
@@ -180,6 +181,7 @@ def load_whisper_cached(device: str, repo: str, allow_download: bool, log: Calla
 
 def transcribe_faster_whisper(wav16: str, language: Optional[str], repo: str, device: str, allow_download: bool,
                               log: Callable[[str], None], requested: Optional[str] = None) -> Dict[str, Any]:
+    """Transcribe a 16 kHz WAV, recover skipped speech, and retry once if punctuation is missing. Raise AsrCudaFallback when an NVIDIA GPU is present but recognition would run on the CPU."""
     from dubber.infra import cuda_dlls
 
     if device == "cuda":

@@ -10,11 +10,13 @@ from typing import Optional, TextIO
 
 
 class GuardedStream:
+    """Text stream whose write and flush swallow console errors. ``inner`` is None when the process has no console."""
     def __init__(self, inner: Optional[TextIO]) -> None:
         self._inner = inner
         self._dead = inner is None
 
     def write(self, text: str) -> int:
+        """Write ``text`` and return how many characters were accepted, or 0 when the write fails."""
         if self._dead or self._inner is None:
             return 0
         try:
@@ -30,6 +32,7 @@ class GuardedStream:
             return 0
 
     def flush(self) -> None:
+        """Flush the inner stream, marking it dead instead of raising when that fails."""
         if self._dead or self._inner is None:
             return
         try:
@@ -38,6 +41,7 @@ class GuardedStream:
             self._dead = True
 
     def isatty(self) -> bool:
+        """Return whether the inner stream is a terminal, or False when that check fails."""
         try:
             return bool(self._inner and self._inner.isatty())
         except Exception:  # noqa: BLE001
@@ -50,6 +54,7 @@ class GuardedStream:
 
 
 def guard_stdio() -> None:
+    """Wrap ``sys.stdout`` and ``sys.stderr`` in :class:`GuardedStream` when they are not already wrapped."""
     if not isinstance(sys.stdout, GuardedStream):
         sys.stdout = GuardedStream(sys.stdout)
     if not isinstance(sys.stderr, GuardedStream):

@@ -30,6 +30,7 @@ except ImportError:                                   # pragma: no cover - depen
 
 
 class Player(QWidget):
+    """Silent film player that plays the dubbed sound in step with the picture."""
     failed = Signal(str)
     buffering = Signal(bool)
     finished = Signal()
@@ -83,6 +84,7 @@ class Player(QWidget):
 
     # ------------------------------------------------------------------ texts
     def retranslate(self) -> None:
+        """Set the play, pause, and stop labels for the current language."""
         playing = self.media is not None and self.media.playbackState() == QMediaPlayer.PlaybackState.PlayingState
         self.btn_play.setText(tr("player.pause") if playing else tr("player.play"))
         self.btn_stop.setText(tr("player.stop"))
@@ -102,6 +104,7 @@ class Player(QWidget):
         return True
 
     def play(self) -> None:
+        """Start playback unless Watch mode is still buffering."""
         if self.media is None or self.source is None:
             return
         if self.watch is not None and self.watch.buffering:
@@ -112,6 +115,7 @@ class Player(QWidget):
         self.retranslate()
 
     def pause(self) -> None:
+        """Pause the picture and the dubbed sound."""
         if self.media is not None:
             self.media.pause()
         if self._sink is not None:
@@ -119,6 +123,7 @@ class Player(QWidget):
         self.retranslate()
 
     def toggle(self) -> None:
+        """Pause if the film is playing, otherwise start it."""
         if self.media is None:
             return
         if self.media.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
@@ -127,6 +132,7 @@ class Player(QWidget):
             self.play()
 
     def stop(self) -> None:
+        """Stop playback and clear the Watch state."""
         self.timer.stop()
         if self.media is not None:
             self.media.stop()
@@ -139,6 +145,7 @@ class Player(QWidget):
         self.retranslate()
 
     def position(self) -> float:
+        """Return the current film time in seconds."""
         return (self.media.position() / 1000.0) if self.media is not None else 0.0
 
     def dubbed_until(self, seconds: float, finished: bool = False) -> None:

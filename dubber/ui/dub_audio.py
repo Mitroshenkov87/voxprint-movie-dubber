@@ -41,6 +41,7 @@ class ChunkSource:
 
     @property
     def chunk_s(self) -> float:
+        """Return the chunk length in seconds, or 30 when index.json is missing."""
         try:
             return float(json.loads((self.folder / "index.json").read_text(encoding="utf-8")).get("chunk_s") or 30.0)
         except (OSError, ValueError):
@@ -61,6 +62,7 @@ class ChunkSource:
         return x
 
     def read(self, t: float, n: int) -> np.ndarray:
+        """Return n stereo frames at film time t, with silence for chunks that are not ready."""
         out = np.zeros((n, 2), np.float32)
         cs = self.chunk_s
         pos = max(0, int(round(t * SR)))
@@ -87,9 +89,11 @@ class WavSource:
 
     @property
     def span(self) -> Tuple[float, float]:
+        """Return the film-time start and end of this file."""
         return self.offset, self.offset + len(self.x) / SR
 
     def read(self, t: float, n: int) -> np.ndarray:
+        """Return n stereo frames at film time t, with silence outside this file."""
         out = np.zeros((n, 2), np.float32)
         a = int(round((t - self.offset) * SR))
         lo, hi = max(a, 0), min(a + n, len(self.x))

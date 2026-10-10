@@ -14,6 +14,7 @@ from dubber.core.script import cluster_speakers
 
 def pyannote_turns(wav16: str, device: str, allow_download: bool, log: Callable[[str], None],
                    num_speakers: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Diarize a 16 kHz WAV with pyannote and return each turn's start, end, and speaker, in seconds. ``num_speakers`` asks for exactly that many when set."""
     import torch
     from pyannote.audio import Pipeline
 

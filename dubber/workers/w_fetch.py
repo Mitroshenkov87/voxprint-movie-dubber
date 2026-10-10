@@ -13,6 +13,7 @@ from dubber.workers.common import WorkerContext
 
 
 def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
+    """Ensure each requested model is on disk and report its source, size, and download time."""
     lines: List[str] = []
     bad, ok_n, dl_total = [], 0, 0.0
     overrides = args.get("repos") or {}

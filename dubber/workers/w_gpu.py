@@ -27,6 +27,7 @@ def _try(lines: List[str], tracebacks: List[str], label: str, fn):
 
 
 def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
+    """Measure PyTorch, CUDA, attention backends, and CUDA Graphs, and return one combined result."""
     lines: List[str] = []
     tbs: List[str] = []
     metrics: Dict[str, Any] = {"flash_attn": "unknown", "cuda_graphs": "unknown"}

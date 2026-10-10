@@ -80,6 +80,7 @@ def _asr_hint(p: Project) -> Optional[str]:
 
 # ---------------------------------------------------------------------------------------------- cache keys
 def inputs_for(key: str, p: Project, cfg: Dict[str, Any], prev: str) -> str:
+    """Hash the inputs that decide whether this stage's cache is fresh, chained to the previous stage's key."""
     s, c = p.settings, cfg
     from dubber.core.project import file_fingerprint
 
@@ -106,6 +107,7 @@ def inputs_for(key: str, p: Project, cfg: Dict[str, Any], prev: str) -> str:
 
 # ---------------------------------------------------------------------------------------------- light stages
 def st_probe(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
+    """Read the container and store duration, track labels, and a known audio-track language. Raises RuntimeError when the file has no audio track."""
     info = media.probe(p.source)
     t0, t1 = _rng(p)
     dur = (min(t1, info.duration) - t0) if t0 is not None and t1 is not None else info.duration
@@ -120,6 +122,7 @@ def st_probe(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
 
 
 def st_extract(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
+    """Decode the chosen audio track to 16 kHz mono, 44.1 kHz mono, and 48 kHz stereo, and store the duration."""
     t0, t1 = _rng(p)
     length = (t1 - t0) if t0 is not None and t1 is not None else None
     tr = int(p.settings.get("audio_track") or 0)
@@ -161,6 +164,7 @@ def find_subs(p: Project, lang: str, cfg: Dict[str, Any], emit: Emit, online: bo
 
 
 def st_subtitles(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
+    """Find target and source subtitles, crop them to the project range, and write the SRT files."""
     choice = p.settings.get("subtitle_choice", "auto")
     tgt, src = p.settings["target_lang"], source_lang(p)
     found: Dict[str, Any] = {}
@@ -189,6 +193,7 @@ def st_subtitles(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
 
 
 def st_script(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
+    """Build dialogue lines from target subtitles, else source subtitles, else recognition, snapping subtitle times to the speech windows. Raises RuntimeError when there are no subtitles and no recognition result."""
     windows = [tuple(w) for w in read_json(p.path("analysis", "windows.json"), [])]
     tgt = p.path("subs", "target.srt")
     src = p.path("subs", "source.srt")
@@ -298,6 +303,7 @@ def _reference_hypothesis(wav: Path, cfg: Dict[str, Any], emit: Emit) -> Optiona
 
 # ---------------------------------------------------------------------------------------------- model stages
 def st_vad(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
+    """Find speech with Silero VAD, or the energy detector when Silero is missing, and write the dialogue windows."""
     x, sr = audio.read(p.path("audio", "mix16.wav"), 16000)
     segs = None
     if cfg.get("vad") == "silero":
@@ -318,6 +324,7 @@ def st_vad(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
 
 
 def st_separation(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
+    """Separate speech and background on the dialogue windows, or skip when separation is off."""
     kind = cfg.get("separation", "tiger")
     for n in ("speech.wav", "background.wav", "speech16.wav"):
         (p.folder / "stems" / n).unlink(missing_ok=True)
@@ -338,6 +345,7 @@ def st_separation(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
 
 
 def st_asr(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
+    """Transcribe the speech stem, or the mix, unless recognition is off or source subtitles already supply the text and ASR was not forced."""
     out = p.path("analysis", "asr.json")
     kind = cfg.get("asr", "whisper")
     have_target = (p.folder / "subs" / "target.srt").exists()
@@ -359,6 +367,7 @@ def st_asr(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
 
 
 def st_diarization(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
+    """Assign each line a speaker from subtitle tags, pyannote, or voice clustering, or one voice when multi-voice is off."""
     if not p.settings.get("multi_voice"):
         for ln in p.lines:
             ln.speaker = "S1"
@@ -429,6 +438,7 @@ def _renumber(p: Project, mapping: Dict[int, str]) -> None:
 
 
 def st_translation(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
+    """Translate lines that still have no dub text, then soften profanity when that filter is on."""
     summary = _translate(p, cfg, emit)
     from dubber.core import profanity
 
@@ -492,6 +502,7 @@ def note_ai_review(line: Line, tgt: str) -> None:
 
 # ---------------------------------------------------------------------------------------------- TTS + time fitting
 def voice_spec(p: Project, ln: Line):
+    """Resolve the library adapter, actor blend, or clone reference used to speak this line."""
     from dubber.engines.tts import VoiceSpec
 
     v = p.voice_for(ln)
@@ -537,6 +548,7 @@ def actor_spec(p: Project, sp, library_only: bool = False):
 
 
 def make_tts(p: Project, cfg: Dict[str, Any], need_adapters: bool, emit: Emit):
+    """Load Qwen3-TTS for the dub language, reusing a resident model when that cache is on, or the mock engine when TTS is mock. Library and actor voices set ``need_adapters`` and cannot use the CUDA Graphs backend."""
     from dubber.engines import tts as tts_mod
 
     if cfg.get("tts") == "mock":
@@ -570,6 +582,7 @@ def _blocks(lines: List[Line], block_s: float) -> List[Tuple[float, List[Line]]]
 
 
 def st_tts(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
+    """Synthesize dubbed lines in 60-second blocks, time-fit each take into its slot, and publish Watch-mode progress. Raises RuntimeError when a real engine has no library voice and no reference clip to clone."""
     lang = p.settings["target_lang"]
     script.prepare_for_voice(p.lines, lang, float(p.settings.get("duration") or 0) or None)
     lines = sorted(p.dub_lines(), key=lambda ln: ln.start)
@@ -665,6 +678,7 @@ def st_tts(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
 
 # ---------------------------------------------------------------------------------------------- mix / mux
 def line_audio_map(p: Project, lines: List[Line]) -> Dict[int, Tuple[np.ndarray, int]]:
+    """Load each line's placed WAV that exists on disk, keyed by line id."""
     out = {}
     for ln in lines:
         if ln.audio and p.abs(ln.audio).exists():
@@ -673,6 +687,7 @@ def line_audio_map(p: Project, lines: List[Line]) -> Dict[int, Tuple[np.ndarray,
 
 
 def mix_into(p: Project, t0: float, t1: float, lines: List[Line], cache: Dict[int, Tuple[np.ndarray, int]]) -> Tuple[np.ndarray, int]:
+    """Mix the dub from ``t0`` to ``t1`` seconds and return the waveform with its sample rate. Missing clips are read into ``cache``."""
     windows = [tuple(w) for w in read_json(p.path("analysis", "windows.json"), [])]
     bg, sp = p.folder / "stems" / "background.wav", p.folder / "stems" / "speech.wav"
     near = [ln for ln in lines if ln.place_start < t1 and ln.place_start + ln.audio_s > t0 or ln.keep_original]
@@ -684,6 +699,7 @@ def mix_into(p: Project, t0: float, t1: float, lines: List[Line], cache: Dict[in
 
 
 def st_mix(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
+    """Write the full 48 kHz stereo dub track, ducking the original voice under the new lines."""
     import soundfile as sf
 
     total = float(p.settings.get("duration") or audio.duration(p.path("audio", "mix48s.wav")))
@@ -708,6 +724,7 @@ def st_mix(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
 
 
 def output_path(p: Project) -> Path:
+    """Path of the finished movie: the configured output, or a ``.dub-<lang>`` file beside the source."""
     if p.settings.get("output"):
         return Path(p.settings["output"])
     src = p.source
@@ -719,6 +736,7 @@ def output_path(p: Project) -> Path:
 
 
 def st_mux(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
+    """Add the dub as the default audio track, copying video and the original tracks, unless this run is only a preview."""
     if p.settings.get("range"):
         return "preview: no new file"
     out = output_path(p)

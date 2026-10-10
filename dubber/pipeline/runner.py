@@ -25,11 +25,18 @@ TIMEOUT_PER_FILM_S = {"tts": 6.0, "separation": 2.0, "asr": 2.0, "diarization": 
 
 
 class Cancelled(Exception):
-    pass
+    """Raised when the user cancels a stage that is running in this process."""
 
 
 @dataclass
 class Callbacks:
+    """Progress hooks the window or the CLI receives while a project runs.
+
+    Args:
+        stage: ``(key, status, message)``. Status is ``running``, ``done``, ``cached``, ``skipped``, or ``failed``.
+        progress: ``(fraction, eta_seconds)``. Fraction runs from 0 to 1; ETA is seconds, or -1 when unknown.
+        dubbed_until: Seconds of film whose dub is already final.
+    """
     stage: Callable[[str, str, str], None] = lambda key, status, msg: None        # status: running | done | cached | skipped | failed
     log: Callable[[str], None] = lambda text: None
     progress: Callable[[float, float], None] = lambda frac, eta_s: None           # overall 0..1, ETA seconds (-1 unknown)
@@ -38,12 +45,15 @@ class Callbacks:
 
 @dataclass
 class RunResult:
+    """Outcome of one pipeline run. ``message`` is the output path, ``cancelled``, or the failing stage and its error; ``stages`` maps each key to ``cached``, ``done``, or ``failed``."""
     ok: bool
     message: str = ""
     stages: Dict[str, str] = field(default_factory=dict)
 
 
 class Runner:
+    """Runs one project through the stage order and reports progress on the callbacks. ``cancel`` stops before the next stage, and during a stage in this process."""
+
     def __init__(self, project: Project, cfg: Optional[Dict[str, Any]] = None, cb: Optional[Callbacks] = None,
                  cancel: Optional[threading.Event] = None) -> None:
         self.p = project
@@ -58,6 +68,7 @@ class Runner:
 
     # ------------------------------------------------------------------ public
     def run(self, until_stage: str = "mux", from_stage: Optional[str] = None) -> RunResult:
+        """Run every stage from probe through ``until_stage``, re-running ``from_stage`` even when its cache is fresh, and release the GPU lock if this run held it."""
         keys = S.ORDER[: S.ORDER.index(until_stage) + 1]
         total_w = sum(WEIGHTS[k] for k in keys)
         prev = ""

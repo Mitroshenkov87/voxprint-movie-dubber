@@ -27,6 +27,7 @@ _current: Optional[str] = None
 
 
 def locales_dir() -> Path:
+    """Directory of the ``<code>.json`` catalogs, next to this file or inside a frozen build."""
     return Path(__file__).resolve().parent / "locales" if not getattr(sys, "_MEIPASS", None) else resource_dir() / "dubber" / "locales"
 
 
@@ -80,6 +81,7 @@ def _saved_file() -> Path:
 
 
 def saved_language() -> Optional[str]:
+    """Return the language code saved in ``state/language``, or None when it is missing or unsupported."""
     try:
         return normalize_code(_saved_file().read_text(encoding="utf-8"))
     except OSError:
@@ -87,6 +89,7 @@ def saved_language() -> Optional[str]:
 
 
 def detect_language() -> str:
+    """Pick a supported UI language from ``VOXPRINT_LANG``, the shared suite choice, the saved choice, the OS, then English."""
     code = normalize_code(os.environ.get("VOXPRINT_LANG"))
     if code:
         return code
@@ -102,6 +105,7 @@ def detect_language() -> str:
 
 
 def current() -> str:
+    """Return the active UI language, detecting and caching it on the first call."""
     global _current
     if _current is None:
         _current = detect_language()

@@ -29,6 +29,7 @@ def icons_dir() -> Path:
 
 
 def load_svg(name: str) -> str:
+    """Return the SVG source for an icon file name."""
     return (icons_dir() / f"{name}.svg").read_text(encoding="utf-8")
 
 
@@ -39,6 +40,7 @@ def suite_icon(name: str) -> QIcon:
 
 def render_icon(svg: str, *, normal: str = TEXT, disabled: str = TEXT_DISABLED, active: str = _ACTIVE,
                 size: int = _SIZE) -> QIcon:
+    """Build an icon from SVG, tinted for the normal, disabled, and selected states."""
     icon = QIcon()
     for mode, color in (
         (QIcon.Mode.Normal, normal),

@@ -8,7 +8,8 @@ The script is `tools/audit.py`. It writes one summary to the GitHub job summary 
 
 | Tool | Scope | Release gate |
 | --- | --- | --- |
-| ruff | Pyflakes (`F`, including undefined names) and syntax (`E9`). Line length (`E501`) and pyupgrade (`UP`) are not selected. | Fails on any error |
+| ruff | Pyflakes (`F`, including undefined names) and syntax (`E9`) from `ruff.toml`. Line length (`E501`) and pyupgrade (`UP`) are not selected. `[lint.pydocstyle] convention = "google"` records the docstring style; the missing-docstring rules are not selected. | Fails on any error |
+| interrogate | Public docstring coverage on `dubber` (not `dubber/third_party`) and `main.py`. Tests, `tools/`, private names, `__init__`, magic methods, and nested functions are excluded. | Fails below 65% |
 | mypy | Non-strict (`mypy.ini`). Untyped functions are allowed. No global `ignore_errors`. | Fails on any error |
 | bandit | Medium and high severity, medium and high confidence. | Fails on high only |
 | pip-audit | Packages installed from `requirements.txt`, `installer/runtime-constraints.txt`, and CPU PyTorch `2.11.0` with torchaudio `2.11.0` and torchcodec `0.17.0` (CI only, `/TORCH=cpu`; a user install does not offer that build). A local version tag such as `+cpu` is removed so PyPI can see the release. | Fails on high or critical that are not in `tools/audit-allowlist.toml`. An advisory with no readable severity counts as high. |

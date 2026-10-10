@@ -23,6 +23,7 @@ class StageContext:
 
 @dataclass
 class StageResult:
+    """Outcome of one diagnostic clip stage."""
     key: str
     ok: bool
     message: str = ""
@@ -30,17 +31,21 @@ class StageResult:
 
 
 class Stage:
+    """One step of the diagnostic clip. Subclasses set ``key`` and implement :meth:`run`."""
     key = ""
     title_key = ""
 
     def run(self, ctx: StageContext) -> StageResult:
+        """Run this stage and store its outputs on ``ctx``. The base stage raises NotImplementedError."""
         raise NotImplementedError
 
 
 class ExtractStage(Stage):
+    """Decode the diagnostic clip to 16 kHz and 44.1 kHz mono WAVs."""
     key, title_key = "extract", "stage.extract"
 
     def run(self, ctx: StageContext) -> StageResult:
+        """Extract both WAVs into the work folder and store their paths on ``ctx``."""
         t = time.time()
         ctx.work.mkdir(parents=True, exist_ok=True)
         ffmpeg.extract_audio(ctx.source, ctx.work / "mix16.wav", 16000, 1)
@@ -54,6 +59,7 @@ class FitStage(Stage):
     key, title_key = "fit", "stage.fit"
 
     def run(self, ctx: StageContext) -> StageResult:
+        """Compare each synthesised line with its slot and store the plan. Audio is not changed."""
         t = time.time()
         plan = fit_plan(ctx.data.get("slots", []), ctx.data.get("dub_lines", []))
         ctx.data["fit_plan"] = plan
@@ -62,9 +68,11 @@ class FitStage(Stage):
 
 
 class MixStage(Stage):
+    """Overlay the dubbed lines on the original soundtrack."""
     key, title_key = "mix", "stage.mix"
 
     def run(self, ctx: StageContext) -> StageResult:
+        """Write ``dub_track.wav`` into the work folder and store its path on ``ctx``."""
         t = time.time()
         out = ctx.work / "dub_track.wav"
         info = mix_track(ctx.data["wav44"], ctx.data.get("slots", []), ctx.data.get("dub_lines", []), out)
@@ -73,9 +81,11 @@ class MixStage(Stage):
 
 
 class MuxStage(Stage):
+    """Add the dub as a new audio track on a copy of the clip."""
     key, title_key = "mux", "stage.mux"
 
     def run(self, ctx: StageContext) -> StageResult:
+        """Mux the dub onto the source video and store the output path on ``ctx``."""
         t = time.time()
         out = ctx.out or (ctx.work / "dubbed.mkv")
         lang = {"ru": "rus", "en": "eng", "de": "deu"}.get(ctx.target_lang, ctx.target_lang)

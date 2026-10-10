@@ -18,12 +18,14 @@ DWMWCP_ROUND = 2
 
 @dataclass(frozen=True)
 class OsCheck:
+    """Whether this Windows build meets the 24H2 minimum, with the build number and a short reason."""
     ok: bool
     build: Optional[int]
     message: str
 
 
 def windows_build() -> Optional[int]:
+    """Return the Windows build number, or None when this is not Windows or the version cannot be read."""
     if not IS_WINDOWS:
         return None
     try:

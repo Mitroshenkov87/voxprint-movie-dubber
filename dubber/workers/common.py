@@ -26,6 +26,7 @@ class WorkerContext:
         self.t0 = time.time()
 
     def log(self, msg: str) -> None:
+        """Send one progress line to the parent on the worker protocol."""
         _emit({"t": "log", "msg": msg})
 
 
@@ -110,6 +111,7 @@ def torch_device(prefer: str = "auto") -> str:
 
 
 def cuda_sync() -> None:
+    """Wait until this process's queued CUDA work has finished."""
     try:
         import torch
 
@@ -120,6 +122,7 @@ def cuda_sync() -> None:
 
 
 def reset_peak() -> None:
+    """Reset PyTorch's peak CUDA-allocation counter for this process."""
     try:
         import torch
 
@@ -142,6 +145,7 @@ def peak_vram_gb() -> Optional[float]:
 
 
 def reserved_vram_gb() -> Optional[float]:
+    """GPU memory reserved by PyTorch, in GB, or None when CUDA is unavailable."""
     try:
         import torch
 
@@ -153,6 +157,7 @@ def reserved_vram_gb() -> Optional[float]:
 
 
 def free_gpu() -> None:
+    """Run garbage collection and release PyTorch's cached CUDA blocks."""
     import gc
 
     gc.collect()
@@ -198,6 +203,7 @@ def resample(x, sr_from: int, sr_to: int):
 
 
 def rms_db(x) -> float:
+    """Root-mean-square level of ``x`` in dBFS, or -120 for an empty buffer."""
     import numpy as np
 
     if len(x) == 0:

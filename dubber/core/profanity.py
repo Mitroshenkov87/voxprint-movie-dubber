@@ -21,14 +21,17 @@ _FILTERS: Dict[str, TextFilter] = {}
 
 
 def register(lang: str, fn: TextFilter) -> None:
+    """Install ``fn`` as the soften filter for ``lang``, replacing any previous one."""
     _FILTERS[lang] = fn
 
 
 def supported(lang: str) -> bool:
+    """Whether ``lang`` has a soften filter."""
     return lang in _FILTERS
 
 
 def soften(text: str, lang: str) -> str:
+    """Apply the soften filter for ``lang``, or return ``text`` when that language has none."""
     fn = _FILTERS.get(lang)
     return fn(text) if fn else text
 
@@ -110,6 +113,7 @@ def _phrase_sub(replacement: str) -> Callable[["re.Match[str]"], str]:
 
 
 def soften_ru(text: str) -> str:
+    """Replace Russian mat with non-obscene wording, keeping each word's letter case."""
     out = _RU_SEND.sub(_send_away, text)
     for rx, repl in _RU_PHRASE_RX:
         out = rx.sub(_phrase_sub(repl), out)

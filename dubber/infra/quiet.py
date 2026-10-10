@@ -23,6 +23,7 @@ class _DropNoise(logging.Filter):
 
 
 def mute_library_noise() -> None:
+    """Silence known harmless warnings from transformers, qwen-tts, torch, SoX, and triton in this process."""
     os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
     os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")

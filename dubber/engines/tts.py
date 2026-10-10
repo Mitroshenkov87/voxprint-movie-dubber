@@ -47,6 +47,16 @@ def max_tokens_for(text: str) -> int:
 
 @dataclass
 class VoiceSpec:
+    """How one speaker is synthesized: a clone clip, a library adapter, or an actor blend.
+
+    Args:
+        kind: ``clone``, ``library``, or ``actor``.
+        ref_text: Empty selects x-vector-only cloning.
+        adapter_scale: LoRA strength. New library voices use 0.5; older ones use 1.0.
+        actor_weight: Share of the actor's timbre; the rest is the closest library voice.
+        actor_ok: False when the actor clip is not long or clean enough, so the library voice is used as is.
+        record_dir: Folder where the chosen blend is written, or empty to skip that record.
+    """
     key: str                       # stable id (cache key part)
     kind: str                      # clone | library
     ref_audio: str = ""
@@ -61,6 +71,7 @@ class VoiceSpec:
     record_dir: str = ""
 
     def tag(self) -> str:
+        """Return a 12-character hash of the voice files and settings for the synthesis cache key."""
         fp = ""
         for p in (self.ref_audio, str(Path(self.adapter_dir) / "adapter_model.safetensors") if self.adapter_dir else ""):
             try:
@@ -115,10 +126,13 @@ def next_dialogue_group(queue: List[int], texts: Dict[int, str], limit: int,
 
 
 def is_oom(exc: BaseException) -> bool:
+    """True when ``exc`` is an out-of-memory error from CUDA or from the process."""
     return "out of memory" in str(exc).lower() or type(exc).__name__ == "OutOfMemoryError"
 
 
 class BaseTTS:
+    """Shared speech engine that resolves an actor voice once, then halves the batch when synthesis runs out of memory."""
+
     sample_rate = 24000
     backend = "base"
     _resolved: Dict[str, VoiceSpec]
@@ -136,6 +150,7 @@ class BaseTTS:
         return self._resolved[voice.key]
 
     def actor_embedding(self, voice: VoiceSpec) -> Optional[np.ndarray]:
+        """Speaker embedding for an actor clip, or None when this engine cannot compute one."""
         return None
 
     def _resolve_actor(self, voice: VoiceSpec) -> VoiceSpec:
@@ -167,12 +182,15 @@ class BaseTTS:
         return out
 
     def synthesize_batch(self, texts: Sequence[str], voice: VoiceSpec, seed: Optional[int] = None) -> List[np.ndarray]:
+        """Synthesize ``texts`` in one voice and return one waveform per text. Subclasses implement this; the base raises NotImplementedError."""
         raise NotImplementedError
 
     def max_batch(self) -> int:
+        """Maximum lines in one generate call. This base engine returns 1."""
         return 1
 
     def close(self) -> None:
+        """Release model memory. This base engine holds none."""
         pass
 
     def run_queue(self, items: Sequence[Tuple[int, str]], voice: VoiceSpec, on_done: Callable[[int, np.ndarray], None]) -> None:
@@ -217,6 +235,7 @@ class MockTTS(BaseTTS):
     backend = "mock"
 
     def max_batch(self) -> int:
+        """Accept up to 12 lines in one call."""
         return MAX_BATCH
 
     def __init__(self, lang: str = "ru", rate: float = 1.0) -> None:
@@ -224,6 +243,7 @@ class MockTTS(BaseTTS):
         self._resolved, self._blends = {}, {}
 
     def synthesize_batch(self, texts: Sequence[str], voice: VoiceSpec, seed: Optional[int] = None) -> List[np.ndarray]:
+        """Return a deterministic tone about as long as each line would take to speak. ``seed`` changes the tone for the same text."""
         from dubber.core.script import estimate_seconds
 
         voice = self.resolve(voice)
@@ -323,9 +343,11 @@ class QwenTTS(BaseTTS):
 
     @property
     def graphs(self) -> bool:
+        """True when the loaded backend captures CUDA Graphs."""
         return self.backend.startswith("graphs")
 
     def max_batch(self) -> int:
+        """Lines per generate call: 1 with CUDA Graphs, otherwise what free VRAM or RAM allows, at most ``batch_cap``."""
         from dubber.infra import resources
 
         if self.graphs:
@@ -411,6 +433,7 @@ class QwenTTS(BaseTTS):
             return None
 
     def synthesize_batch(self, texts: Sequence[str], voice: VoiceSpec, seed: Optional[int] = None) -> List[np.ndarray]:
+        """Synthesize ``texts`` in the resolved voice and return one float32 waveform per line. ``seed`` reseeds PyTorch so a retry can differ. Raises RuntimeError when the weights are not loaded."""
         import torch
 
         if seed is not None:
@@ -436,6 +459,7 @@ class QwenTTS(BaseTTS):
         return [np.asarray(w, dtype=np.float32).reshape(-1) for w in wavs]
 
     def close(self) -> None:
+        """Drop the model and cached voice prompts, then release CUDA memory."""
         self.model, self._peft, self._prompts = None, None, {}
         import gc
 

@@ -16,6 +16,7 @@ EARLY = 0.25                # a line may start this much before the original lin
 
 @dataclass
 class Placement:
+    """Where one dubbed line sits: start in seconds, stretch factor, and a fit verdict."""
     id: int
     start: float
     stretch: float
@@ -23,6 +24,7 @@ class Placement:
 
     @property
     def needs_retry(self) -> bool:
+        """Whether the verdict is ``too_long`` and a shorter take should be tried."""
         return self.verdict == "too_long"
 
 

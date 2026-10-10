@@ -34,6 +34,7 @@ def dialogue_windows(segments: Iterable[Window], merge_gap: float = 0.6, pad: fl
 
 
 def overlap(a0: float, a1: float, b0: float, b1: float) -> float:
+    """Seconds shared by the intervals ``[a0, a1]`` and ``[b0, b1]``."""
     return max(0.0, min(a1, b1) - max(a0, b0))
 
 
@@ -161,6 +162,7 @@ SYLLABLES_PER_S = {"ru": 5.6, "en": 5.0, "de": 5.2}
 
 
 def syllables(text: str, lang: str) -> int:
+    """Syllable count for the length estimate: vowel groups in English and German, vowel letters otherwise. At least 1."""
     v = _VOWELS.get(lang, "aeiouy")
     t = text.lower()
     if lang in ("en", "de"):
@@ -214,6 +216,7 @@ def kept_share(variant: str, text: str) -> float:
 
 
 def acceptable_variant(variant: str, text: str, min_keep: float = MIN_KEEP) -> bool:
+    """Whether ``variant`` keeps ``min_keep`` of the letters of ``text``, and two words unless ``text`` is shorter."""
     words = re.findall(r"\w+", variant)
     return kept_share(variant, text) >= min_keep and (len(words) >= 2 or len(re.findall(r"\w+", text)) < 2)
 

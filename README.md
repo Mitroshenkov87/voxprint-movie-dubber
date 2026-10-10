@@ -26,7 +26,7 @@ This is the 1.0.0 release candidate. The build number and the codename (Bochan) 
 
 <!-- screenshot: main window -->
 
-You can listen to a one-minute preview first, start watching while the rest is still being dubbed, and review characters, voices and every line before dubbing. Step-by-step instructions are in the [User guide](docs/USER-GUIDE.md).
+You can listen to a one-minute preview first, start watching while the rest is still being dubbed, and review characters, voices and every line before dubbing. Step-by-step instructions are in the [User guide](docs/USER-GUIDE.md). [Documentation](https://mitroshenkov87.github.io/voxprint-movie-dubber/).
 
 Other programs can call it without the window. `python main.py --dry-run --json` prints one JSON object and does not load or download models. The commands and exit codes are in the [command-line reference](docs/CLI.md).
 

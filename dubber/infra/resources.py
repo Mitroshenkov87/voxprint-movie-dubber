@@ -47,6 +47,7 @@ MAX_CPU_BATCH = 4
 
 @dataclass
 class Snapshot:
+    """VRAM and system RAM free at one moment, in gigabytes, and where the numbers came from."""
     gpu: str = ""
     vram_total_gb: float = 0.0
     vram_free_gb: float = 0.0
@@ -56,17 +57,21 @@ class Snapshot:
 
     @property
     def has_gpu(self) -> bool:
+        """Return whether a GPU with non-zero total VRAM was measured."""
         return self.vram_total_gb > 0
 
     @property
     def vram_budget_gb(self) -> float:
+        """Return free VRAM minus headroom, in gigabytes, optionally capped by :func:`vram_fraction`."""
         return round(vram_allowance_gb(self.vram_free_gb, self.vram_total_gb, vram_fraction()), 2)
 
     @property
     def ram_budget_gb(self) -> float:
+        """Return ``RAM_SHARE`` of free system RAM, in gigabytes."""
         return round(RAM_SHARE * self.ram_free_gb, 2)
 
     def describe(self) -> str:
+        """Return one log line of GPU name, VRAM budget, and RAM budget."""
         ram = f"RAM {self.ram_free_gb:.1f} of {self.ram_total_gb:.1f} GB free (budget {self.ram_budget_gb:.1f} GB)"
         if not self.has_gpu:
             return f"no NVIDIA GPU found; {ram}"
@@ -160,6 +165,7 @@ def snapshot(use_torch: bool = True) -> Snapshot:
 # ---------------------------------------------------------------------------------------------- decisions
 @dataclass
 class StagePlan:
+    """Device and TTS model chosen for one stage, plus notes when the plan stepped down to fit the budget."""
     device: str                              # cuda | cpu
     tts_model: str = ""
     notes: List[str] = field(default_factory=list)
@@ -232,6 +238,7 @@ class VramBudget:
         self.ram_budget = RAM_SHARE * avail
 
     def used_by_us(self) -> float:
+        """Return how many gigabytes of free VRAM have disappeared since this budget was created."""
         g = gpu_from_torch()
         return max(0.0, self.free0 - g[2]) if g else 0.0
 
@@ -249,6 +256,7 @@ class VramBudget:
         return self.remeasure()
 
     def describe(self) -> str:
+        """Measure free VRAM again and return one line of the VRAM budget, what is left, and the RAM budget."""
         left = self.remeasure()
         cap = f", cap {self.fraction:.0%} of {self.total:.1f} GB" if self.fraction else ""
         return (f"VRAM budget {self.budget:.1f} GB (free now minus headroom{cap}), left {left:.1f} GB; "

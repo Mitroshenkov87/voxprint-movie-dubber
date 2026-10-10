@@ -25,6 +25,7 @@ def enable() -> None:
 
 
 def enabled() -> bool:
+    """Return whether the resident-model cache is on in this process."""
     return _enabled
 
 
@@ -43,6 +44,7 @@ def reset() -> None:
 
 
 def loaded() -> List[str]:
+    """Return the names of models currently held in this process."""
     return list(_slots)
 
 
@@ -52,6 +54,7 @@ def noted() -> List[str]:
 
 
 def register_loader(name: str, factory: Callable[[], Any]) -> None:
+    """Remember ``factory`` as the way to build ``name`` for a later :func:`prefetch`."""
     _loaders[name] = factory
 
 
@@ -148,6 +151,7 @@ def slot(name: str, need_gb: float, build: Callable[[], Any], free_gb: Optional[
 
 
 def note(name: str) -> None:
+    """Remember a non-empty ``name`` as a prefetch request without loading it."""
     if name and name not in _noted:
         _noted.append(name)
 

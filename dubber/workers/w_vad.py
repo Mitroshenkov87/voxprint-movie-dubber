@@ -13,6 +13,7 @@ from dubber.workers.common import WorkerContext, read_wav_mono
 
 
 def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
+    """Find speech windows in ``wav16`` with Silero VAD, writing ``out_json`` when that path is set."""
     t = time.time()
     import torch
     from silero_vad import get_speech_timestamps, load_silero_vad

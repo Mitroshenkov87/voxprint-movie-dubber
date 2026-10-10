@@ -87,6 +87,7 @@ class Splash(QSplashScreen):
         self._egg: _EggOverlay | None = None
 
     def drawContents(self, p: QPainter) -> None:  # noqa: N802 - Qt naming
+        """Paint the title strip, progress bar, and status line."""
         s = self.side
         top = s - STRIP
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -110,10 +111,12 @@ class Splash(QSplashScreen):
         p.setPen(QColor(MUTED))
         p.drawText(QRect(18, top + 54, s - 36, 26), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self._text)
 
-    def message(self) -> str:  # noqa: D102 - the status line (QSplashScreen.message() stays empty: we paint it ourselves)
+    def message(self) -> str:
+        """Status line painted on the splash. Qt's own message stays empty."""
         return self._text
 
     def status(self, text: str, fraction: float = -1.0) -> None:
+        """Set the status line and, when fraction is non-negative, the progress bar, then repaint."""
         self._text = text
         if fraction >= 0:
             self._fraction = max(0.0, min(1.0, fraction))
@@ -138,13 +141,16 @@ class Splash(QSplashScreen):
         QTimer.singleShot(int(SHOW_S * 1000), self._egg.hide)
 
     def loading_ui(self) -> None:
+        """Report that the interface is loading."""
         self.status(tr("splash.loading_ui"), 0.3)
 
     def opening(self) -> None:
+        """Report that the main window is opening."""
         self.status(tr("splash.opening"), 0.8)
 
 
 def show() -> Splash:
+    """Show a splash screen and return it so the caller can update its status."""
     s = Splash()
     s.show()
     QApplication.processEvents()

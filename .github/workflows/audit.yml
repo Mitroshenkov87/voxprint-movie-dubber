@@ -1,4 +1,4 @@
-# Code audit (tools/audit.py): ruff, mypy, bandit, pip-audit, vulture, radon, gitleaks.
+# Code audit (tools/audit.py): ruff (pyflakes, syntax), interrogate (65% public docstrings), mypy, bandit, pip-audit, vulture, radon, gitleaks.
 # One summary in the job summary; the full text is the audit-report artifact.
 # Push and pull request scan new commits with gitleaks. A weekly schedule, a manual run, and a
 # call from the installer workflow scan the whole history. Vulture and radon never fail the job.

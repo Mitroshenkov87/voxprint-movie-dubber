@@ -25,6 +25,7 @@ TIER_24_MIN_GB = 22.0
 
 @dataclass(frozen=True)
 class Tier:
+    """One VRAM tier and the maximum number of TTS lines allowed in a single generate call."""
     key: str
     title: str
     tts_batch_cap: int             # lines per TTS generate call at most; the VRAM budget decides below that
@@ -57,6 +58,7 @@ def resolve(total_gb: float, override: Optional[str] = AUTO) -> str:
 
 
 def batch_cap(tier: Optional[str]) -> int:
+    """Return the TTS line cap for ``tier``, using the 16 GB cap when the tier is unknown."""
     t = TIERS.get(str(tier or ""))
     return t.tts_batch_cap if t else TIERS[TIER_16].tts_batch_cap
 
@@ -110,6 +112,7 @@ def install_models(total_gb: float, keys: Tuple[str, ...]) -> List[str]:
 
 
 def describe(total_gb: float, override: Optional[str] = AUTO) -> str:
+    """Return one line naming the tier in use, the card size in gigabytes, the TTS batch cap, and the TTS models that fit."""
     tier = resolve(total_gb, override)
     how = "override" if override and override != AUTO and tier == override else "auto"
     size = f"{total_gb:.1f} GB" if total_gb else "unknown"

@@ -57,10 +57,12 @@ def projects_dir() -> Path:
 
 
 def logs_dir() -> Path:
+    """Log folder under the app home, created on demand."""
     return _sub("logs")
 
 
 def state_dir() -> Path:
+    """State folder under the app home, created on demand."""
     return _sub("state")
 
 

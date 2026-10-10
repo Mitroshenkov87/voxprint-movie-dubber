@@ -1,0 +1,63 @@
+site_name: Voxprint AI Movie Dubber
+site_url: https://mitroshenkov87.github.io/voxprint-movie-dubber/
+repo_url: https://github.com/Mitroshenkov87/voxprint-movie-dubber
+repo_name: Mitroshenkov87/voxprint-movie-dubber
+edit_uri: edit/main/docs/
+docs_dir: docs
+strict: false
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.sections
+    - content.code.copy
+    - toc.follow
+
+markdown_extensions:
+  - tables
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+  - gen-files:
+      scripts:
+        - docs/gen_pages.py
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: ["."]
+          options:
+            docstring_style: google
+            show_source: false
+            show_root_heading: true
+            show_root_full_path: false
+            members_order: source
+            filters: ["!^_"]
+            merge_init_into_class: true
+            show_if_no_docstring: false
+            show_submodules: false
+            heading_level: 3
+            docstring_section_style: table
+
+nav:
+  - Home: index.md
+  - User guide: USER-GUIDE.md
+  - Architecture: ARCHITECTURE.md
+  - Models: MODELS.md
+  - Command line: CLI.md
+  - Formats:
+      - .vxdub: formats/VXDUB.md
+  - Roadmap: roadmap.md
+  - API reference: api.md
+  - Building: BUILDING.md
+  - Diagnostics: DIAGNOSTICS.md
+  - Audit: AUDIT.md
+  - Third-party notices: THIRD_PARTY_NOTICES.md
+  - Release notes:
+      - 1.0.0 RC 1000: release-notes/v1.0.0-rc.1000.md
+      - 1.0.0 RC 999: release-notes/v1.0.0-rc.999.md
+      - 0.1.0 pre.5: release-notes/v0.1.0-pre.5.md
+      - 0.1.0 pre.4: release-notes/v0.1.0-pre.4.md
+      - 0.1.0 pre.3: release-notes/v0.1.0-pre.3.md

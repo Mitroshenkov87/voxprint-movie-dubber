@@ -40,6 +40,7 @@ _GPU_RE = re.compile(r"^cuda:(\d{1,2})$")
 
 
 def path() -> Path:
+    """Return the path of ``<Voxprint home>/state/suite.json``."""
     from dubber.infra import shared_paths
 
     return shared_paths.voxprint_home() / "state" / FILENAME
@@ -61,18 +62,21 @@ def has(key: str) -> bool:
 
 # ------------------------------------------------------------------------------------------------- normalizers
 def normalize_language(value: object) -> Optional[str]:
+    """Return a supported UI language code, or None when ``value`` is not one."""
     from dubber.i18n import normalize_code
 
     return normalize_code(value) if isinstance(value, str) else None
 
 
 def default_language() -> str:
+    """Return the OS language when this program has that catalog, otherwise English."""
     from dubber.i18n import DEFAULT_LANG, system_language
 
     return system_language() or DEFAULT_LANG
 
 
 def normalize_theme(value: object) -> str:
+    """Return ``value`` when it is a known theme, otherwise ``glass-dark``."""
     return value if isinstance(value, str) and value in THEMES else DEFAULT_THEME
 
 
@@ -104,10 +108,12 @@ def ui_language() -> Optional[str]:
 
 
 def theme() -> str:
+    """Return the shared theme from suite.json, or ``glass-dark``."""
     return normalize_theme(read_raw().get("theme"))
 
 
 def models_dir() -> Optional[Path]:
+    """Return the absolute models folder from suite.json, or None for the default folder."""
     return normalize_models_dir(read_raw().get("models_dir"))
 
 
@@ -127,6 +133,7 @@ def device_setting() -> str:
 
 
 def values() -> Dict[str, Any]:
+    """Return the four shared settings with defaults filled in."""
     md = models_dir()
     return {"ui_language": ui_language() or default_language(), "theme": theme(), "models_dir": str(md) if md else None, "gpu": gpu()}
 
@@ -184,6 +191,7 @@ def set_value(key: str, value: Any) -> Any:
 
 
 def set_quietly(key: str, value: Any) -> None:
+    """Store one shared value, logging and ignoring any error."""
     try:
         set_value(key, value)
     except Exception as exc:  # noqa: BLE001

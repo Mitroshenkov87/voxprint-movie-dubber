@@ -16,6 +16,7 @@ RESUME_AHEAD_S = 45.0
 
 @dataclass
 class WatchState:
+    """Playback position against how far the dub has been mixed."""
     total: float
     dubbed_until: float = 0.0
     finished: bool = False
@@ -43,12 +44,14 @@ class WatchState:
         return "none"
 
     def start(self) -> bool:
+        """Begin playback when enough of the film is dubbed. Returns False while Watch stays disabled."""
         if not self.ready:
             return False
         self.playing, self.buffering = True, False
         return True
 
     def stop(self) -> None:
+        """Stop playback and clear buffering."""
         self.playing = self.buffering = False
 
 
@@ -61,6 +64,7 @@ class Eta:
         self._last: Optional[Tuple[float, float]] = None
 
     def update(self, now: float, done_s: float, total_s: float) -> float:
+        """Remaining wall-clock seconds after this sample, or -1 until a dubbing rate is known."""
         if self._last is not None:
             dt, dd = now - self._last[0], done_s - self._last[1]
             if dt > 0 and dd >= 0:

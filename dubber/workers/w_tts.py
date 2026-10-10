@@ -41,6 +41,7 @@ def max_tokens_for(text: str) -> int:
 
 
 def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
+    """Time Qwen3-TTS in one mode and, when ``lines`` are given, write each line's WAV under ``out_dir``."""
     mode = args.get("mode", "standard_sdpa")
     if mode not in MODES:
         return {"status": "FAIL", "summary": f"unknown mode {mode}"}

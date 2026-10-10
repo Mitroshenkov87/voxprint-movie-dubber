@@ -9,6 +9,7 @@ Exit codes are :data:`EXIT_CODES`. See ``docs/CLI.md``.
 """
 from __future__ import annotations
 
+import argparse
 import importlib.metadata
 import json
 import logging
@@ -52,18 +53,182 @@ EXIT_CODES: tuple[tuple[int, str, str], ...] = (
     (EXIT_JOB, "job", "The dubbing job failed."),
     (EXIT_CANCELLED, "cancelled", "The job was cancelled."),
 )
+EXIT_CODE_NOTE = (
+    "Code 1 is not used. When several of these apply, usage is reported first, then a missing or unreadable input, "
+    "then an unsupported GPU, then missing models, then a job failure, then cancellation."
+)
 
 CommandName = Literal["version", "diagnose", "fetch-models", "run-project", "info", "dry-run"]
 VIDEO_SUFFIXES = {".mkv", ".mp4", ".avi", ".mov", ".webm", ".m4v", ".ts", ".m2ts"}
 SOURCE_LANGS = {"auto", "en", "ru", "de"}
 TARGET_LANGS = {"en", "ru", "de"}
-_VALUE_FLAGS = {
-    "--models", "--stages", "--target", "--source-lang", "--target-lang", "--languages",
-    "--out", "--skip", "--tts-model", "--tts-modes", "--clip", "--asr-repo",
-    "--run-project", "--project-info",
-}
-_SWITCHES = {"--json", "--dry-run", "--quick", "--no-download", "--cpu-tts", "--cpu-sep", "--version", "--diagnose-cli", "--fetch-models", "--help", "-h"}
-_COMMANDS = {"version", "diagnose", "fetch-models", "run-project", "info", "project-info"}
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Headless command line. ``parse_args`` and the generated reference both read this parser."""
+    parser = argparse.ArgumentParser(
+        prog="python main.py",
+        add_help=False,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "Headless entry points for other Voxprint programs, scripts and agents. "
+            "The same process as `python main.py`. The window is not opened. Nothing waits for a prompt.\n\n"
+            "`python -m dubber.cli` takes the same arguments. On an installed copy the program is "
+            "`python main.py` inside the installation folder.\n\n"
+            "The JSON object always has `ok`, `exit_code`, `command`, `dry_run`, `version`, `label`, `build` and "
+            "`codename`. `label` is the same line as About. A failure also has `error`."
+        ),
+        epilog=(
+            "With no other command, --dry-run is discovery only:\n\n"
+            "- `label`, `build`, `codename` from BUILD.json (and from build_info.json when the installer stamped one)\n"
+            "- `runtime`: Python version, platform, and the installed PyTorch version (null when PyTorch is not installed)\n"
+            "- `gpu`: whether the card meets the minimum, the reason when it does not (`no_cuda` or `low_compute`), "
+            "VRAM, and the VRAM tier (`16gb` or `24gb`; `16gb` is also the tier when the size is unknown)\n"
+            "- `models`: every known model key and whether its files are already on disk\n"
+            "- `would_run.stages`: the dub stages that would run if a project were given\n\n"
+            "No model is loaded. Nothing is downloaded. On a GPU-less machine the process exits 3 and `gpu.ok` is false."
+        ),
+    )
+    common = parser.add_argument_group("Global flags")
+    common.add_argument("--json", action="store_true", help="Print one JSON object on stdout and exit. Logs go to stderr.")
+    common.add_argument("--dry-run", action="store_true",
+                        help="Discovery only. Implies --json. No model is loaded and nothing is downloaded. "
+                             "Works with no NVIDIA GPU: the JSON reports the GPU and the process exits 3. "
+                             "VOXPRINT_SKIP_GPU_GATE does not change --dry-run.")
+    common.add_argument("--help", "-h", action="store_true",
+                        help="Print this command list and the exit codes, then exit 0. "
+                             "With --json or --dry-run, that list is one JSON object.")
+    legacy = parser.add_argument_group("Flag forms")
+    legacy.add_argument("--version", action="store_true", help="Same as the version command.")
+    legacy.add_argument("--diagnose-cli", action="store_true", help="Same as the diagnose command.")
+    legacy.add_argument("--fetch-models", action="store_true", help="Same as the fetch-models command.")
+    legacy.add_argument("--run-project", metavar="PATH", help="Same as run-project PATH.")
+    legacy.add_argument("--project-info", metavar="PATH", help="Same as info PATH.")
+    diag = parser.add_argument_group("Diagnostic flags")
+    diag.add_argument("--out", metavar="FILE", help="Write the diagnostics report to this file.")
+    diag.add_argument("--quick", action="store_true", help="Shorter diagnostics: one TTS phrase and the SDPA modes only.")
+    diag.add_argument("--no-download", action="store_true", help="Do not download models during diagnostics.")
+    diag.add_argument("--target", metavar="LANG", help="Diagnostics dub language: ru, en, or de. Default: ru.")
+    diag.add_argument("--skip", metavar="LIST", help="Skip these diagnostic groups: system, gpu, network, models, tts, stages.")
+    diag.add_argument("--tts-model", metavar="KEY", help="TTS model key: tts_1_7b or tts_0_6b.")
+    diag.add_argument("--tts-modes", metavar="LIST",
+                      help="Comma-separated TTS modes. Known: " + ", ".join(ALL_TTS_MODES) + ".")
+    diag.add_argument("--cpu-tts", action="store_true", help="Run the diagnostics TTS check on the CPU.")
+    diag.add_argument("--cpu-sep", action="store_true", help="Run the diagnostics separation check on the CPU.")
+    diag.add_argument("--clip", metavar="FILE", help="Use this clip instead of the bundled diagnostics clip.")
+    diag.add_argument("--asr-repo", metavar="REPO", help="Hugging Face repo for the speech-recognition model.")
+    diag.add_argument("--models", metavar="KEY,KEY", help="Model keys to download. Unknown keys exit 2.")
+    diag.add_argument("--languages", metavar="SRC,TGT",
+                      help="Source and target, for example en,ru. Source: auto, en, ru, de. Target: en, ru, de.")
+    diag.add_argument("--source-lang", metavar="LANG", help="Source language. Default: auto. Kept when the project already has one.")
+    diag.add_argument("--target-lang", metavar="LANG", help="Target language. Default: ru.")
+    diag.add_argument("--stages", metavar="NAME,NAME",
+                      help="Run from the start of the pipeline through the last named stage. Unknown names exit 2.")
+    commands = parser.add_subparsers(dest="command", metavar="COMMAND")
+    commands.add_parser(
+        "version",
+        help="Print the version line and exit 0.",
+        description="Prints the version line (build and codename included). Exit 0. "
+                    "With --dry-run, the same discovery object as a bare --dry-run is added, and an unsupported GPU exits 3.",
+    )
+    commands.add_parser(
+        "diagnose",
+        help="Run the diagnostics without a window.",
+        description="Runs the same checks as --diagnose-cli. --dry-run lists the check groups and does not run them. "
+                    "The diagnostic flags still apply. A real run on a machine below the GPU minimum exits 3 unless "
+                    "VOXPRINT_SKIP_GPU_GATE is set. --dry-run still exits 3 on that machine.",
+    )
+    commands.add_parser(
+        "fetch-models",
+        help="Download the models the installer would fetch.",
+        description="Downloads the models the installer would fetch, or the keys passed to --models. "
+                    "An unknown key is exit 2. A download that does not finish is exit 4. "
+                    "--dry-run reports which of those keys are already on disk and does not download. "
+                    "The real download does not refuse to start because of the GPU.",
+    )
+    run = commands.add_parser(
+        "run-project",
+        help="Dub a video, a .vxdub file, or a project folder without the window.",
+        description="PATH is a video (.mkv, .mp4, .avi, .mov, .webm, .m4v, .ts, .m2ts), a .vxdub project, "
+                    "or a project folder that already contains project.json. "
+                    "Languages default to auto to ru. Values already stored in a project or a .vxdub file are kept "
+                    "when the flags are omitted. --dry-run describes the file, the languages, the stages and the models "
+                    "that would be needed. It does not create a project folder, load a model, or download. "
+                    "A missing file is exit 5. An unsupported GPU is exit 3. Missing models, once the GPU is acceptable, "
+                    "are exit 4. A real run exits 3 on an unsupported GPU (unless VOXPRINT_SKIP_GPU_GATE is set), "
+                    "6 when the dub fails, and 7 when it is cancelled.",
+    )
+    run.add_argument("path", metavar="PATH", help="Video, .vxdub file, or project folder.")
+    info = commands.add_parser(
+        "info",
+        aliases=["project-info"],
+        help="Read a project folder, a .vxdub file, or a video.",
+        description="Prints the kind, the languages and the line count. A video that is not yet a project is reported "
+                    "as video. A missing file is exit 5. This command does not need a GPU. "
+                    "--dry-run adds the discovery object and then uses the same GPU exit code as the other dry-runs.",
+    )
+    info.add_argument("path", metavar="PATH", help="Project folder, .vxdub file, or video.")
+    return parser
+
+
+def build_window_parser() -> argparse.ArgumentParser:
+    """Window and installer entry points. Not used to parse the headless commands."""
+    parser = argparse.ArgumentParser(
+        prog="python main.py",
+        add_help=False,
+        description="Open the window, or run an installer helper. These forms do not use the headless exit codes.",
+    )
+    parser.add_argument("project", nargs="?", metavar="PROJECT.vxdub", help="Open this project file in the window.")
+    parser.add_argument("--diagnose", action="store_true",
+                        help="Open the window and run the diagnostics at once. The report goes to the Desktop.")
+    parser.add_argument("--worker", nargs=2, metavar=("NAME", "ARGS"),
+                        help="Internal. Run one heavy step in its own process. NAME is the worker; ARGS is its JSON file.")
+    parser.add_argument("--selftest", action="store_true",
+                        help="Create the window, process events briefly, and exit 0. Smoke test.")
+    parser.add_argument("--register-models-user", action="store_true",
+                        help="Installer. Add this program to the shared models folder's .users.json.")
+    parser.add_argument("--unregister-models-user", action="store_true",
+                        help="Uninstaller. Remove this program from .users.json. Exit 0 unless the write failed.")
+    parser.add_argument("--register-runtime-user", action="store_true",
+                        help="Installer. Add this program to the shared runtime's .users.json.")
+    parser.add_argument("--unregister-runtime-user", action="store_true",
+                        help="Uninstaller. Remove this program from the shared runtime's .users.json.")
+    parser.add_argument("--sync-suite-settings", action="store_true",
+                        help="Installer. Write the shared suite.json (models folder, UI language) when it has none yet.")
+    parser.add_argument("--out", metavar="FILE",
+                        help="With an unregister command, write '<other users>\\n<folder>' to FILE.")
+    return parser
+
+
+def flag_sets(parser: argparse.ArgumentParser) -> tuple[set[str], set[str], set[str]]:
+    """Switches, options that take a value, and command names (including aliases) declared on ``parser``."""
+    switches: set[str] = set()
+    values: set[str] = set()
+    commands: set[str] = set()
+    seen: set[int] = set()
+
+    def walk(node: argparse.ArgumentParser) -> None:
+        if id(node) in seen:
+            return
+        seen.add(id(node))
+        for action in node._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                commands.update(action.choices)
+                for sub in action.choices.values():
+                    walk(sub)
+                continue
+            if not action.option_strings:
+                continue
+            if isinstance(action, (argparse._StoreTrueAction, argparse._StoreFalseAction)) or action.nargs == 0:
+                switches.update(action.option_strings)
+            else:
+                values.update(action.option_strings)
+
+    walk(parser)
+    return switches, values, commands
+
+
+_SWITCHES, _VALUE_FLAGS, _COMMANDS = flag_sets(build_parser())
 
 
 class UsageError(Exception):
@@ -76,6 +241,8 @@ class InputError(Exception):
 
 @dataclass
 class Request:
+    """One parsed headless command: the name, whether to print JSON, and the flags that were set."""
+
     command: CommandName
     json_mode: bool
     dry_run: bool

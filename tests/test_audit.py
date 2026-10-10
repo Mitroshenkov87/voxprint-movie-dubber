@@ -116,6 +116,62 @@ def test_cpu_torch_local_version_is_audited_as_the_pypi_release():
     assert audit._pypi_version("1.2.3") == "1.2.3"
 
 
+def test_ruff_keeps_google_style_without_missing_docstring_rules():
+    text = (ROOT / "ruff.toml").read_text(encoding="utf-8")
+    assert 'convention = "google"' in text
+    assert "D100" not in text and "D103" not in text
+    seen = {}
+
+    def fake_run(cmd, env=None, timeout=1200):
+        seen["cmd"] = list(cmd)
+        return 0, "", ""
+
+    original = audit._run
+    audit._run = fake_run
+    try:
+        result = audit.ruff_check(sys.executable)
+    finally:
+        audit._run = original
+    assert result.name == "ruff (F, E9)"
+    assert result.summary.startswith("0 error")
+    assert result.blocks is False
+    joined = " ".join(seen["cmd"])
+    assert "ruff.toml" in joined
+    assert "--select" not in seen["cmd"]
+
+
+def test_interrogate_covers_public_code_and_fails_under_65():
+    assert audit.DOC_COVERAGE_MIN == 65
+    seen = {}
+
+    def fake_run(cmd, env=None, timeout=1200):
+        seen["cmd"] = list(cmd)
+        seen["calls"] = seen.get("calls", 0) + 1
+        if seen["calls"] == 1:
+            return 1, "RESULT: FAILED (minimum: 65.0%, actual: 40.0%)\n", ""
+        return 0, "RESULT: PASSED (minimum: 65.0%, actual: 99.8%)\n", ""
+
+    original = audit._run
+    audit._run = fake_run
+    try:
+        low = audit.interrogate_check(sys.executable)
+        high = audit.interrogate_check(sys.executable)
+    finally:
+        audit._run = original
+    assert low.blocks is True and low.summary == "40.0%"
+    assert high.blocks is False and high.summary == "99.8%"
+    cmd = seen["cmd"]
+    assert "--fail-under" in cmd and "65" in cmd
+    assert "--ignore-semiprivate" in cmd
+    assert "--ignore-private" in cmd
+    assert "--ignore-init-method" in cmd
+    assert "--ignore-magic" in cmd
+    assert "--ignore-nested-functions" in cmd
+    assert "dubber/third_party" in cmd
+    assert "tools" not in cmd
+    assert "dubber/core" in cmd and "main.py" in cmd
+
+
 def test_gitleaks_report_parses_a_list_and_an_empty_file():
     assert audit._parse_gitleaks("") == []
     rows = audit._parse_gitleaks('[{"File": "a.py", "StartLine": 3, "RuleID": "generic", "Description": "x"}]')

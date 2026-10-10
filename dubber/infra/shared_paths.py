@@ -48,6 +48,7 @@ def _sub(name: str) -> Path:
 
 
 def shared_state_dir() -> Path:
+    """Return ``<Voxprint home>/state``, creating it on demand."""
     return _sub("state")
 
 

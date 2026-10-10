@@ -16,6 +16,7 @@ from dubber.workers.common import WorkerContext, cuda_sync, free_gpu, peak_vram_
 
 
 def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
+    """Diarize ``wav16`` with pyannote and write turns to ``out_json`` when set, or skip when the model cannot be loaded."""
     import importlib.util
 
     try:

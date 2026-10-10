@@ -15,6 +15,7 @@ from dubber.workers.common import WorkerContext, read_wav_mono, wer
 
 
 def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
+    """Transcribe ``wav16`` with faster-whisper, write ``out_json`` when set, and return segments, timing, and word-error rate."""
     from dubber.infra import cuda_dlls
 
     cuda_dirs = cuda_dlls.expose() if args.get("device", "auto") != "cpu" else []

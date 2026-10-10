@@ -1,7 +1,10 @@
 """One-shot code audit for Voxprint AI Movie Dubber.
 
-Runs ruff, mypy, bandit, pip-audit, vulture, radon and gitleaks. Prints one summary (and, on GitHub Actions, writes
-that same summary to the job summary) and the full text to ``audit-report.txt``.
+Runs ruff, interrogate, mypy, bandit, pip-audit, vulture, radon and gitleaks. Prints one summary (and, on GitHub
+Actions, writes that same summary to the job summary) and the full text to ``audit-report.txt``. Ruff uses
+``ruff.toml``: pyflakes and syntax errors. Interrogate requires 65% docstring coverage on public code in ``dubber``
+and ``main.py`` (tests, tools, vendored code, private names, ``__init__``, magic methods, and nested functions are
+excluded).
 
     python -m pip install -r tools/requirements-audit.txt
     python tools/audit.py --python <app venv python> [--gitleaks-mode diff|full] [--gitleaks-range A..B]
@@ -9,8 +12,9 @@ that same summary to the job summary) and the full text to ``audit-report.txt``.
 ``--python`` is the interpreter that has the application's dependencies installed (CPU PyTorch in CI). pip-audit
 checks that environment. The other tools run with the interpreter that launches this script.
 
-Exit code 1 when a blocking finding exists: a ruff error, a mypy error, a bandit issue of high severity, a gitleaks
-finding, or a pip-audit advisory of high or critical severity that is not listed in ``tools/audit-allowlist.toml``.
+Exit code 1 when a blocking finding exists: a ruff error, docstring coverage under 65%, a mypy error, a bandit issue
+of high severity, a gitleaks finding, or a pip-audit advisory of high or critical severity that is not listed in
+``tools/audit-allowlist.toml``.
 An advisory whose severity cannot be read is treated as high, so a parser miss cannot hide it. Vulture and radon
 are report-only and never change the exit code. A blocking tool that is not installed also fails the run.
 """
@@ -42,6 +46,8 @@ TARGETS = [
     "dubber/platform_win.py", "dubber/settings.py", "dubber/__init__.py", "main.py", "tools",
 ]
 BLOCKING_SEVERITY = {"high", "critical", "unknown"}
+DOC_COVERAGE_MIN = 65
+DOC_TARGETS = [target for target in TARGETS if target != "tools"]
 _CVSS_V3 = {
     "AV": {"N": 0.85, "A": 0.62, "L": 0.55, "P": 0.2},
     "AC": {"L": 0.77, "H": 0.44},
@@ -51,6 +57,7 @@ _CVSS_V3 = {
     "A": {"N": 0.0, "L": 0.22, "H": 0.56},
 }
 _FINDING_LINE = re.compile(r":\d+:\d+: ")
+_COVERAGE = re.compile(r"actual:\s*([0-9.]+)%")
 
 
 @dataclass(frozen=True)
@@ -340,8 +347,11 @@ def classify_pip(payload: Mapping[str, Any], allow: Sequence[Advisory],
 
 
 def ruff_check(py: str) -> Check:
-    # Real errors only: pyflakes (F, including undefined names) and syntax (E9). Style (E501) and pyupgrade (UP) are out.
-    code, out, err = _run([py, "-m", "ruff", "check", "--select", "F,E9", "--ignore", "E501,UP",
+    """Pyflakes and syntax errors.
+
+    The rule set lives in ``ruff.toml``. Docstring coverage is ``interrogate_check``.
+    """
+    code, out, err = _run([py, "-m", "ruff", "check", "--config", str(ROOT / "ruff.toml"),
                            "--output-format", "concise", "--no-cache", *TARGETS])
     if code == 127 or _missing(err):
         return Check("ruff (F, E9)", "not installed", err.strip(), True)
@@ -349,6 +359,33 @@ def ruff_check(py: str) -> Check:
         return Check("ruff (F, E9)", "failed to run", (out + err).strip(), True)
     lines = [ln for ln in out.splitlines() if _FINDING_LINE.search(ln)]
     return Check("ruff (F, E9)", f"{len(lines)} error(s)", out.strip(), bool(lines))
+
+
+def interrogate_check(py: str) -> Check:
+    """Public docstring coverage. Below 65% fails the release gate.
+
+    The scan is ``dubber`` and ``main.py``. Tests, ``tools/``, and vendored Look2Hear are outside it. Private names,
+    ``__init__``, magic methods, and nested functions are ignored.
+    """
+    code, out, err = _run([
+        py, "-m", "interrogate",
+        "--fail-under", str(DOC_COVERAGE_MIN),
+        "--ignore-semiprivate",
+        "--ignore-private",
+        "--ignore-init-method",
+        "--ignore-magic",
+        "--ignore-nested-functions",
+        "--exclude", "dubber/third_party",
+        "--no-color",
+        *DOC_TARGETS,
+    ])
+    text = "\n".join(part for part in (out, err) if part).strip()
+    if code == 127 or _missing(err):
+        return Check("interrogate (65%)", "not installed", err.strip(), True)
+    match = _COVERAGE.search(text)
+    if match and code in (0, 1):
+        return Check("interrogate (65%)", f"{match.group(1)}%", text, code != 0)
+    return Check("interrogate (65%)", "failed to run", text, True)
 
 
 def mypy_check(py: str) -> Check:
@@ -568,6 +605,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     else:
         checks = [
             ruff_check(py),
+            interrogate_check(py),
             mypy_check(py),
             bandit_check(py),
             pip_audit_check(py, args.python, allow),

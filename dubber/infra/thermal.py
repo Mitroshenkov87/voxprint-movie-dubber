@@ -87,10 +87,12 @@ class Guard:
         self._throttle_since: Optional[float] = None
 
     def elapsed(self, now: Optional[float] = None) -> float:
+        """Return seconds since the dub started, including time before this stage."""
         t = self._now() if now is None else now
         return t - self.t0
 
     def update(self, temp_c: Optional[float], power_w: Optional[float], mask: int, now: Optional[float] = None) -> None:
+        """Record one sample: temperature in Celsius, power in watts, and the nvidia-smi throttle bit mask."""
         t = self._now() if now is None else now
         self.temp = None if temp_c is None else float(temp_c)
         self.power = None if power_w is None else float(power_w)
@@ -112,6 +114,7 @@ class Guard:
         return float(statistics.median(v for _t, v in self._temps))
 
     def throttle_seconds(self, now: Optional[float] = None) -> float:
+        """Return how many seconds the thermal or power-brake bits have stayed set."""
         if self._throttle_since is None:
             return 0.0
         t = self._now() if now is None else now

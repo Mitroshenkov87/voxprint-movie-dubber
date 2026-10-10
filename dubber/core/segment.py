@@ -51,6 +51,7 @@ def _strip_foreign(word: str, lang: Optional[str]) -> str:
 
 
 def clean_words(words: Sequence[Word], lang: Optional[str] = None) -> List[Word]:
+    """Drop recogniser debris and glue stray punctuation or word pieces onto the previous word."""
     out: List[Word] = []
     for w in words:
         t = _strip_foreign(_JUNK_CHARS.sub("", str(w.get("w", ""))), lang)
@@ -100,6 +101,7 @@ def collapse_loops(words: List[Word], max_repeat: int = 3) -> List[Word]:
 
 
 def is_sentence_end(word: str, next_word: Optional[str]) -> bool:
+    """Whether ``word`` ends a sentence. Abbreviations and a dotted acronym before a lower-case word do not."""
     t = word.strip()
     if not _END.search(t):
         return False
@@ -164,6 +166,7 @@ MAX_RATE = 40.0
 
 
 def impossible_rate(start: float, end: float, text: str) -> bool:
+    """Whether ``text`` has at least six letters and more than 40 per second over ``[start, end]``."""
     letters = sum(c.isalnum() for c in text)
     return letters >= 6 and letters / max(end - start, 0.01) > MAX_RATE
 

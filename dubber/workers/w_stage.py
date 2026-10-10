@@ -12,6 +12,7 @@ from dubber.workers.common import WorkerContext
 
 
 def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
+    """Run one pipeline stage on the project folder and save the project."""
     from dubber.core.project import Project
     from dubber.pipeline import stages
 

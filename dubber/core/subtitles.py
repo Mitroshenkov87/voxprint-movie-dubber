@@ -23,6 +23,7 @@ LANG_ALIASES = {"ru": ("ru", "rus", "russian", "рус"), "en": ("en", "eng", "e
 
 @dataclass
 class Cue:
+    """One subtitle cue."""
     start: float
     end: float
     text: str
@@ -41,6 +42,7 @@ def _ts(s: str) -> float:
 
 
 def parse_srt(text: str) -> List[Cue]:
+    """Cues from an SRT document. A block with a bad timestamp is skipped."""
     cues: List[Cue] = []
     for block in re.split(r"\n\s*\n", text.replace("\r\n", "\n").replace("\r", "\n").strip("\ufeff \n")):
         lines = [ln for ln in block.split("\n") if ln.strip()]
@@ -56,10 +58,12 @@ def parse_srt(text: str) -> List[Cue]:
 
 
 def parse_vtt(text: str) -> List[Cue]:
+    """Cues from a WebVTT document, parsed as SRT after the header."""
     return parse_srt(re.sub(r"^WEBVTT.*?\n", "", text.lstrip("\ufeff"), count=1, flags=re.S))
 
 
 def parse_ass(text: str) -> List[Cue]:
+    """Dialogue cues from an ASS or SSA document, in start-time order. Override tags are removed."""
     cues: List[Cue] = []
     fmt: List[str] = []
     for ln in text.replace("\r", "").split("\n"):
@@ -81,6 +85,7 @@ def parse_ass(text: str) -> List[Cue]:
 
 
 def parse_any(text: str, name: str = "") -> List[Cue]:
+    """Parse ASS, WebVTT, or SRT, chosen from ``name`` and the start of ``text``."""
     low = name.lower()
     if low.endswith((".ass", ".ssa")) or "[Script Info]" in text[:2000]:
         return parse_ass(text)
@@ -90,6 +95,7 @@ def parse_any(text: str, name: str = "") -> List[Cue]:
 
 
 def decode_bytes(data: bytes) -> str:
+    """Decode subtitle bytes as UTF-8, then Windows-1251, then Latin-1."""
     for enc in ("utf-8-sig", "cp1251", "latin-1"):
         try:
             return data.decode(enc)
@@ -99,6 +105,7 @@ def decode_bytes(data: bytes) -> str:
 
 
 def load_file(path: Path) -> List[Cue]:
+    """Read a subtitle file and parse its cues."""
     return parse_any(decode_bytes(Path(path).read_bytes()), str(path))
 
 
@@ -108,6 +115,7 @@ def _fmt(t: float) -> str:
 
 
 def write_srt(cues: Sequence[Cue], path: Path) -> None:
+    """Write ``cues`` as a UTF-8 SRT file."""
     out = [f"{i}\n{_fmt(c.start)} --> {_fmt(c.end)}\n{c.text}\n" for i, c in enumerate(cues, 1)]
     Path(path).write_text("\n".join(out), encoding="utf-8", newline="\n")
 
@@ -173,11 +181,13 @@ def estimate_offset(cues: Sequence[Cue], windows: Sequence[Tuple[float, float]],
 
 
 def shift(cues: Sequence[Cue], offset: float) -> List[Cue]:
+    """Copy of ``cues`` moved by ``offset`` seconds. Times are kept at or above zero."""
     return [Cue(max(0.0, c.start + offset), max(0.0, c.end + offset), c.text) for c in cues]
 
 
 # ---------------------------------------------------------------------------------------------- sidecar files
 def lang_matches(name: str, lang: str) -> bool:
+    """Whether ``name`` contains a language token for ``lang``, including aliases such as ``rus``."""
     toks = re.split(r"[ ._\-\[\]()]+", name.lower())
     return any(a in toks for a in LANG_ALIASES.get(lang, (lang,)))
 
@@ -206,6 +216,7 @@ Http = Callable[[str, str, Dict[str, str], Optional[bytes]], bytes]      # (meth
 
 
 def default_http(method: str, url: str, headers: Dict[str, str], body: Optional[bytes] = None, timeout: float = 30.0) -> bytes:
+    """Send one HTTP request and return the body. ``timeout`` is seconds; ``urlopen`` errors propagate."""
     req = urllib.request.Request(url, data=body, method=method, headers={"User-Agent": USER_AGENT, **headers})
     with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310 - fixed https hosts
         return r.read()
@@ -279,6 +290,7 @@ def opensubtitles_search(api_key: str, video: Path, lang: str, http: Http = defa
 
 @dataclass
 class Found:
+    """Subtitles from one search hit: ``embedded``, ``sidecar``, ``subdl``, or ``opensubtitles``."""
     source: str            # embedded | sidecar | subdl | opensubtitles
     cues: List[Cue]
     label: str = ""

@@ -34,6 +34,7 @@ _LETTER_RUN = re.compile(r"([^\W\d_])\1{2,}")
 
 
 def split_sentences(text: str) -> List[str]:
+    """Split ``text`` on the same sentence-ending tokens the script uses."""
     from dubber.core.segment import is_sentence_end
 
     toks = text.split()
@@ -105,6 +106,8 @@ def complete_translate(texts: Sequence[str], fn: Translate, tgt: str = "", retry
 
 
 class OpusMT:
+    """One Opus-MT model loaded for a single language pair. Raises RuntimeError when no model exists for that pair."""
+
     def __init__(self, src: str, tgt: str, device: str, allow_download: bool, log: Callable[[str], None]) -> None:
         import torch  # noqa: F401
         from transformers import MarianMTModel, MarianTokenizer
@@ -118,6 +121,7 @@ class OpusMT:
         self.device, self.log, self.prefix = device, log, spec.target_token
 
     def __call__(self, texts: List[str], beams: int = 4, batch: int = 16) -> List[str]:
+        """Translate ``texts`` with Marian beam search, ``batch`` sentences per generate call. The completeness retry uses ``beams`` 1."""
         import torch
 
         out: List[str] = []
@@ -229,6 +233,7 @@ def finish_mt(text: str, source: str, tgt: str) -> str:
 
 def opus_translate(texts: List[str], src: str, tgt: str, device: str, allow_download: bool, log: Callable[[str], None],
                    batch: int = 16) -> List[str]:
+    """Translate lines with Opus-MT, retrying incomplete sentences and pivoting through English when no direct model exists. Raises RuntimeError when the pair cannot pivot."""
     if src == tgt or not texts:
         return list(texts)
     if models.mt_spec(src, tgt) is None:

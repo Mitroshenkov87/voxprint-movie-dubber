@@ -24,6 +24,7 @@ class ClickBurst:
         self.fired = False
 
     def click(self, now: float | None = None) -> bool:
+        """Record a click and return True once, when enough clicks land inside the window."""
         if self.fired:
             return False
         t = self._clock() if now is None else now
