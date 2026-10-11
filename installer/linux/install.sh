@@ -113,10 +113,29 @@ install_ffmpeg() {
 
 if [ "$UNINSTALL" = 1 ]; then
   say "Removing Voxprint AI Movie Dubber from $PREFIX"
+  release_log="$(mktemp)"
   if [ -x "$PY" ]; then
-    "$PY" "$PREFIX/app/dubber/infra/components.py" release --home "$VX_HOME" --app "$REF_APP" || true
+    "$PY" "$PREFIX/app/dubber/infra/components.py" release --home "$VX_HOME" --app "$REF_APP" >"$release_log" 2>&1 || true
   elif [ -f "$PREFIX/app/dubber/infra/components.py" ]; then
-    python3 "$PREFIX/app/dubber/infra/components.py" release --home "$VX_HOME" --app "$REF_APP" || true
+    python3 "$PREFIX/app/dubber/infra/components.py" release --home "$VX_HOME" --app "$REF_APP" >"$release_log" 2>&1 || true
+  fi
+  cat "$release_log" || true
+  # The interpreter above lives in the shared runtime, so that directory is reported pending
+  # and can be removed only after that process has exited.
+  pending_line="$(awk -F'pending: ' '/^pending: / { print $2; exit }' "$release_log" || true)"
+  rm -f "$release_log"
+  if [ -n "${pending_line:-}" ] && [ "$pending_line" != "none" ]; then
+    rest="$pending_line"
+    while [ -n "$rest" ]; do
+      path="${rest%%, *}"
+      case "$path" in
+        "$SHARED"/*) rm -rf "$path" ;;
+      esac
+      if [ "$path" = "$rest" ]; then
+        break
+      fi
+      rest="${rest#*, }"
+    done
   fi
   rm -rf "$PREFIX"
   rm -f "$BIN_DIR/$APP_ID" "$DATA_HOME/applications/$APP_ID.desktop" "$DATA_HOME/mime/packages/$APP_ID.xml" \
