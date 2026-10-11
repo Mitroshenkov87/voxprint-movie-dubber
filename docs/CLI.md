@@ -12,6 +12,7 @@ python main.py diagnose
 python main.py fetch-models [--models KEY,KEY]
 python main.py run-project PATH [--languages SRC,TGT] [--stages NAME,NAME]
 python main.py info PATH
+python main.py selftest
 python main.py --dry-run --json
 ```
 
@@ -60,7 +61,7 @@ python main.py --dry-run --json
 | --- | --- | --- |
 | 0 | ok | The command finished. |
 | 2 | usage | Unknown command or flag, or a missing value, language, stage, or model key. |
-| 3 | gpu | No supported NVIDIA GPU (compute capability 8.9 or newer, RTX 40-series or newer). |
+| 3 | gpu | No RTX 40-series GPU (compute capability 8.9 or newer), or the NVIDIA driver is older than branch 600. |
 | 4 | models | A model this command needs is not on disk. Dry-run does not download it. |
 | 5 | input | The video, project folder, or .vxdub file is missing or cannot be read. |
 | 6 | job | The dubbing job failed. |
@@ -100,13 +101,21 @@ PATH is a video (.mkv, .mp4, .avi, .mov, .webm, .m4v, .ts, .m2ts), a .vxdub proj
 python main.py run-project PATH
 ```
 
+## selftest
+
+Checks the shared Python 3.14 runtime, the torch 2.11.0, torchaudio and torchcodec wheels, the CTranslate2 CUDA 12 libraries, ffmpeg and the models the default pipeline needs. A missing or broken piece is repaired. Progress is one JSON object per line on stderr. The result includes outcome: ok when nothing changed, repair when a piece was restored. An NVIDIA driver older than branch 600, or a GPU that is not an RTX 40-series card or newer, exits 3. The error names https://www.nvidia.com/Download/index.aspx. --dry-run checks and does not repair.
+
+```
+python main.py selftest PATH
+```
+
 ## info (project-info)
 
 Prints the kind, the languages and the line count. A video that is not yet a project is reported as video. A missing file is exit 5. This command does not need a GPU. --dry-run adds the discovery object and then uses the same GPU exit code as the other dry-runs.
 
 ```
-python main.py info PATH
-python main.py project-info PATH
+python main.py info
+python main.py project-info
 ```
 
 ## --dry-run
@@ -119,7 +128,7 @@ With no other command, --dry-run is discovery only:
 
 - `label`, `build`, `codename` from BUILD.json (and from build_info.json when the installer stamped one)
 - `runtime`: Python version, platform, and the installed PyTorch version (null when PyTorch is not installed)
-- `gpu`: whether the card meets the minimum, the reason when it does not (`no_cuda` or `low_compute`), VRAM, and the VRAM tier (`16gb` or `24gb`; `16gb` is also the tier when the size is unknown)
+- `gpu`: whether the card meets the minimum, the reason when it does not (`no_cuda`, `low_compute` or `old_driver`), VRAM, and the VRAM tier (`16gb` or `24gb`; `16gb` is also the tier when the size is unknown)
 - `models`: every known model key and whether its files are already on disk
 - `would_run.stages`: the dub stages that would run if a project were given
 
@@ -129,18 +138,19 @@ No model is loaded. Nothing is downloaded. On a GPU-less machine the process exi
 
 Open the window, or run an installer helper. These forms do not use the headless exit codes.
 
-The desktop window returns 1 when the graphics card is below the minimum. That code is not one of the headless codes above.
+The desktop window returns 3 (gpu) when the graphics card is not an RTX 40-series or newer, or the NVIDIA driver is older than branch 600. `--selftest` uses the same codes. A repaired component is exit 0 with outcome `repair`.
 
 | Flag | Meaning |
 | --- | --- |
 | `--diagnose` | Open the window and run the diagnostics at once. The report goes to the Desktop. |
 | `--worker NAME ARGS` | Internal. Run one heavy step in its own process. NAME is the worker; ARGS is its JSON file. |
-| `--selftest` | Create the window, process events briefly, and exit 0. Smoke test. |
+| `--selftest` | Check and repair shared components, then open the window briefly and exit. With --json, print the self-test result and do not open the window. |
 | `--register-models-user` | Installer. Add this program to the shared models folder's .users.json. |
 | `--unregister-models-user` | Uninstaller. Remove this program from .users.json. Exit 0 unless the write failed. |
-| `--register-runtime-user` | Installer. Add this program to the shared runtime's .users.json. |
-| `--unregister-runtime-user` | Uninstaller. Remove this program from the shared runtime's .users.json. |
+| `--register-runtime-user` | Installer. Add this program's reference to the shared runtime in shared/manifest.json. |
+| `--unregister-runtime-user` | Uninstaller. Drop this program's runtime reference. Exit 0 unless the write failed. |
+| `--release-shared` | Uninstaller. Drop this program's references in shared/manifest.json and delete directories no app still uses. |
 | `--sync-suite-settings` | Installer. Write the shared suite.json (models folder, UI language) when it has none yet. |
-| `--out FILE` | With an unregister command, write '<other users>\n<folder>' to FILE. |
+| `--out FILE` | With --release-shared, write pending paths, one per line. With an unregister command, write '<other users>\n<folder>'. |
 
 Positional `PROJECT.vxdub`: Open this project file in the window.

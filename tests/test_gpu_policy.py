@@ -68,6 +68,7 @@ def test_installer_message_names_the_gpu_we_found():
     assert "A processor-only copy is not offered." in text
     assert "What we found: NVIDIA GeForce RTX 3080, compute capability 8.6, driver 560.70 (branch 560)." in text
     assert "Install a supported graphics card and driver, then run setup again." in text
+    assert "https://www.nvidia.com/Download/index.aspx" in text
     assert "вычислительная способность 8.9" in INSTALLER_LEAD_RU
 
 
@@ -89,6 +90,7 @@ def test_window_gate_shows_the_localized_dialog(monkeypatch):
     from dubber import i18n
 
     monkeypatch.delenv(SKIP_ENV, raising=False)
+    monkeypatch.setattr(app_main, "driver_branch", lambda: None)
     shown = {}
 
     class _Box:
@@ -110,6 +112,12 @@ def test_window_gate_shows_the_localized_dialog(monkeypatch):
 
     monkeypatch.setattr(app_main, "probe_torch", lambda: (True, (8, 9), "NVIDIA GeForce RTX 4090 Laptop GPU"))
     assert app_main._refuse_unsupported_gpu(_Box) is False
+
+    monkeypatch.setattr(app_main, "driver_branch", lambda: 550)
+    monkeypatch.setattr(app_main, "probe_torch", lambda: (True, (8, 9), "NVIDIA GeForce RTX 4090 Laptop GPU"))
+    assert app_main._refuse_unsupported_gpu(_Box) is True
+    assert "550" in shown["body"] and "https://www.nvidia.com/Download/index.aspx" in shown["body"]
+    monkeypatch.setattr(app_main, "driver_branch", lambda: None)
 
     i18n.set_language("ru", save=False)
     monkeypatch.setattr(app_main, "probe_torch", lambda: (False, None, ""))

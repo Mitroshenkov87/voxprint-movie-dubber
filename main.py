@@ -10,10 +10,13 @@ r"""Voxprint AI Movie Dubber - entry point.
     main.py --fetch-models        download the AI models (used by the installer); --models KEY,KEY limits the set
     main.py --register-models-user      (installer) add this program to the shared models folder's .users.json
     main.py --unregister-models-user --out FILE   (uninstaller) remove it; FILE gets "<other users>\n<models folder>"
-    main.py --register-runtime-user / --unregister-runtime-user --out FILE   the same for the shared runtime-<key>\.users.json
+    main.py --register-runtime-user / --unregister-runtime-user --out FILE   the same for the shared runtime in shared/manifest.json
     main.py --sync-suite-settings (installer) write the shared suite.json (models folder, UI language) if it has none yet
     main.py --run-project DIR [--stages a,b]      run (or resume) a dubbing project without a window (detached long run)
-    main.py --selftest            create the window, process events briefly, exit 0 (smoke test)
+    main.py --selftest            check and repair shared components, then open the window briefly (smoke test)
+    main.py --selftest --json     same check, one JSON object on stdout, progress JSON lines on stderr, no window
+    main.py selftest [--json]     the same check as a headless command
+    main.py --release-shared      drop this app's shared-resource references and delete unreferenced directories
     main.py --version
 
 Options for the diagnostics:  --out FILE  --quick  --no-download  --target ru|en|de  --skip system,gpu,network,models,tts,stages
@@ -31,7 +34,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from dubber.i18n import tr
-from dubber.infra.gpu_policy import gate_skipped, probe_torch, startup_block, startup_detail_key
+from dubber.cli import EXIT_GPU
+from dubber.infra.gpu_policy import NVIDIA_DRIVER_URL, driver_branch, gate_skipped, launch_block, probe_torch, startup_detail_key, with_driver_link
 
 
 def _arg(argv, name, default=None):
@@ -75,7 +79,7 @@ def _setup_logging() -> None:
         pass
 
 
-_HEADLESS_COMMANDS = {"version", "diagnose", "fetch-models", "run-project", "info", "project-info"}
+_HEADLESS_COMMANDS = {"version", "diagnose", "fetch-models", "run-project", "info", "project-info", "selftest"}
 _HEADLESS_FLAGS = {"--version", "--dry-run", "--json", "--diagnose-cli", "--fetch-models", "--run-project",
                    "--project-info", "--help", "-h"}
 
@@ -102,23 +106,27 @@ def project_file_from_argv(argv) -> str | None:
 
 
 def _refuse_unsupported_gpu(message_box) -> bool:
-    """True when the graphics card is below the minimum. The dialog is shown and the window must not open.
+    """True when the graphics card or the driver is below the minimum. The dialog is shown and the window must not open.
 
-    ``VOXPRINT_SKIP_GPU_GATE`` skips the check for tests and the CI smoke run.
+    ``VOXPRINT_SKIP_GPU_GATE`` skips the check for tests and the CI smoke run. The message names
+    ``https://www.nvidia.com/Download/index.aspx``.
     """
     if gate_skipped():
         return False
     available, capability, name = probe_torch()
-    block = startup_block(available, capability, name)
+    block = launch_block(available, capability, name, driver_branch())
     if block is None:
         return False
     key, params = startup_detail_key(block)
-    message_box.critical(None, tr("gpu.gate_title"), tr("gpu.gate_body", detail=tr(key, **params)))
+    body = with_driver_link(tr("gpu.gate_body", detail=tr(key, **params)))
+    if NVIDIA_DRIVER_URL not in body:
+        body = with_driver_link(body)
+    message_box.critical(None, tr("gpu.gate_title"), body)
     return True
 
 
 def main(argv=None) -> int:
-    """Start the window, or dispatch a headless, worker, or installer command. The window returns 1 when the graphics card is below the minimum."""
+    """Start the window, or dispatch a headless, worker, or installer command. The window returns 3 when the graphics card or driver is below the minimum."""
     argv = list(sys.argv[1:] if argv is None else argv)
     from dubber.infra.stdio_guard import guard_stdio
 
@@ -150,6 +158,15 @@ def main(argv=None) -> int:
         from dubber.infra import suite
 
         return suite.sync_cli()
+    if "--release-shared" in argv:
+        return _release_shared(argv)
+    if "--selftest" in argv and "--json" in argv:
+        from dubber.cli import main as cli_main
+
+        forwarded = [item for item in argv if item != "--selftest"]
+        if "selftest" not in forwarded:
+            forwarded.insert(0, "selftest")
+        return cli_main(forwarded)
     from PySide6.QtCore import QTimer
     from PySide6.QtGui import QIcon
     from PySide6.QtWidgets import QApplication, QMessageBox
@@ -163,7 +180,13 @@ def main(argv=None) -> int:
     if icon.is_file():
         app.setWindowIcon(QIcon(str(icon)))
     if _refuse_unsupported_gpu(QMessageBox):
-        return 1
+        return EXIT_GPU
+    from dubber.ui.setup_progress import ensure_with_dialog
+
+    ensured = ensure_with_dialog()
+    if ensured.exit_code != 0:
+        QMessageBox.critical(None, tr("gpu.gate_title"), ensured.message or "A shared component could not be repaired.")
+        return ensured.exit_code
     from dubber.ui import splash as splash_mod
 
     splash = splash_mod.show()                               # the first thing on screen: before the heavy UI imports below
@@ -180,6 +203,28 @@ def main(argv=None) -> int:
     if "--selftest" in argv:
         QTimer.singleShot(400, app.quit)
     return app.exec()
+
+
+def _release_shared(argv) -> int:
+    """Drop this app's references in ``shared/manifest.json`` and delete directories no app still uses.
+
+    ``--out FILE`` receives one pending path per line (still on disk because this process is using it).
+    The uninstaller deletes those after this process exits.
+    """
+    from dubber.infra.shared_manifest import APP_ID, release_app
+    from dubber.infra.shared_paths import voxprint_home
+
+    try:
+        result = release_app(voxprint_home(), APP_ID)
+        out = _arg(argv, "--out")
+        if out:
+            Path(out).write_text("".join(f"{path}\n" for path in result.pending), encoding="utf-8")
+    except OSError as exc:
+        print(f"shared resources: {exc}", flush=True)
+        return 1
+    print(f"deleted: {', '.join(result.deleted) or 'none'}", flush=True)
+    print(f"pending: {', '.join(result.pending) or 'none'}", flush=True)
+    return 0
 
 
 def _models_users(argv) -> int:

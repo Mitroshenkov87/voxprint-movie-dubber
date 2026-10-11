@@ -12,16 +12,16 @@ Agreed rules (Audiobook Builder, project-notes/voxprint/DECISIONS.md):
   ``installer/runtime-constraints.txt`` records that those torch pins are applied by the installer.
 * Key: :func:`runtime_key` = SHA-256 over Python version, platform, torch version + flavor, our requirements and constraints
   (comments and blank lines ignored), 12 hex digits.  ``installer/install-runtime.ps1`` computes the same key.
-* Reuse only on an exact key match: ``<Voxprint home>\\runtime-<key>`` (``%LOCALAPPDATA%\\Voxprint\\runtime-<key>``) with a
-  ``.install-complete`` marker is used as it is; otherwise a new side-by-side folder is installed.  A shared runtime is never
-  upgraded in place (a different set of versions is a different key).  ``<home>\\runtime`` itself belongs to the Audiobook
-  Builder and is never touched.
-* Users: ``runtime-<key>\\.users.json`` in the format of ``models\\.users.json`` (``{"movie-dubber": true}``).  The uninstaller
-  removes our key (``--unregister-runtime-user --out FILE``) and deletes the folder only when no other program is listed.
+* The installed copy lives at ``<Voxprint home>/shared/runtimes/py3.14-torch2.11-<flavor>/`` (``cu130`` for a user install,
+  ``cpu`` only when CI asks for it). A folder that already matches the pin is reused. It is never upgraded in place to a
+  different Python or torch line: that line has its own directory name. ``<home>/runtime`` belongs to the Audiobook Builder
+  and is never touched. An older ``runtime-<key>`` directory is moved into this layout by :func:`dubber.infra.shared_deps.migrate`.
+* Who uses it is recorded in ``shared/manifest.json`` (schema 1), not in a private users file. The uninstaller drops this
+  app's reference and deletes the directory only when no app remains.
 
-Layout of one runtime: ``runtime-<key>\\python`` (the uv-managed CPython), ``runtime-<key>\\env`` (the virtual environment),
-``runtime-<key>\\runtime-key.json`` (what the key was made of), ``.users.json``, ``.install-complete``.  The program folder has a
-junction ``<app>\\runtime`` -> ``runtime-<key>\\env``, so shortcuts and scripts keep using ``<app>\\runtime\\Scripts\\python.exe``.
+Layout of one runtime: ``python`` (the uv-managed CPython), ``env`` (the virtual environment), ``runtime-key.json``,
+``.install-complete``. The program folder has a junction ``<app>\\runtime`` -> ``env``, so shortcuts keep using
+``<app>\\runtime\\Scripts\\python.exe``.
 """
 from __future__ import annotations
 
@@ -36,11 +36,10 @@ from typing import Any, Dict, List, Optional
 from dubber.infra import model_store, shared_paths
 
 LOCK_PATH = Path(__file__).with_name("runtime_lock.json")
-PREFIX = "runtime-"
+PREFIX = "py3.14-torch2.11-"
 KEY_FILE = "runtime-key.json"
 DONE_MARK = ".install-complete"
 USER_KEY = model_store.USER_KEY
-_KEY_RE = re.compile(r"^runtime-[0-9a-f]{12}$")
 
 
 def load_lock(path: Optional[Path] = None) -> Dict[str, Any]:
@@ -95,23 +94,23 @@ def choose_flavor(lock: Dict[str, Any], driver_cuda: Optional[tuple]) -> Optiona
     return best
 
 
-def runtime_dir(key: str) -> Path:
-    """Return ``<Voxprint home>/runtime-<key>`` for this pin set."""
-    return shared_paths.voxprint_home() / f"{PREFIX}{key}"
+def runtime_dir(flavor: str) -> Path:
+    """Return ``<Voxprint home>/shared/runtimes/py3.14-torch2.11-<flavor>``."""
+    return shared_paths.shared_root() / "runtimes" / f"{PREFIX}{flavor}"
 
 
 def is_runtime_dir(path: Path) -> bool:
-    """A folder made by this logic (never the Audiobook Builder's ``runtime``)."""
+    """A versioned runtime folder (never the Audiobook Builder's ``runtime``)."""
     p = Path(path)
-    return bool(_KEY_RE.match(p.name)) and (p / KEY_FILE).is_file()
+    return p.name.startswith(PREFIX) and (p / KEY_FILE).is_file()
 
 
-#: written by install-runtime.ps1 into the program folder: the real ``runtime-<key>`` folder behind the ``runtime`` junction
+#: written by install-runtime.ps1 into the program folder: the real shared runtime folder behind the ``runtime`` junction
 DIR_FILE = "runtime-dir.txt"
 
 
 def current_runtime_dir(app_dir: Optional[Path] = None) -> Optional[Path]:
-    """The ``runtime-<key>`` folder of the running interpreter, or None.  First the installer's note
+    """The versioned runtime folder of the running interpreter, or None. First the installer's note
     ``<app>\\runtime-dir.txt``, then the interpreter prefix with the ``<app>\\runtime`` junction resolved."""
     app = Path(app_dir) if app_dir else Path(__file__).resolve().parents[2]
     try:
@@ -134,28 +133,50 @@ def current_runtime_dir(app_dir: Optional[Path] = None) -> Optional[Path]:
 
 
 def installed_runtimes() -> List[Path]:
-    """Return shared ``runtime-<key>`` folders that contain ``runtime-key.json``, sorted by path."""
-    home = shared_paths.voxprint_home()
-    return sorted(p for p in home.glob(f"{PREFIX}*") if p.is_dir() and is_runtime_dir(p))
+    """Return versioned runtime folders that contain ``runtime-key.json``, sorted by path."""
+    root = shared_paths.shared_root() / "runtimes"
+    if not root.is_dir():
+        return []
+    return sorted(p for p in root.glob(f"{PREFIX}*") if p.is_dir() and is_runtime_dir(p))
+
+
+def _manifest_version(root: Path) -> str:
+    if root.name.startswith(PREFIX):
+        return root.name
+    try:
+        data = json.loads((root / KEY_FILE).read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        data = {}
+    flavor = str(data.get("flavor") or "cu130")
+    return f"{PREFIX}{flavor}"
 
 
 def register_user(root: Optional[Path] = None) -> Optional[Dict[str, bool]]:
-    """Mark this program in the runtime ``.users.json``, or return None when no runtime folder is known."""
+    """Add this program's reference to the runtime entry in ``shared/manifest.json``."""
+    from dubber.infra.shared_manifest import add_ref
+
     root = root or current_runtime_dir()
-    return model_store.register_user(USER_KEY, root) if root else None
+    if root is None:
+        return None
+    add_ref(shared_paths.voxprint_home(), resource_id="runtime", version=_manifest_version(root), path=root, app=USER_KEY)
+    return {USER_KEY: True}
 
 
 def unregister_user(root: Optional[Path] = None) -> List[str]:
-    """Remove our key from ``runtime-<key>\\.users.json``; returns the other programs still using that runtime."""
+    """Drop this program's runtime reference. Returns the other apps still using that runtime."""
+    from dubber.infra.shared_manifest import release_app, resource_apps
+
     root = root or current_runtime_dir()
     if root is None:
         return []
-    return model_store.unregister_user(USER_KEY, root)
+    version = _manifest_version(root)
+    others = [name for name in resource_apps(shared_paths.voxprint_home(), "runtime", version) if name != USER_KEY]
+    release_app(shared_paths.voxprint_home(), USER_KEY, resource_id="runtime")
+    return sorted(others)
 
 
 def unregister_cli(out: Optional[str], root: Optional[Path] = None) -> int:
-    """``--unregister-runtime-user [--out FILE]``: FILE gets ``<number of other users>\\n<runtime folder>\\n`` (folder empty when this
-    interpreter is not a shared runtime).  Exit code 0 unless writing failed."""
+    """``--unregister-runtime-user [--out FILE]``: FILE gets ``<number of other apps>\\n<runtime folder>\\n``. Exit code 0 unless writing failed."""
     try:
         root = root or current_runtime_dir()
         others = unregister_user(root) if root else []

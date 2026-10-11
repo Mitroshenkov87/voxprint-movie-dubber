@@ -29,7 +29,7 @@ from dubber.appinfo import APP_VERSION, app_build, app_codename, version_label, 
 from dubber.core import vxdub
 from dubber.core.project import Project
 from dubber.diag.runner import ALL_TTS_MODES, DiagOptions, DiagnosticRunner
-from dubber.infra.gpu_policy import gate_skipped, probe_torch, startup_block
+from dubber.infra.gpu_policy import driver_branch, gate_skipped, launch_block, probe_torch
 from dubber.infra.resources import snapshot
 from dubber.infra.vram_tier import detect, install_models
 from dubber.pipeline.runner import Callbacks, Runner
@@ -47,7 +47,7 @@ EXIT_CANCELLED = 7
 EXIT_CODES: tuple[tuple[int, str, str], ...] = (
     (EXIT_OK, "ok", "The command finished."),
     (EXIT_USAGE, "usage", "Unknown command or flag, or a missing value, language, stage, or model key."),
-    (EXIT_GPU, "gpu", "No supported NVIDIA GPU (compute capability 8.9 or newer, RTX 40-series or newer)."),
+    (EXIT_GPU, "gpu", "No RTX 40-series GPU (compute capability 8.9 or newer), or the NVIDIA driver is older than branch 600."),
     (EXIT_MODELS, "models", "A model this command needs is not on disk. Dry-run does not download it."),
     (EXIT_INPUT, "input", "The video, project folder, or .vxdub file is missing or cannot be read."),
     (EXIT_JOB, "job", "The dubbing job failed."),
@@ -58,7 +58,7 @@ EXIT_CODE_NOTE = (
     "then an unsupported GPU, then missing models, then a job failure, then cancellation."
 )
 
-CommandName = Literal["version", "diagnose", "fetch-models", "run-project", "info", "dry-run"]
+CommandName = Literal["version", "diagnose", "fetch-models", "run-project", "info", "dry-run", "selftest"]
 VIDEO_SUFFIXES = {".mkv", ".mp4", ".avi", ".mov", ".webm", ".m4v", ".ts", ".m2ts"}
 SOURCE_LANGS = {"auto", "en", "ru", "de"}
 TARGET_LANGS = {"en", "ru", "de"}
@@ -82,7 +82,7 @@ def build_parser() -> argparse.ArgumentParser:
             "With no other command, --dry-run is discovery only:\n\n"
             "- `label`, `build`, `codename` from BUILD.json (and from build_info.json when the installer stamped one)\n"
             "- `runtime`: Python version, platform, and the installed PyTorch version (null when PyTorch is not installed)\n"
-            "- `gpu`: whether the card meets the minimum, the reason when it does not (`no_cuda` or `low_compute`), "
+            "- `gpu`: whether the card meets the minimum, the reason when it does not (`no_cuda`, `low_compute` or `old_driver`), "
             "VRAM, and the VRAM tier (`16gb` or `24gb`; `16gb` is also the tier when the size is unknown)\n"
             "- `models`: every known model key and whether its files are already on disk\n"
             "- `would_run.stages`: the dub stages that would run if a project were given\n\n"
@@ -159,7 +159,19 @@ def build_parser() -> argparse.ArgumentParser:
                     "6 when the dub fails, and 7 when it is cancelled.",
     )
     run.add_argument("path", metavar="PATH", help="Video, .vxdub file, or project folder.")
-    info = commands.add_parser(
+    info =     commands.add_parser(
+        "selftest",
+        help="Re-check the shared runtime, wheels, ffmpeg and models, and repair anything missing.",
+        description=(
+            "Checks the shared Python 3.14 runtime, the torch 2.11.0, torchaudio and torchcodec wheels, the CTranslate2 "
+            "CUDA 12 libraries, ffmpeg and the models the default pipeline needs. A missing or broken piece is repaired. "
+            "Progress is one JSON object per line on stderr. The result includes outcome: ok when nothing changed, "
+            "repair when a piece was restored. An NVIDIA driver older than branch 600, or a GPU that is not an RTX 40-series "
+            "card or newer, exits 3. The error names https://www.nvidia.com/Download/index.aspx. "
+            "--dry-run checks and does not repair."
+        ),
+    )
+    commands.add_parser(
         "info",
         aliases=["project-info"],
         help="Read a project folder, a .vxdub file, or a video.",
@@ -184,19 +196,24 @@ def build_window_parser() -> argparse.ArgumentParser:
     parser.add_argument("--worker", nargs=2, metavar=("NAME", "ARGS"),
                         help="Internal. Run one heavy step in its own process. NAME is the worker; ARGS is its JSON file.")
     parser.add_argument("--selftest", action="store_true",
-                        help="Create the window, process events briefly, and exit 0. Smoke test.")
+                        help="Check and repair shared components, then open the window briefly and exit. "
+                             "With --json, print the self-test result and do not open the window.")
     parser.add_argument("--register-models-user", action="store_true",
                         help="Installer. Add this program to the shared models folder's .users.json.")
     parser.add_argument("--unregister-models-user", action="store_true",
                         help="Uninstaller. Remove this program from .users.json. Exit 0 unless the write failed.")
     parser.add_argument("--register-runtime-user", action="store_true",
-                        help="Installer. Add this program to the shared runtime's .users.json.")
+                        help="Installer. Add this program's reference to the shared runtime in shared/manifest.json.")
     parser.add_argument("--unregister-runtime-user", action="store_true",
-                        help="Uninstaller. Remove this program from the shared runtime's .users.json.")
+                        help="Uninstaller. Drop this program's runtime reference. Exit 0 unless the write failed.")
+    parser.add_argument("--release-shared", action="store_true",
+                        help="Uninstaller. Drop this program's references in shared/manifest.json and delete "
+                             "directories no app still uses.")
     parser.add_argument("--sync-suite-settings", action="store_true",
                         help="Installer. Write the shared suite.json (models folder, UI language) when it has none yet.")
     parser.add_argument("--out", metavar="FILE",
-                        help="With an unregister command, write '<other users>\\n<folder>' to FILE.")
+                        help="With --release-shared, write pending paths, one per line. With an unregister command, "
+                             "write '<other users>\\n<folder>'.")
     return parser
 
 
@@ -261,6 +278,7 @@ def _help_text() -> str:
         "  fetch-models [--models a,b]",
         "  run-project PATH [--languages SRC,TGT] [--source-lang L] [--target-lang L] [--stages a,b]",
         "  info PATH",
+        "  selftest",
         "  --dry-run",
         "",
         "Global: --json  --dry-run  --help",
@@ -332,7 +350,7 @@ def _command_from(positionals: list[str], values: dict[str, str], switches: set[
         return "dry-run", ""
     if positionals:
         raise UsageError(f"unknown command {positionals[0]}")
-    raise UsageError("give a command (version, diagnose, fetch-models, run-project, info) or --dry-run")
+    raise UsageError("give a command (version, diagnose, fetch-models, run-project, info, selftest) or --dry-run")
 
 
 def _as_command(name: str) -> CommandName:
@@ -349,6 +367,8 @@ def _as_command(name: str) -> CommandName:
             return "info"
         case "dry-run":
             return "dry-run"
+        case "selftest":
+            return "selftest"
         case _:
             raise UsageError(f"unknown command {name}")
 
@@ -417,7 +437,7 @@ def _runtime() -> dict[str, Any]:
 def _gpu() -> dict[str, Any]:
     """Gate and VRAM tier. Does not load a model. ``VOXPRINT_SKIP_GPU_GATE`` is not applied."""
     available, capability, name = probe_torch()
-    block = startup_block(available, capability, name)
+    block = launch_block(available, capability, name, driver_branch())
     snap = snapshot(use_torch=False)
     known = snap.vram_total_gb > 0
     tier = detect(snap.vram_total_gb)
@@ -431,6 +451,11 @@ def _gpu() -> dict[str, Any]:
             summary = f"{block.name or 'NVIDIA GPU'} compute capability {block.capability} is below 8.9"
         elif code == "no_cuda":
             summary = "No supported NVIDIA GPU was found (PyTorch CUDA is not available)."
+        elif code == "old_driver":
+            summary = (
+                f"NVIDIA driver branch {block.driver or 'unknown'} is older than 600. "
+                "NVIDIA driver downloads: https://www.nvidia.com/Download/index.aspx"
+            )
         else:
             unexpected: Never = code
             summary = str(unexpected)
@@ -571,7 +596,7 @@ def _fetch_for_real(req: Request, keys: list[str], chosen: list[dict[str, Any]])
         notes.append(text)
         _log(text) if req.json_mode else _human(text)
 
-    emit(f"Downloading AI models (about {models.total_download_gb(keys)} GB, finished ones are skipped) to {models.paths.models_dir()}")
+    emit(f"Downloading AI models (about {models.total_download_gb(keys)} GB, finished ones are skipped) to {paths.models_dir()}")
     for key in keys:
         spec = models.SPECS[key]
         emit(f"- {spec.title} [{spec.repo}] ...")
@@ -838,6 +863,22 @@ def _diagnose_for_real(req: Request) -> int:
     return _finish(req, EXIT_OK, {"report": str(path)}, human="")
 
 
+def _cmd_selftest(req: Request) -> int:
+    """Re-check the shared pieces. Progress JSON goes to stderr. ``--dry-run`` does not repair."""
+    from dubber.infra.shared_deps import live_selftest
+
+    def progress(event: dict[str, Any]) -> None:
+        print(json.dumps(event, ensure_ascii=True), file=sys.stderr, flush=True)
+
+    report = live_selftest(progress, repair=not req.dry_run, check_gpu=True)
+    human = report.message
+    if report.outcome == "ok":
+        human = "Shared components are ready."
+    elif report.outcome == "repair":
+        human = "Repaired: " + ", ".join(report.repaired)
+    return _finish(req, report.exit_code, report.as_dict(), error=report.message, human=human)
+
+
 def _dispatch(req: Request) -> int:
     command = req.command
     match command:
@@ -853,6 +894,8 @@ def _dispatch(req: Request) -> int:
             return _cmd_info(req)
         case "dry-run":
             return _cmd_dry(req)
+        case "selftest":
+            return _cmd_selftest(req)
         case _ as unexpected:
             never: Never = unexpected
             raise AssertionError(never)
@@ -890,7 +933,7 @@ def _help_finish(json_mode: bool, dry_run: bool = False) -> int:
         "label": version_label(),
         "build": app_build(),
         "codename": app_codename(),
-        "commands": ["version", "diagnose", "fetch-models", "run-project", "info"],
+        "commands": ["version", "diagnose", "fetch-models", "run-project", "info", "selftest"],
         "exit_codes": [{"code": code, "name": name, "when": when} for code, name, when in EXIT_CODES],
     }, ensure_ascii=True), flush=True)
     return EXIT_OK

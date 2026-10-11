@@ -9,8 +9,8 @@ here); change locations only in :mod:`dubber.infra.shared_paths`.
   held for the whole download and removed after it.  :func:`sweep_stale_locks` deletes unheld leftovers.
 * Manifest: ``model_manifest.json`` next to this file: pinned revision + size + SHA-256 per file.  A model without a manifest entry
   is checked structurally (weights, and a config file unless the model is checkpoint-only).
-* Users: ``<models>/.users.json`` ``{"audiobook-builder": true, "movie-dubber": true}`` - the installer adds our key, the uninstaller
-  removes it and deletes models only when no other key remains AND the user agrees.
+* Users: ``<models>/.users.json`` ``{"audiobook-builder": true, "movie-dubber": true}`` - the installer adds our key.
+  Who may delete the folder is ``shared/manifest.json``: the folder goes when no app still references the models resource.
 * Watchdog: while a download runs, the size of the ``.partial`` folder is reported every few seconds; no progress for
   ``STALL_SECONDS`` gives up the attempt (the data stays and the next attempt resumes).
 """

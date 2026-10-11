@@ -103,6 +103,7 @@
  "gpu.gate_body": "Для Voxprint AI Movie Dubber нужна видеокарта NVIDIA GeForce RTX 40 или новее (Ada Lovelace и новее, вычислительная способность 8.9 или выше) и драйвер NVIDIA ветки 600 или новее.\n\n{detail}\n\nПрограмма закроется.",
  "gpu.gate_low_compute": "Видеокарта, которую видит PyTorch ({name}), имеет вычислительную способность {capability}. Нужна вычислительная способность 8.9 или выше.",
  "gpu.gate_no_cuda": "PyTorch не видит подходящую видеокарту NVIDIA на этом компьютере.",
+ "gpu.gate_old_driver": "Драйвер NVIDIA на этом компьютере — ветка {driver}. Нужна ветка 600 или новее.",
  "gpu.gate_title": "Этот компьютер не может запустить Voxprint AI Movie Dubber",
  "lang.de": "Немецкий",
  "lang.en": "Английский",
