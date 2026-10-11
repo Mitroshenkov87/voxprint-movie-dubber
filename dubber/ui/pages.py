@@ -116,7 +116,14 @@ class FilmPage(QWidget):
 
     def __init__(self) -> None:
         super().__init__()
-        lay = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        host = QWidget()
+        host.setObjectName("content")
+        lay = QVBoxLayout(host)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(12)
         c = card()
@@ -280,6 +287,8 @@ class FilmPage(QWidget):
         ol.addWidget(self.options_body)
         lay.addWidget(c)
         lay.addStretch(1)
+        self._scroll.setWidget(host)
+        outer.addWidget(self._scroll, 1)
 
         self.cmb_target.currentIndexChanged.connect(lambda _i: self.option_changed.emit("target"))
         self.cmb_audio.currentIndexChanged.connect(lambda _i: self.option_changed.emit("audio"))
@@ -579,7 +588,11 @@ class SpeakerCard(QFrame):
 
 
 class CharactersPage(QWidget):
-    """Optional review of the characters: only in the multi-voice mode (switched on in the Film screen's Options)."""
+    """Optional review of the characters.
+
+    Multi-voice shows one card per speaker. One-voice shows the single voice, its actor-likeness
+    slider, and a few sample lines.
+    """
     changed = Signal(str)                  # what changed: voice | merge | name
     listen = Signal(str)                   # speaker id
     save_actor = Signal(str)               # speaker id: keep his actor-like voice in the library
@@ -605,6 +618,33 @@ class CharactersPage(QWidget):
         self.btn_catalog.clicked.connect(self.open_catalog.emit)
         cl.addWidget(self.btn_catalog, 0, Qt.AlignmentFlag.AlignLeft)
         lay.addWidget(c)
+
+        self.box_one = QWidget()
+        one = QVBoxLayout(self.box_one)
+        one.setContentsMargins(0, 0, 0, 0)
+        one.setSpacing(8)
+        self.lbl_one = label("hint")
+        one.addWidget(self.lbl_one)
+        row_one = QHBoxLayout()
+        self.lbl_one_voice = label("fileLabel", False)
+        self.cmb_one = QComboBox()
+        self.cmb_one.currentIndexChanged.connect(self._save_one_voice)
+        row_one.addWidget(self.lbl_one_voice)
+        row_one.addWidget(self.cmb_one, 1)
+        one.addLayout(row_one)
+        row_like = QHBoxLayout()
+        self.lbl_one_like = label("fileLabel", False)
+        self.sld_one = QSlider(Qt.Orientation.Horizontal)
+        self.sld_one.setRange(0, 100)
+        self.sld_one.setValue(50)
+        self.sld_one.sliderReleased.connect(self._save_one_voice)
+        row_like.addWidget(self.lbl_one_like)
+        row_like.addWidget(self.sld_one, 1)
+        one.addLayout(row_like)
+        self.lbl_one_samples = label("fileLabel")
+        one.addWidget(self.lbl_one_samples)
+        self.box_one.hide()
+        lay.addWidget(self.box_one)
 
         self.box_multi = QWidget()
         ml = QVBoxLayout(self.box_multi)
@@ -638,6 +678,9 @@ class CharactersPage(QWidget):
         """Refresh this page's labels for the current language."""
         self.lbl_title.setText(tr("chars.title"))
         self.lbl_disabled.setText(tr("chars.disabled"))
+        self.lbl_one.setText(tr("chars.one_voice"))
+        self.lbl_one_voice.setText(tr("chars.single_voice"))
+        self.lbl_one_like.setText(tr("chars.actor_weight"))
         self.btn_find.setText(tr("chars.find"))
         self.btn_merge.setText(tr("chars.merge"))
         self.btn_next.setText(tr("chars.next"))
@@ -660,8 +703,19 @@ class CharactersPage(QWidget):
         self.project = p
         multi = bool(p.settings.get("multi_voice"))
         items = voice_items()
-        self.lbl_disabled.setVisible(not multi)
+        self.lbl_disabled.setVisible(False)
+        self.box_one.setVisible(not multi)
         self.box_multi.setVisible(multi)
+        if not multi:
+            sv = p.settings.get("single_voice") or {}
+            fill_voice_combo(self.cmb_one, Voice.from_dict(sv))
+            raw = sv.get("actor_weight")
+            likeness = p.settings.get("actor_weight", actor_voice.DEFAULT_WEIGHT) if raw is None else raw
+            self.sld_one.blockSignals(True)
+            self.sld_one.setValue(int(round(100 * float(likeness))))
+            self.sld_one.blockSignals(False)
+            samples = [ln.text or ln.translation for ln in p.lines if (ln.text or ln.translation)][:3]
+            self.lbl_one_samples.setText("\n".join(f"“{s}”" for s in samples) or tr("chars.no_lines"))
         for c in self.cards.values():
             c.setParent(None)
             c.deleteLater()
@@ -677,6 +731,24 @@ class CharactersPage(QWidget):
         self.btn_find.setVisible(need)
         self.btn_merge.setVisible(multi and len(p.speakers) > 1)
         self.lbl_multi_status.setText(tr("chars.need_find") if need else tr("chars.found", n=len(p.speakers)) if multi else "")
+
+    def _save_one_voice(self, *_args: object) -> None:
+        """Store the one-voice choice and likeness, and tell the window to refresh the plan."""
+        project = self.project
+        if project is None or project.settings.get("multi_voice"):
+            return
+        data = self.cmb_one.currentData()
+        if data is None:
+            return
+        prev = dict(project.settings.get("single_voice") or {})
+        chosen = voice_from_key(str(data))
+        prev["kind"] = chosen.kind
+        prev["id"] = chosen.id
+        prev["actor_weight"] = round(self.sld_one.value() / 100.0, 2)
+        project.settings["single_voice"] = prev
+        project.settings["single_voice_user"] = True
+        project.save()
+        self.changed.emit("voice")
 
     # ------------------------------------------------------------------ edits
     def set_actor_weight(self, sid: str, percent: int) -> None:

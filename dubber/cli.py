@@ -76,7 +76,8 @@ def build_parser() -> argparse.ArgumentParser:
             "`python -m dubber.cli` takes the same arguments. On an installed copy the program is "
             "`python main.py` inside the installation folder.\n\n"
             "The JSON object always has `ok`, `exit_code`, `command`, `dry_run`, `version`, `label`, `build` and "
-            "`codename`. `label` is the same line as About. A failure also has `error`."
+            "`codename`. `label` is the same line as About. A failure also has `error`. A failed job also has "
+            "`debug` with the traceback."
         ),
         epilog=(
             "With no other command, --dry-run is discovery only:\n\n"
@@ -118,6 +119,8 @@ def build_parser() -> argparse.ArgumentParser:
     diag.add_argument("--clip", metavar="FILE", help="Use this clip instead of the bundled diagnostics clip.")
     diag.add_argument("--asr-repo", metavar="REPO", help="Hugging Face repo for the speech-recognition model.")
     diag.add_argument("--models", metavar="KEY,KEY", help="Model keys to download. Unknown keys exit 2.")
+    diag.add_argument("--report", metavar="FILE",
+                      help="Write the fetch-models log to this file. The installer reads it after the download.")
     diag.add_argument("--languages", metavar="SRC,TGT",
                       help="Source and target, for example en,ru. Source: auto, en, ru, de. Target: en, ru, de.")
     diag.add_argument("--source-lang", metavar="LANG", help="Source language. Default: auto. Kept when the project already has one.")
@@ -361,7 +364,7 @@ def _human(text: str) -> None:
     print(text, file=sys.stdout, flush=True)
 
 
-def _envelope(req: Request, code: int, extra: dict[str, Any] | None = None, error: str = "") -> dict[str, Any]:
+def _envelope(req: Request, code: int, extra: dict[str, Any] | None = None, error: str = "", debug: str = "") -> dict[str, Any]:
     body: dict[str, Any] = {
         "ok": code == EXIT_OK,
         "exit_code": code,
@@ -376,13 +379,18 @@ def _envelope(req: Request, code: int, extra: dict[str, Any] | None = None, erro
         body["error"] = error
     if extra:
         body.update(extra)
+    if debug:
+        body["debug"] = debug
+    if error:
+        body["error"] = error
     return body
 
 
-def _finish(req: Request, code: int, extra: dict[str, Any] | None = None, error: str = "", human: str = "") -> int:
+def _finish(req: Request, code: int, extra: dict[str, Any] | None = None, error: str = "", human: str = "",
+            debug: str = "") -> int:
     if error and req.json_mode:
         _log(error)
-    payload = _envelope(req, code, extra, error)
+    payload = _envelope(req, code, extra, error, debug)
     if req.json_mode:
         print(json.dumps(payload, ensure_ascii=True), flush=True)
     elif human:
@@ -562,10 +570,22 @@ def _cmd_fetch(req: Request) -> int:
     return _fetch_for_real(req, keys, chosen)
 
 
+def _write_report(req: Request, text: str) -> None:
+    """Write ``text`` when ``--report FILE`` was given. The installer reads this file."""
+    path = req.values.get("--report", "")
+    if not path:
+        return
+    dest = Path(path)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(text, encoding="utf-8")
+
+
 def _fetch_for_real(req: Request, keys: list[str], chosen: list[dict[str, Any]]) -> int:
     _setup_logging()
     failed: list[str] = []
+    gated: list[str] = []
     notes: list[str] = []
+    token = models.hf_token()
 
     def emit(text: str) -> None:
         notes.append(text)
@@ -575,16 +595,41 @@ def _fetch_for_real(req: Request, keys: list[str], chosen: list[dict[str, Any]])
     for key in keys:
         spec = models.SPECS[key]
         emit(f"- {spec.title} [{spec.repo}] ...")
+        if spec.gated and not token:
+            gated.append(key)
+            emit("  GATED: no Hugging Face token. One-voice dubbing works without this model; "
+                 "multi-voice needs HF_TOKEN (or huggingface-cli login).")
+            continue
         try:
-            models.ensure(spec.repo, True, log=lambda message: emit("    " + str(message)))
-            emit("  done")
+            models.ensure(spec.repo, True, token=token, log=lambda message: emit("    " + str(message)))
+            if models.locate(spec.repo) is None:
+                failed.append(key)
+                emit("  FAILED: the folder is still incomplete after the download")
+            else:
+                emit("  done")
         except Exception as exc:  # noqa: BLE001 - report and continue with the next model
             failed.append(key)
             emit(f"  FAILED: {' '.join(str(exc).split())[:300]}")
+    if gated:
+        emit("GATED: " + ", ".join(gated))
+        emit("One-voice dubbing works without pyannote. Multi-voice needs a Hugging Face token (HF_TOKEN) "
+             "for the diarization and embedding models.")
     if failed:
-        message = f"Not downloaded: {', '.join(failed)}.  Run this step again or start the diagnostics later."
-        return _finish(req, EXIT_MODELS, {"models": chosen, "failed": failed, "log": notes}, error=message)
-    return _finish(req, EXIT_OK, {"models": chosen, "failed": [], "log": notes}, human="All models are ready.")
+        emit("FAILED: " + ", ".join(failed))
+    _write_report(req, "\n".join(notes) + "\n")
+    if failed:
+        message = f"Not downloaded: {', '.join(failed)}."
+        if gated:
+            message += (" Skipped without a Hugging Face token: " + ", ".join(gated)
+                        + ". One-voice dubbing works without them; multi-voice needs HF_TOKEN.")
+        else:
+            message += "  Run this step again or start the diagnostics later."
+        return _finish(req, EXIT_MODELS, {"models": chosen, "failed": failed, "gated": gated, "log": notes}, error=message)
+    human = "All models are ready."
+    if gated:
+        human = ("One-voice dubbing works without pyannote. Multi-voice needs a Hugging Face token (HF_TOKEN) for: "
+                 + ", ".join(gated) + ".")
+    return _finish(req, EXIT_OK, {"models": chosen, "failed": [], "gated": gated, "log": notes}, human=human)
 
 
 def _classify_path(path: Path) -> str:
@@ -768,8 +813,9 @@ def _run_for_real(req: Request, described: dict[str, Any]) -> int:
         _human(summary)
         return code
     error = "" if result.ok else result.message or "job failed"
+    debug = "" if result.ok else result.debug
     return _finish(req, code, {"would_run": described, "message": result.message, "stages": result.stages, "log": logs},
-                   error=error)
+                   error=error, debug=debug)
 
 
 def _diag_options(req: Request) -> DiagOptions:
@@ -917,9 +963,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _finish(req, EXIT_INPUT, error=str(exc))
     except KeyboardInterrupt:
         return _finish(req, EXIT_CANCELLED, error="cancelled")
-    except Exception as exc:  # noqa: BLE001 - one JSON object, the traceback stays on stderr
+    except Exception as exc:  # noqa: BLE001 - one JSON object, the traceback stays on stderr and in debug
+        debug = traceback.format_exc()
         traceback.print_exc(file=sys.stderr)
-        return _finish(req, EXIT_JOB, error=f"{type(exc).__name__}: {exc}")
+        return _finish(req, EXIT_JOB, error=f"{type(exc).__name__}: {exc}", debug=debug)
 
 
 if __name__ == "__main__":

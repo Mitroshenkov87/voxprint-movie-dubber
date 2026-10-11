@@ -4,7 +4,7 @@ Headless entry points for other Voxprint programs, scripts and agents. The same 
 
 `python -m dubber.cli` takes the same arguments. On an installed copy the program is `python main.py` inside the installation folder.
 
-The JSON object always has `ok`, `exit_code`, `command`, `dry_run`, `version`, `label`, `build` and `codename`. `label` is the same line as About. A failure also has `error`.
+The JSON object always has `ok`, `exit_code`, `command`, `dry_run`, `version`, `label`, `build` and `codename`. `label` is the same line as About. A failure also has `error`. A failed job also has `debug` with the traceback.
 
 ```
 python main.py version
@@ -49,6 +49,7 @@ python main.py --dry-run --json
 | `--clip FILE` | Use this clip instead of the bundled diagnostics clip. |
 | `--asr-repo REPO` | Hugging Face repo for the speech-recognition model. |
 | `--models KEY,KEY` | Model keys to download. Unknown keys exit 2. |
+| `--report FILE` | Write the fetch-models log to this file. The installer reads it after the download. |
 | `--languages SRC,TGT` | Source and target, for example en,ru. Source: auto, en, ru, de. Target: en, ru, de. |
 | `--source-lang LANG` | Source language. Default: auto. Kept when the project already has one. |
 | `--target-lang LANG` | Target language. Default: ru. |

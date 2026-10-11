@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import sys
+import traceback
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
@@ -106,6 +107,7 @@ def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
             summary, gpu = _run_one(folder, key, cfg, ctx)
             _emit({"t": "result", "status": "OK", "summary": summary, "stage": key, "gpu": gpu})
         except Exception as exc:  # noqa: BLE001 - one stage fails, the process stays up for the next command
-            _emit({"t": "result", "status": "FAIL", "summary": f"{type(exc).__name__}: {exc}", "stage": key, "traceback": ""})
+            _emit({"t": "result", "status": "FAIL", "summary": f"{type(exc).__name__}: {exc}", "stage": key,
+                   "traceback": traceback.format_exc()})
     resident.reset()
     return {"status": "OK", "summary": "session closed"}

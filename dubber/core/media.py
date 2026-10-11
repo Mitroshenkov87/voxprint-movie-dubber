@@ -118,6 +118,28 @@ def extract_audio(path: Path, out: Path, sr: int, channels: int, track: int = 0,
     ffmpeg.run(args)
 
 
+def poster_frame(src: Path, at_s: float, dest: Path) -> bool:
+    """Write one JPEG of the frame at ``at_s`` seconds.
+
+    The player shows this still until Play. A decode failure returns False and leaves the
+    player on its previous picture.
+
+    Args:
+        src: Film path.
+        at_s: Time in seconds.
+        dest: JPEG path to write. Parent directories are created.
+
+    Returns:
+        True when ``dest`` exists and is not empty.
+    """
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        ffmpeg.run(["-ss", f"{max(0.0, float(at_s)):.3f}", "-i", src, "-frames:v", "1", dest], timeout=60)
+    except (OSError, ffmpeg.FfmpegError):
+        return False
+    return dest.is_file() and dest.stat().st_size > 0
+
+
 #: audio codecs an MP4 file can hold as they are (others are converted to AAC on an MP4 export; the video is never re-encoded)
 MP4_AUDIO = {"aac", "ac3", "eac3", "mp3", "alac"}
 MP4_TEXT_SUBS = {"subrip", "srt", "ass", "ssa", "mov_text", "webvtt", "text"}

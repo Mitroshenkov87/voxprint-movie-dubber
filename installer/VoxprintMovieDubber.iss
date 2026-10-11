@@ -211,7 +211,7 @@ UninstallDataQuestion=Also delete the dubbing projects, logs and reports (%1)?
 UninstallModelsQuestion=No other Voxprint program uses the downloaded AI models any more.%n%nDelete them too (%1, several gigabytes)? Choose No to keep them for a later installation.
 
 [Tasks]
-Name: "models"; Description: "Download the AI models now (about 8 GB, one time; otherwise they are downloaded when first needed)"; GroupDescription: "AI models:"
+Name: "models"; Description: "Download the AI models now (about 13 GB, one time; otherwise they are downloaded when first needed)"; GroupDescription: "AI models:"
 
 [Files]
 ; the download script, the dependency list and the pins are only needed during the setup
@@ -250,7 +250,6 @@ Name: "{group}\{cm:UninstallProgram,{#AppDisplayName}}"; Filename: "{uninstallex
 Filename: "{#Py}"; Parameters: """{app}\main.py"" --register-models-user"; WorkingDir: "{app}"; StatusMsg: "Registering the shared models folder..."; Flags: runhidden runasoriginaluser
 ; the shared Voxprint settings (suite.json: models folder, UI language) - written only where the file has no value yet
 Filename: "{#Py}"; Parameters: """{app}\main.py"" --sync-suite-settings"; WorkingDir: "{app}"; StatusMsg: "Saving the shared Voxprint settings..."; Flags: runhidden runasoriginaluser
-Filename: "{#Py}"; Parameters: """{app}\main.py"" --fetch-models"; WorkingDir: "{app}"; Tasks: models; StatusMsg: "Downloading the AI models (this can take a while)..."; Flags: runasoriginaluser
 Filename: "{#PyW}"; Parameters: """{app}\main.py"" --diagnose"; WorkingDir: "{app}"; Description: "Start {#AppDisplayName} and run the diagnostics (a report is saved to the Desktop)"; Flags: nowait postinstall skipifsilent runasoriginaluser
 
 [Registry]
@@ -425,6 +424,42 @@ begin
     RuntimeDir := Trim(Lines[0]);
   Log(Format('runtime: dir=%s, other users=%d (python rc=%d)', [RuntimeDir, RuntimeOthers, Rc]));
   RemoveDir(ExpandConstant('{app}\runtime'));
+end;
+
+{ The [Run] entry ignores a non-zero exit, so a partial model download used to look successful.
+  This step runs only when the models task is selected, writes a report, and stops setup when a required model is missing. }
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  Rc: Integer;
+  Report, Params, Body: String;
+  Raw: AnsiString;
+  Page: TOutputProgressWizardPage;
+begin
+  if CurStep <> ssPostInstall then
+    Exit;
+  if not WizardIsTaskSelected('models') then
+    Exit;
+  Report := ExpandConstant('{%TEMP}\VoxprintMovieDubber-models.txt');
+  Params := '"' + ExpandConstant('{app}\main.py') + '" --fetch-models --report "' + Report + '"';
+  Page := CreateOutputProgressPage('AI models', 'Downloading the AI models (this can take a while)...');
+  Page.Show;
+  try
+    if not Exec(ExpandConstant('{#Py}'), Params, ExpandConstant('{app}'), SW_SHOWNORMAL, ewWaitUntilTerminated, Rc) then
+      Rc := -1;
+  finally
+    Page.Hide;
+  end;
+  Body := '';
+  if LoadStringFromFile(Report, Raw) then
+    Body := Trim(String(Raw));
+  if Rc <> 0 then
+  begin
+    if Body = '' then
+      Body := 'The model download failed and wrote no report. Run the setup again, or download the models later from the program.';
+    RaiseException(Body);
+  end;
+  if Pos('GATED:', Body) > 0 then
+    SuppressibleMsgBox(Body, mbInformation, MB_OK, IDOK);
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

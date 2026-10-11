@@ -1,7 +1,7 @@
 """The main window: one dark glass window with four steps - Film, Characters, Lines, Dub.
 
-Film is all most people need: drop a movie, press Dub, get ``<name>.dub-<lang>.mkv`` next to it.  Characters (multi-voice only) and
-Lines are optional review tabs; after the analysis they get a small badge only when something deserves a look.
+Film is all most people need: drop a movie, press Dub, get ``<name>.dub-<lang>.mkv`` next to it.  Characters and
+Lines are optional review tabs; one voice still shows its voice and likeness. After the analysis they get a badge only when something deserves a look.
 
 Same shell as the Voxprint Audiobook Builder: translucent root, Acrylic backdrop on Windows 11, cards with rounded corners,
 a gear menu for the UI language.  Heavy work never runs in the GUI thread: the pipeline runs in a QThread that starts one worker
@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
@@ -173,7 +174,7 @@ class MainWindow(QWidget):
         self._sample_player: Any = None
 
     def _fit(self) -> None:
-        w, h = 1040, 760
+        w, h = 1180, 900
         try:
             avail = (self.screen() or QApplication.primaryScreen()).availableGeometry()
             w, h = min(w, int(avail.width() * 0.94)), min(h, int(avail.height() * 0.90))
@@ -228,7 +229,7 @@ class MainWindow(QWidget):
     def _update_steps(self) -> None:
         busy = self.job is not None and self.job.isRunning()
         ready = self._prepared()
-        allowed = [True, ready and self._multi(), ready, ready]
+        allowed = [True, ready, ready, ready]
         project = self.project
         hints = review.attention(project) if project is not None and ready and not busy else {"characters": [], "lines": []}
         if not self._multi():
@@ -240,7 +241,7 @@ class MainWindow(QWidget):
             b.setChecked(self.stack.currentIndex() == i)
             b.setText(f"{i + 1}. {tr('step.' + key)}" + ("  \u25cf" if items else ""))
             b.setProperty("attention", "true" if items else "false")
-            b.setToolTip("\n".join(items) if items else (tr("chars.disabled") if key == "characters" and not self._multi() else ""))
+            b.setToolTip("\n".join(items) if items else "")
             b.style().unpolish(b)
             b.style().polish(b)
         self.film.set_attention([f"{tr('step.' + k)} - {tr(m, **kw)}" for k in ("characters", "lines") for m, kw in hints[k]])
@@ -262,8 +263,6 @@ class MainWindow(QWidget):
         """Show a wizard step, staying on Film until the project is prepared."""
         if index > 0 and not self._prepared():
             index = 0
-        if index == 1 and not self._multi():
-            index = 2
         self.stack.setCurrentIndex(index)
         self._update_steps()
 
@@ -572,7 +571,12 @@ class MainWindow(QWidget):
     # ------------------------------------------------------------------ characters / lines
     def _chars_changed(self, what: str) -> None:
         project = self.project
-        if what in ("merge", "name") and project is not None:
+        if project is None:
+            return
+        if what == "voice":
+            self.film.load(project)
+            self._refresh_plan()
+        if what in ("merge", "name", "voice"):
             self.lines.load(project)
 
     def listen(self, sid: str) -> None:
@@ -786,9 +790,11 @@ class MainWindow(QWidget):
         if not wav.exists() or self.project is None:
             return
         start = float(self.preview_start or 0.0)
-        if self.player.open(self.project.source, WavSource(wav, start), start, start + PREVIEW_S):
-            self.player.play()
-        self.dubp.btn_external.setEnabled(True)
+        opened = self.player.open(self.project.source, WavSource(wav, start), start, start + PREVIEW_S)
+        poster = Path(tempfile.gettempdir()) / "voxprint-dubber-poster.jpg"
+        if media.poster_frame(self.project.source, start, poster):
+            self.player.show_poster(poster)
+        self.dubp.btn_external.setEnabled(bool(opened))
 
     def watch_source(self):
         """Finished dub -> the whole dub track; while dubbing -> the Watch chunks."""
