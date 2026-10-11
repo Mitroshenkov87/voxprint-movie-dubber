@@ -400,12 +400,8 @@ def st_diarization(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
             resplit_at_turns(p, turns, emit)
             script.assign_speakers(p.lines, turns)
             mapping = {ln.id: ln.speaker for ln in p.lines}
-        except Exception as exc:  # noqa: BLE001 - no token / not installed: fall back
-            note = ""
-            low = str(exc).lower()
-            if any(word in low for word in ("gated", "token", "401", "403", "huggingface")):
-                note = " Multi-voice needs a Hugging Face token (HF_TOKEN); one-voice dubbing does not."
-            emit("log", text=f"pyannote not available ({type(exc).__name__}: {str(exc)[:120]}); using voice clustering.{note}")
+        except Exception as exc:  # noqa: BLE001 - pyannote missing or the mirror failed to load
+            emit("log", text=f"pyannote not available ({type(exc).__name__}: {str(exc)[:120]}); using voice clustering.")
             how = "cluster"
     if how == "cluster":
         from dubber.engines.diarization import cluster_lines

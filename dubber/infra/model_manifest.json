@@ -40,7 +40,33 @@
    "license": "Apache-2.0 (weights), MIT (code)",
    "revision": "b7a59560bbca10febbcd46fb01600f868e587f57"
   },
-  "pyannote/embedding": {
+  "Mitroshenkov87/voxprint-pyannote-speaker-diarization-community-1": {
+   "files": {
+    "config.yaml": {
+     "sha256": "5ce2bfa9a938dc132cec1172592d65173cbb8f444ea1e4133f10f9391de155be",
+     "size": 444
+    },
+    "embedding/pytorch_model.bin": {
+     "sha256": "6f10ff60898a1d185fa22e1d11e0bfa8a92efec811f11bca48cb8cafebefd929",
+     "size": 26646242
+    },
+    "plda/plda.npz": {
+     "sha256": "9b77bcd840692710dd3496f62ecfeed8d8e5f002fd991b785079b244eab7d255",
+     "size": 133852
+    },
+    "plda/xvec_transform.npz": {
+     "sha256": "325f1ce8e48f7e55e9c8aa47e05d2766b7c48c4b25b8de8dd751e7a4cc5fbe8f",
+     "size": 134376
+    },
+    "segmentation/pytorch_model.bin": {
+     "sha256": "7ad24338d844fb95985486eb1a464e32d229f6d7a03c9abe60f978bacf3f816e",
+     "size": 5906507
+    }
+   },
+   "license": "CC-BY-4.0",
+   "revision": "9c851af727f1085a361777d13e32734f7f5ebb30"
+  },
+  "Mitroshenkov87/voxprint-pyannote-embedding": {
    "files": {
     "config.yaml": {
      "sha256": "ca62ad63622a8e983ad5254a32a354b9dc69673485424d67f979c75bfffae38a",
@@ -51,8 +77,8 @@
      "size": 96383626
     }
    },
-   "license": "MIT, gated",
-   "revision": "4db4899737a38b2d618bbd74350915aa10293cb2"
+   "license": "MIT",
+   "revision": "4655ca656e1d7b1d8fe8100b39b4fdbf3015c7b8"
   },
   "KimberleyJSN/melbandroformer": {
    "files": {
@@ -401,6 +427,6 @@
    "revision": "fd4b254389122332181a7c3db7f27e918eec64e3"
   }
  },
- "note": "Per-file size and SHA-256 of the pinned Hugging Face revisions. Checksums are verified on download. Qwen3-TTS hashes match the shared Voxprint model store. Model card files (.md, dotfiles) are not checked. MelBandRoformer.ckpt is the file at KimberleyJSN/melbandroformer revision ac9b0614 (2026-04-22, MIT relicence; the checkpoint blob itself was uploaded on 2024-08-06).",
+ "note": "Per-file size and SHA-256 of the pinned Hugging Face revisions. Checksums are verified on download. Qwen3-TTS hashes match the shared Voxprint model store. Model card files (.md, dotfiles) are not checked. MelBandRoformer.ckpt is the file at KimberleyJSN/melbandroformer revision ac9b0614 (2026-04-22, MIT relicence; the checkpoint blob itself was uploaded on 2024-08-06). pyannote diarization and embedding hashes are the SHA256SUMS of the ungated mirrors (revisions 9c851af727f1085a361777d13e32734f7f5ebb30 and 4655ca656e1d7b1d8fe8100b39b4fdbf3015c7b8).",
  "schema": 1
 }

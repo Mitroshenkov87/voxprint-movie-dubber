@@ -284,15 +284,17 @@ def test_download_does_not_retry_a_local_error(tmp_path, monkeypatch):
     assert calls["n"] == 1
 
 
-def test_fetch_fails_loud_on_missing_and_skips_gated_without_a_token(tmp_path, monkeypatch):
+def test_fetch_tries_pyannote_mirrors_without_a_token(tmp_path, monkeypatch):
     from dubber import cli, models
 
-    monkeypatch.setattr(models, "hf_token", lambda explicit=None: None)
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.delenv("HUGGINGFACE_HUB_TOKEN", raising=False)
+    seen = []
 
-    def ensure(repo, *_a, **_k):
-        if "pyannote" in repo:
-            raise AssertionError("gated model downloaded without a token")
-        raise models.ModelUnavailable("download of org/sep failed: OSError: getaddrinfo failed")
+    def ensure(repo, *_a, **kwargs):
+        seen.append(repo)
+        assert kwargs.get("token") in (None, "")
+        raise models.ModelUnavailable("download failed: OSError: getaddrinfo failed")
 
     monkeypatch.setattr(models, "ensure", ensure)
     monkeypatch.setattr(models, "locate", lambda _repo: None)
@@ -300,14 +302,23 @@ def test_fetch_fails_loud_on_missing_and_skips_gated_without_a_token(tmp_path, m
     code = cli.main(["fetch-models", "--models", "sep,diar,embed", "--report", str(report)])
     text = report.read_text(encoding="utf-8")
     assert code == cli.EXIT_MODELS
-    assert "FAILED: sep" in text
-    assert "GATED: diar, embed" in text
-    assert "HF_TOKEN" in text
-    only = tmp_path / "gated.txt"
-    code = cli.main(["fetch-models", "--models", "diar,embed", "--report", str(only)])
+    assert "FAILED: sep, diar, embed" in text
+    assert "HF_TOKEN" not in text and "GATED" not in text and "one-voice" not in text.lower()
+    assert models.SPECS["diar"].repo in seen and models.SPECS["embed"].repo in seen
+
+
+def test_fetch_dry_run_succeeds_without_hf_token(tmp_path, monkeypatch, capsys):
+    from dubber import cli, models
+
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.delenv("HUGGINGFACE_HUB_TOKEN", raising=False)
+    monkeypatch.setattr(models, "locate", lambda _repo: tmp_path)
+    monkeypatch.setattr(cli, "_gpu", lambda: {"ok": True, "code": None, "summary": "ok", "vram_total_gb": 24.0, "name": "test"})
+    code = cli.main(["fetch-models", "--models", "diar,embed", "--dry-run", "--json"])
+    out = capsys.readouterr().out
     assert code == 0
-    body = only.read_text(encoding="utf-8")
-    assert "GATED: diar, embed" in body and "one-voice" in body.lower()
+    assert "HF_TOKEN" not in out
+    assert "diar" in out and "embed" in out
 
 
 def test_installer_model_list_matches_fetch_models():

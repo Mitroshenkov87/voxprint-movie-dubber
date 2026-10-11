@@ -111,6 +111,74 @@ def test_download_off_and_gated(tmp_path):
         model_store.ensure_model("org/gated", root=tmp_path, gated=True)
 
 
+def test_download_ignores_an_hf_token(tmp_path, monkeypatch):
+    monkeypatch.setenv("HF_TOKEN", "present-but-unused")
+    monkeypatch.setenv("HUGGINGFACE_HUB_TOKEN", "also-present-but-unused")
+    seen = {}
+
+    def dl(repo, dest, revision, patterns, token):
+        seen["token"] = token
+        seen["revision"] = revision
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "config.json").write_text("{}", encoding="utf-8")
+        (dest / "model.safetensors").write_bytes(b"w")
+
+    info = model_store.ensure_model("org/anon", root=tmp_path, downloader=dl)
+    assert info.source == "downloaded"
+    assert seen["token"] is None
+
+
+def test_registry_has_no_gated_model_and_pins_the_mirrors(tmp_path):
+    from dubber.engines.diarization import pipeline_checkpoint, rewrite_pipeline_config
+
+    assert all(spec.gated is False for spec in models.SPECS.values())
+    diar = models.SPECS["diar"]
+    embed = models.SPECS["embed"]
+    assert diar.repo == "Mitroshenkov87/voxprint-pyannote-speaker-diarization-community-1"
+    assert embed.repo == "Mitroshenkov87/voxprint-pyannote-embedding"
+    assert not diar.repo.startswith("pyannote/") and not embed.repo.startswith("pyannote/")
+    manifest = model_store.load_manifest()
+    assert "pyannote/embedding" not in manifest
+    assert "pyannote/speaker-diarization-community-1" not in manifest
+    assert manifest[diar.repo]["revision"] == "9c851af727f1085a361777d13e32734f7f5ebb30"
+    assert manifest[embed.repo]["revision"] == "4655ca656e1d7b1d8fe8100b39b4fdbf3015c7b8"
+    assert manifest[diar.repo]["license"] == "CC-BY-4.0"
+    assert manifest[embed.repo]["license"] == "MIT"
+    assert manifest[diar.repo]["files"]["config.yaml"]["sha256"] == "5ce2bfa9a938dc132cec1172592d65173cbb8f444ea1e4133f10f9391de155be"
+    assert manifest[diar.repo]["files"]["segmentation/pytorch_model.bin"]["sha256"] == "7ad24338d844fb95985486eb1a464e32d229f6d7a03c9abe60f978bacf3f816e"
+    assert manifest[embed.repo]["files"]["pytorch_model.bin"]["sha256"] == "4bcec986de13da7af7ac88736572692359950df63669989c4f78b294934c9089"
+    root = Path(__file__).resolve().parents[1]
+    notice = (root / "NOTICE").read_text(encoding="utf-8")
+    models_doc = (root / "docs" / "MODELS.md").read_text(encoding="utf-8")
+    third = (root / "docs" / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
+    for text in (notice, models_doc, third):
+        assert "9c851af727f1085a361777d13e32734f7f5ebb30" in text
+        assert "4655ca656e1d7b1d8fe8100b39b4fdbf3015c7b8" in text
+        assert "no changes besides removing the access gate" in text.lower()
+        assert "https://huggingface.co/pyannote/speaker-diarization-community-1" in text
+        assert "https://huggingface.co/Mitroshenkov87/voxprint-pyannote-speaker-diarization-community-1" in text
+        assert "https://huggingface.co/pyannote/embedding" in text
+        assert "https://huggingface.co/Mitroshenkov87/voxprint-pyannote-embedding" in text
+    sample = "segmentation: pyannote/segmentation-3.0\nembedding: pyannote/wespeaker-voxceleb-resnet34-LM\nplda: $model/plda\n"
+    folder = Path("/models/diar")
+    rewritten = rewrite_pipeline_config(sample, folder)
+    assert "pyannote/" not in rewritten
+    assert "$model/plda" in rewritten
+    assert (folder / "segmentation").resolve().as_posix() in rewritten
+    assert (folder / "embedding").resolve().as_posix() in rewritten
+    kept = "embedding: $model/embedding\nsegmentation: $model/segmentation\n"
+    assert rewrite_pipeline_config(kept, folder) == kept
+    local = tmp_path / "diar"
+    local.mkdir()
+    original = "embedding: $model/embedding\nsegmentation: pyannote/segmentation-3.0\n"
+    (local / "config.yaml").write_text(original, encoding="utf-8")
+    checkpoint = pipeline_checkpoint(local)
+    assert checkpoint.name == "config.local.yaml"
+    assert (local / "config.yaml").read_text(encoding="utf-8") == original
+    body = checkpoint.read_text(encoding="utf-8")
+    assert "pyannote/" not in body and "$model/embedding" in body
+
+
 def test_stalled_download_gives_up(tmp_path, monkeypatch):
     monkeypatch.setattr(model_store, "WATCH_INTERVAL", 0.05)
     stop = threading.Event()

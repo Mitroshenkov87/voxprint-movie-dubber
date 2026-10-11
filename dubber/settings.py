@@ -1,7 +1,7 @@
-"""Application settings (``<app home>/state/settings.json``): service keys, Hugging Face token, engine choices, folders.
+"""Application settings (``<app home>/state/settings.json``): service keys, engine choices, folders.
 
-Secrets (subtitle keys, the HF token, the OpenSubtitles password) stay in the user's profile folder only; they are passed to
-worker processes through the environment / argument file and never written to logs or diagnostic reports.
+Secrets (subtitle keys and the OpenSubtitles password) stay in the user's profile folder only; they are passed to
+worker processes through the argument file and never written to logs or diagnostic reports.
 """
 from __future__ import annotations
 
@@ -11,9 +11,9 @@ from typing import Any, Dict
 from dubber import paths
 from dubber.core.project import read_json, write_json
 
-SECRET_KEYS = ("subdl_key", "opensubtitles_key", "opensubtitles_password", "hf_token")
+SECRET_KEYS = ("subdl_key", "opensubtitles_key", "opensubtitles_password")
 DEFAULTS: Dict[str, Any] = {
-    "subdl_key": "", "opensubtitles_key": "", "opensubtitles_user": "", "opensubtitles_password": "", "hf_token": "",
+    "subdl_key": "", "opensubtitles_key": "", "opensubtitles_user": "", "opensubtitles_password": "",
     "separation": "tiger", "asr": "whisper", "diarization": "pyannote", "translation": "opus", "tts": "qwen",
     "tts_model": "tts_1_7b", "tts_backend": "auto", "device": "auto", "allow_download": True,
     # VRAM tier (dubber.infra.vram_tier): "auto" picks it from the card; the advanced override can only pick a tier the card supports
@@ -27,7 +27,7 @@ DEFAULTS: Dict[str, Any] = {
 DUB_DEFAULTS = {"dub_target_lang": "target_lang", "dub_subtitles": "subtitle_choice", "dub_profanity": "profanity",
                 "dub_multi_voice": "multi_voice", "dub_original_volume": "original_volume", "output_format": "output_format"}
 ENGINE_KEYS = ("separation", "asr", "diarization", "translation", "tts", "tts_model", "tts_backend", "device", "allow_download", "vram_tier",
-               "subdl_key", "opensubtitles_key", "opensubtitles_user", "opensubtitles_password", "hf_token")
+               "subdl_key", "opensubtitles_key", "opensubtitles_user", "opensubtitles_password")
 
 
 def _file():

@@ -57,7 +57,7 @@ Press **Prepare and review first…** instead of **Dub** to make the lines first
 
 With **Different voices for different characters** on, the **Characters and voices** tab shows one card per speaker with the amount of speech, a **Listen** button and the voice it will get.
 
-- **Find speakers** runs the speaker search. The best search uses the pyannote model, which needs a free Hugging Face token (Settings > Hugging Face token); without it, a simpler search is used.
+- **Find speakers** runs the speaker search. The pyannote model is used when it is installed. A simpler search is used when that model cannot be loaded.
 - Tick two or more cards and press **Merge selected** if one person was split into several speakers.
 - **Key character**: key characters (usually one or two, about 20 % of the dialogue or more) get a voice like the actor's; the others get the closest voice from the library.
 - **Actor likeness** (0-100 %, default 50 %): how much of the actor's own timbre an actor-like voice keeps. Lower values blend in more of the native library voice and carry less of the original accent.
@@ -98,7 +98,7 @@ The new file is written next to the original as `<name>.dub-<language>.mkv` (or 
 
 ## 9. Settings
 
-**Settings** holds the subtitle service keys, the Hugging Face token, the models folder, the engine choices and the device. Keys and the token stay in your user profile on this computer.
+**Settings** holds the subtitle service keys, the models folder, the engine choices and the device. Keys stay in your user profile on this computer.
 
 **VRAM tier (advanced)** is optional. Automatic picks the tier from the card; the override can only choose a tier the card supports. Models the card cannot run are greyed out in the lists.
 

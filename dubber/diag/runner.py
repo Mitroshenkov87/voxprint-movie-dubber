@@ -32,7 +32,7 @@ ALL_TTS_MODES = ("standard_sdpa", "standard_fa2", "graphs_sdpa", "graphs_fa2")
 
 @dataclass
 class DiagOptions:
-    """What to run.  ``hf_token`` is passed to workers through the environment only and is scrubbed from the report."""
+    """What to run. Model downloads are anonymous; ``hf_token`` is unused and stays out of the report."""
     allow_download: bool = True
     quick: bool = False                       # one TTS run per phrase, only the SDPA modes
     target_lang: str = "ru"
@@ -194,10 +194,8 @@ class DiagnosticRunner:
 
     # ------------------------------------------------------------------ worker plumbing
     def _env(self) -> Dict[str, str]:
-        env = {}
-        if self.opt.hf_token:
-            env["HF_TOKEN"] = self.opt.hf_token
-        return env
+        """Worker environment. Model fetches are anonymous, so no Hugging Face token is forwarded."""
+        return {}
 
     def _worker(self, check_id: str, title: str, name: str, args: Dict[str, Any], timeout: float) -> CheckResult:
         """Run a worker and turn whatever happened into a :class:`CheckResult`."""
@@ -292,9 +290,6 @@ class DiagnosticRunner:
         r = self._worker("models.fetch", "Models on disk", "fetch", {"keys": keys, "repos": repos}, 3 * 3600)
         r.details.insert(0, f"needed: {', '.join(keys)}; missing before this step: {', '.join(missing) or 'none'}; about {need_gb} GB to download")
         r.details.append(f"models folder: {paths.models_dir()}")
-        # the gated diarization model is optional: do not alarm the user about it
-        if r.status == Status.WARN and set(r.metrics.get("missing", [])) <= {"diar"}:
-            r.summary += " (diarization model is gated: needs a Hugging Face token; that step will be skipped)"
         return r
 
     def _tts_args(self) -> Dict[str, Any]:

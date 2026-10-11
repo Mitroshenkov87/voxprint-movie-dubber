@@ -20,9 +20,8 @@ The clips folder defaults to `./clips`. Any `.mp4`, `.mkv`, `.webm`, or `.mov` u
 4. one dub of the smallest clip
 
 `--full` dubs every clip, then dubs the smallest clip again as a one-voice actor blend
-(`single_voice.kind` = `actor`, `actor_weight` 0.5). When `HF_TOKEN` is set it also dubs
-that clip with `multi_voice` turned on. Without the token the multi-voice case is recorded
-as skipped and does not fail the run.
+(`single_voice.kind` = `actor`, `actor_weight` 0.5), then dubs that clip with `multi_voice`
+turned on. Multi-voice does not need a Hugging Face token.
 
 `--json` prints one object. Each case has a name, an exit code, and the wall-clock seconds.
 `peak_vram_mib` is the highest `memory.used` nvidia-smi reported during a dub, sampled once

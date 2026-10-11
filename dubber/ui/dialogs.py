@@ -53,7 +53,7 @@ def _secret() -> QLineEdit:
 
 
 class SettingsDialog(QDialog):
-    """Subtitle services, Hugging Face token, models folder, engines and device."""
+    """Subtitle services, models folder, engines and device."""
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -72,8 +72,6 @@ class SettingsDialog(QDialog):
         self.edt_os_user = QLineEdit(s["opensubtitles_user"])
         self.edt_os_pass = _secret()
         self.edt_os_pass.setText(s["opensubtitles_password"])
-        self.edt_hf = _secret()
-        self.edt_hf.setText(s["hf_token"])
         row = QHBoxLayout()
         self.edt_models = QLineEdit(str(paths.models_dir()))
         self.edt_models.setReadOnly(True)
@@ -101,7 +99,7 @@ class SettingsDialog(QDialog):
         self.chk_download.setIcon(suite_icon("download"))
         self.chk_download.setChecked(bool(s["allow_download"]))
         for label, w in (("settings.subdl", self.edt_subdl), ("settings.os_key", self.edt_os_key), ("settings.os_user", self.edt_os_user),
-                         ("settings.os_pass", self.edt_os_pass), ("settings.hf", self.edt_hf)):
+                         ("settings.os_pass", self.edt_os_pass)):
             form.addRow(tr(label), w)
         form.addRow(tr("settings.models_dir"), row)
         for label, box in (("settings.separation", self.cmb_sep), ("settings.diarization", self.cmb_diar), ("settings.tts", self.cmb_tts),
@@ -133,7 +131,7 @@ class SettingsDialog(QDialog):
         """Return the settings currently shown in the form."""
         return {"subdl_key": self.edt_subdl.text().strip(), "opensubtitles_key": self.edt_os_key.text().strip(),
                 "opensubtitles_user": self.edt_os_user.text().strip(), "opensubtitles_password": self.edt_os_pass.text(),
-                "hf_token": self.edt_hf.text().strip(), "separation": self.cmb_sep.currentData(),
+                "separation": self.cmb_sep.currentData(),
                 "diarization": self.cmb_diar.currentData(), "tts_model": self.cmb_tts.currentData(),
                 "tts_backend": self.cmb_backend.currentData(), "device": self.cmb_device.currentData(),
                 "allow_download": self.chk_download.isChecked(), "vram_tier": self.cmb_tier.currentData()}
@@ -245,10 +243,10 @@ class DiagnosticsDialog(QDialog):
         self.chk_download.setText(tr("ui.diag_download", gb=gb) if gb > 0 else tr("ui.diag_download_none"))
 
     def build_options(self) -> DiagOptions:
-        """Build the diagnostic options from this dialog and the saved token."""
+        """Build the diagnostic options from this dialog."""
         s = settings.load()
         opt = DiagOptions(allow_download=self.chk_download.isChecked(), quick=self.chk_quick.isChecked(), target_lang=self._target_lang(),
-                          hf_token=str(s.get("hf_token") or ""), tts_model=str(s.get("tts_model") or "tts_1_7b"))
+                          tts_model=str(s.get("tts_model") or "tts_1_7b"))
         if self._options_hook:
             self._options_hook(opt)
         return opt

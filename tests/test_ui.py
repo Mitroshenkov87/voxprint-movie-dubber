@@ -242,16 +242,16 @@ def test_settings_and_diagnostics_dialogs(tmp_path):
     d = dialogs.SettingsDialog()
     assert not d.chk_download.icon().isNull()
     d.edt_subdl.setText("k1")
-    d.edt_hf.setText("hf_x")
+    assert not hasattr(d, "edt_hf")
     d.cmb_device.setCurrentIndex(d.cmb_device.findData("cuda"))
     d._models_choice = tmp_path / "models-elsewhere"
     d.accept()
     s = settings.load()
-    assert s["subdl_key"] == "k1" and s["hf_token"] == "hf_x" and s["device"] == "cuda"
+    assert s["subdl_key"] == "k1" and "hf_token" not in s and s["device"] == "cuda"
     assert paths.models_dir() == tmp_path / "models-elsewhere"
-    assert settings.redacted(s)["hf_token"] == "set"
+    assert settings.redacted(s)["subdl_key"] == "set"
     g = dialogs.DiagnosticsDialog(target_lang=lambda: "de")
     assert not g.chk_download.icon().isNull()
     opt = g.build_options()
-    assert opt.target_lang == "de" and opt.hf_token == "hf_x"
+    assert opt.target_lang == "de" and opt.hf_token == ""
     g.close()

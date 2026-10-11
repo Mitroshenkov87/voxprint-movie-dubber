@@ -18,6 +18,10 @@ jobs:
   audit:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    env:
+      # Suite rule: clean-install tests run without a Hugging Face token.
+      HF_TOKEN: ""
+      HUGGINGFACE_HUB_TOKEN: ""
     steps:
       - uses: actions/checkout@v7
         with:

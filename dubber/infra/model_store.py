@@ -45,7 +45,7 @@ RETRY_BACKOFF_S = (1.0, 2.0, 4.0)
 
 
 class ModelUnavailable(RuntimeError):
-    """The model is missing and cannot be fetched (downloads off, gated without token, network error, stalled)."""
+    """The model is missing and cannot be fetched (downloads off, gated, network error, stalled)."""
 
 
 def models_root() -> Path:
@@ -338,10 +338,16 @@ Downloader = Callable[[str, Path, Optional[str], Optional[List[str]], Optional[s
 
 
 def hf_download(repo: str, dest: Path, revision: Optional[str], patterns: Optional[List[str]], token: Optional[str]) -> None:
-    """Plain files into ``dest`` (``huggingface_hub`` resumes partial files that are already there)."""
+    """Plain files into ``dest`` (``huggingface_hub`` resumes partial files that are already there).
+
+    TODO: fetching moves to voxprint-mdl later. Until then the download is anonymous:
+    ``token`` is ignored and ``token=False`` is sent, so a Hugging Face token in the environment is not used.
+    """
+    del token
+    # Optional at import time: a partial install has no huggingface_hub yet.
     from huggingface_hub import snapshot_download
 
-    kw: Dict[str, Any] = dict(repo_id=repo, local_dir=str(dest), token=token)
+    kw: Dict[str, Any] = dict(repo_id=repo, local_dir=str(dest), token=False)
     if revision:
         kw["revision"] = revision
     if patterns:
@@ -403,9 +409,9 @@ def ensure_model(repo: str, *, allow_download: bool = True, token: Optional[str]
         return EnsureInfo(target, "present")
     if not allow_download:
         raise ModelUnavailable(f"{repo} is not on this computer and downloading is switched off")
-    token = token or os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN") or None
+    # Anonymous on purpose. HF_TOKEN and HUGGINGFACE_HUB_TOKEN are not read.
     if gated and not token:
-        raise ModelUnavailable(f"{repo} is a gated model: accept its terms on huggingface.co and enter a Hugging Face token in Settings")
+        raise ModelUnavailable(f"{repo} is a gated model and cannot be fetched anonymously")
     target = (Path(root) if root else models_root()) / folder_name(repo)
     lock = ModelLock(lock_path(repo, target.parent))
     lock.acquire(lambda s: log_fn(f"waiting for another program downloading {repo} ({s:.0f} s)") if int(s) % 10 == 0 else None)
@@ -420,7 +426,7 @@ def ensure_model(repo: str, *, allow_download: bool = True, token: Optional[str]
         t0 = time.time()
         for attempt in range(DOWNLOAD_ATTEMPTS):
             try:
-                _watched(lambda: dl(repo, part, pinned_revision(repo), list(patterns) if patterns else None, token), part, size_gb,
+                _watched(lambda: dl(repo, part, pinned_revision(repo), list(patterns) if patterns else None, None), part, size_gb,
                          log_fn, repo, stall_s)
                 break
             except ModelUnavailable:

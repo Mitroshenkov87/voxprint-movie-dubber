@@ -440,6 +440,10 @@ PYEOF
 # 5. ffmpeg, models, manifest
 install_ffmpeg
 mkdir -p "$VX_HOME/models"
+# Anonymous model fetch. A Hugging Face token is not required.
+# TODO: fetching moves to voxprint-mdl later.
+unset HF_TOKEN
+unset HUGGINGFACE_HUB_TOKEN
 if [ "$SKIP_MODELS" = 1 ]; then
   say "[5/5] Skipping the model download (--skip-models, CI only)"
 else
