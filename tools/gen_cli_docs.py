@@ -76,7 +76,7 @@ def _usage(name: str, sub: argparse.ArgumentParser) -> str:
         if action.option_strings or isinstance(action, argparse._HelpAction):
             continue
         extra.append(str(action.metavar or action.dest))
-    return "python main.py " + " ".join([name, *extra])
+    return "voxprint-dubber-cli " + " ".join([name, *extra])
 
 
 def render() -> str:
@@ -85,13 +85,13 @@ def render() -> str:
     lines = ["# Command line", "", (parser.description or "").rstrip(), ""]
     lines.extend([
         "```",
-        "python main.py version",
-        "python main.py diagnose",
-        "python main.py fetch-models [--models KEY,KEY]",
-        "python main.py run-project PATH [--languages SRC,TGT] [--stages NAME,NAME]",
-        "python main.py info PATH",
-        "python main.py selftest",
-        "python main.py --dry-run --json",
+        "voxprint-dubber-cli version",
+        "voxprint-dubber-cli diagnose",
+        "voxprint-dubber-cli fetch-models [--models KEY,KEY]",
+        "voxprint-dubber-cli run-project PATH [--languages SRC,TGT] [--stages NAME,NAME]",
+        "voxprint-dubber-cli info PATH",
+        "voxprint-dubber-cli selftest",
+        "voxprint-dubber-cli --dry-run --json",
         "```",
         "",
     ])
@@ -114,7 +114,7 @@ def render() -> str:
             lines.append(_usage(alias, sub))
         lines.extend(["```", ""])
     if parser.epilog:
-        lines.extend(["## --dry-run", "", "```", "python main.py --dry-run --json", "```", "", parser.epilog.strip(), ""])
+        lines.extend(["## --dry-run", "", "```", "voxprint-dubber-cli --dry-run --json", "```", "", parser.epilog.strip(), ""])
     window = build_window_parser()
     lines.extend(["## Window and installer", ""])
     if window.description:

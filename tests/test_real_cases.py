@@ -388,7 +388,15 @@ def test_sync_suite_settings_cli(tmp_path):
 
 def test_installer_suite_integration():
     iss = (Path(__file__).resolve().parent.parent / "installer" / "VoxprintMovieDubber.iss").read_text(encoding="utf-8")
-    assert "DefaultGroupName=Voxprint" in iss and "UsePreviousGroup=no" in iss
+    assert "DefaultGroupName=VOXPrint AI Suite" in iss and "UsePreviousGroup=no" in iss
+    assert "UsePreviousAppDir=no" in iss
+    assert r"DefaultDirName={autopf}\{#SuiteDir}" in iss
+    assert "VOXPrint AI Suite\\Movie Dubber" in iss
+    assert "voxprint-movie-dubber.exe" in iss and "voxprint-dubber-cli.exe" in iss
+    assert r"Software\VOXPrint AI Suite\Apps\movie-dubber" in iss
+    assert "DefaultInstallDir" in iss and "InstallDir" in iss
+    assert "MigrateOldInstall" in iss and "VoxprintMovieDubber" in iss
+    assert "{B3D84C11-52A7-4E5B-8F0D-6A9E2C41D7B5}" in iss
     assert "{6F1D2B7A-3C54-4E0B-9A41-7B5E0C9D2F18}_is1" in iss and "audiobook-builder" in iss    # sibling detection
     assert "--release-shared" in iss and "--sync-suite-settings" in iss
     assert "MB_DEFBUTTON2, IDNO) = IDYES" in iss                       # projects deleted only on an explicit Yes (default No)

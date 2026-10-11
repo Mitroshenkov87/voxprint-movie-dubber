@@ -26,7 +26,7 @@ def test_version_label_quotes_the_codename_and_omits_an_empty_one(monkeypatch):
     assert appinfo.version_label() == '1.0.0 RC · build 1001 "Bochan"'
     assert appinfo.format_version(build=1001, codename="") == "1.0.0 RC · build 1001"
     assert appinfo.format_version(build=1001, codename="  ") == "1.0.0 RC · build 1001"
-    assert appinfo.release_title() == 'Voxprint AI Movie Dubber 1.0.0 RC · build 1001 "Bochan"'
+    assert appinfo.release_title() == 'VOXPrint AI Movie Dubber 1.0.0 RC · build 1001 "Bochan"'
 
 
 def test_installer_reads_appinfo_and_docs_state_the_codename_rule():

@@ -1,6 +1,6 @@
 # Built-in diagnostics
 
-The window has a **Run diagnostics** button (Start menu: *Voxprint AI Movie Dubber -> Run diagnostics*, or `--diagnose`).
+The window has a **Run diagnostics** button (Start menu: *VOXPrint AI Suite -> VOXPrint AI Movie Dubber - diagnostics*, or `--diagnose`).
 It runs every check in a separate process, so a failure or crash of one check never stops the report, and writes
 `Voxprint-MovieDubber-Diagnostics-<date>.txt` to the Desktop (a copy goes to the app's data folder). The report is plain English text.
 

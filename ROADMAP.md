@@ -1,6 +1,6 @@
 # Roadmap
 
-What we plan to add to Voxprint AI Movie Dubber. Plans can change; each release's notes list what actually shipped.
+What we plan to add to VOXPrint AI Movie Dubber. Plans can change; each release's notes list what actually shipped.
 
 ## Next version
 

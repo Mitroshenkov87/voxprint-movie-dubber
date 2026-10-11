@@ -46,8 +46,8 @@ The AI models are not bundled; setup downloads them into the shared models folde
 Setup switches: `/TORCH=auto|cu130` (PyTorch flavor). `/TORCH=cpu` installs the CPU build and is only for the CI smoke run on a GPU-less runner; a user install stops instead of offering that build. `/SKIPGPUGATE=1` (full installer only) installs its cu130 runtime without the GPU check and is likewise only for CI. `/SKIPMODELS=1` skips the model download and is only for CI. `/VERYSILENT /SUPPRESSMSGBOXES /DIR=<folder>`. cu130 needs NVIDIA driver branch 580 or newer; the hardware gate already requires branch 600.
 
 The setup stops, and installs nothing, when no NVIDIA GPU has compute capability 8.9 or higher (GeForce RTX 40 / Ada or newer) or the driver branch is below 600. The window does the same check with PyTorch before it opens (`VOXPRINT_SKIP_GPU_GATE=1` skips that check for tests and CI).
-The setup puts its shortcuts into the Start menu folder "Voxprint" (shared with the Audiobook Builder), adds an Apps & features entry
-and a full uninstaller. The uninstaller never touches the Audiobook Builder. It drops this program's references in
+The program is installed in `C:\Program Files\VOXPrint AI Suite\Movie Dubber`. `voxprint-movie-dubber.exe` opens the window and `voxprint-dubber-cli.exe` is the console launcher (the same entry point as the headless CLI). The setup puts its shortcuts into the Start menu folder "VOXPrint AI Suite", adds an Apps & features entry
+and a full uninstaller. The same AppId is kept, so Windows treats a new setup as an upgrade of the old `C:\Program Files\VoxprintMovieDubber` install: that folder and this app's shortcuts in the old Start menu group "Voxprint" are removed, and user data is kept. voxprint-common 0.1.2 has no discovery helper, so setup writes `HKLM\Software\VOXPrint AI Suite\Apps\movie-dubber` with `InstallDir`, `Exe`, `Cli`, `Version`, and `DefaultInstallDir`. The uninstaller never touches the Audiobook Builder. It drops this program's references in
 `shared\manifest.json` and deletes a shared runtime or ffmpeg build only when no program still references it.
 Projects, logs and reports are removed only when you answer Yes (default: keep).
 
@@ -62,7 +62,7 @@ both programs (`voxprint_common.suite_settings`).
 
 The offset was chosen from the Build installers workflow: run_number 17 on 2026-10-10 (workflow run 38057799983). The next run is 18, and 18 + 983 = 1001.
 
-The window, About, `--version`, the installer and the GitHub release title show `1.0.0 RC · build N "Codename"`. The splash uses the library label, which has no middle dot. A codename is one Biblical Hebrew word in ASCII transliteration. It describes the state of that build (readiness, a milestone), not a theme of the product. It is shown only when it is not empty, in quotes. The codename of this line is Bochan.
+The window, About, `--version`, the installer and the GitHub release title show `VOXPrint AI Movie Dubber 1.0.0 RC · build N "Codename"`. The version line itself is `1.0.0 RC · build N "Codename"`. The splash uses the library label, which has no middle dot. A codename is one Biblical Hebrew word in ASCII transliteration. It describes the state of that build (readiness, a milestone), not a theme of the product. It is shown only when it is not empty, in quotes. The codename of this line is Bochan.
 
 Headless commands for other programs are documented in [CLI.md](CLI.md).
 

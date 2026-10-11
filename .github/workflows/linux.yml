@@ -1,6 +1,6 @@
-# Linux package of Voxprint AI Movie Dubber: a tar.gz of the program with install.sh (installer/linux/).
+# Linux package of VOXPrint AI Movie Dubber: a tar.gz of the program with install.sh (installer/linux/).
 # The job packs the tarball, installs it on a GPU-less runner with --skip-gpu-check (CI only), then runs
-# `voxprint-movie-dubber --dry-run --json` and checks the JSON: exit 3 (no GPU), the build number and codename
+# `voxprint-movie-dubber --dry-run --json` (installed with --prefix, no root) and checks the JSON: exit 3 (no GPU), the build number and codename
 # from BUILD.json, Python 3.14 and torch 2.11.0+cu130. The installer workflow calls this job and publishes the tarball.
 name: linux
 on:
@@ -45,29 +45,50 @@ jobs:
       - name: Pack the tarball
         run: installer/linux/build-tarball.sh
 
-      - name: Install it (--skip-gpu-check, CI only)
+      - name: Install it (--prefix, no root; --skip-gpu-check, CI only)
         run: |
           set -euo pipefail
           df -h "$HOME" | tail -1
+          prefix="${RUNNER_TEMP}/voxprint-ai-suite"
+          rm -rf "$prefix"
+          # An older per-user install must be removed. User data under ~/.local/share/voxprint stays.
+          old="$HOME/.local/share/voxprint-movie-dubber"
+          mkdir -p "$old/app" "$HOME/.local/bin" "$HOME/.local/share/applications" "$HOME/.local/share/voxprint/state"
+          echo old > "$old/app/main.py"
+          printf '#!/bin/sh\n' > "$HOME/.local/bin/voxprint-movie-dubber"
+          chmod 755 "$HOME/.local/bin/voxprint-movie-dubber"
+          printf '[Desktop Entry]\nType=Application\nName=Voxprint AI Movie Dubber\n' > "$HOME/.local/share/applications/voxprint-movie-dubber.desktop"
+          echo keep-user-data > "$HOME/.local/share/voxprint/state/keep.txt"
           mkdir -p /tmp/unpack
           tar -C /tmp/unpack -xzf dist/VoxprintMovieDubber-Linux-x86_64.tar.gz
-          /tmp/unpack/VoxprintMovieDubber-Linux-x86_64/install.sh --skip-gpu-check --skip-models
+          /tmp/unpack/VoxprintMovieDubber-Linux-x86_64/install.sh --prefix "$prefix" --skip-gpu-check --skip-models
+          echo "VOX_PREFIX=$prefix" >> "$GITHUB_ENV"
           df -h "$HOME" | tail -1
 
-      - name: Check the installation (launcher, menu entry, .vxdub type)
+      - name: Check the installation (launcher, CLI, menu entry, .vxdub type)
         run: |
           set -euo pipefail
+          prefix="$VOX_PREFIX"
+          app="$prefix/movie-dubber"
           d="$HOME/.local/share"
-          for f in "$HOME/.local/bin/voxprint-movie-dubber" "$d/applications/voxprint-movie-dubber.desktop" \
-                   "$d/mime/packages/voxprint-movie-dubber.xml" "$d/icons/hicolor/256x256/apps/voxprint-movie-dubber.png" \
-                   "$d/icons/hicolor/256x256/mimetypes/application-vnd.voxprint.dub+zip.png" \
-                   "$d/voxprint-movie-dubber/app/main.py" "$d/voxprint-movie-dubber/app/build_info.json"; do
+          for f in "$prefix/bin/voxprint-movie-dubber" "$prefix/bin/voxprint-dubber-cli" \
+                   "$prefix/share/applications/voxprint-movie-dubber.desktop" \
+                   "$prefix/share/mime/packages/voxprint-movie-dubber.xml" \
+                   "$prefix/share/icons/hicolor/256x256/apps/voxprint-movie-dubber.png" \
+                   "$prefix/share/icons/hicolor/256x256/mimetypes/application-vnd.voxprint.dub+zip.png" \
+                   "$app/main.py" "$app/build_info.json"; do
             test -e "$f" || { echo "missing: $f"; exit 1; }
           done
-          test -x "$HOME/.local/bin/voxprint-movie-dubber"
-          grep -q 'MimeType=application/vnd.voxprint.dub+zip;' "$d/applications/voxprint-movie-dubber.desktop"
-          grep -q 'glob pattern="\*.vxdub"' "$d/mime/packages/voxprint-movie-dubber.xml"
-          if command -v desktop-file-validate >/dev/null; then desktop-file-validate "$d/applications/voxprint-movie-dubber.desktop"; fi
+          test -x "$prefix/bin/voxprint-movie-dubber"
+          test -x "$prefix/bin/voxprint-dubber-cli"
+          test ! -e "$d/voxprint-movie-dubber"
+          test ! -e "$HOME/.local/bin/voxprint-movie-dubber"
+          test ! -e "$d/applications/voxprint-movie-dubber.desktop"
+          test "$(cat "$d/voxprint/state/keep.txt")" = "keep-user-data"
+          grep -q '^Name=VOXPrint AI Movie Dubber$' "$prefix/share/applications/voxprint-movie-dubber.desktop"
+          grep -q 'MimeType=application/vnd.voxprint.dub+zip;' "$prefix/share/applications/voxprint-movie-dubber.desktop"
+          grep -q 'glob pattern="\*.vxdub"' "$prefix/share/mime/packages/voxprint-movie-dubber.xml"
+          if command -v desktop-file-validate >/dev/null; then desktop-file-validate "$prefix/share/applications/voxprint-movie-dubber.desktop"; fi
           shared="$d/voxprint/shared"
           test -f "$shared/manifest.json"
           test -d "$shared/runtimes/py3.14-torch2.11-cu130"
@@ -95,7 +116,8 @@ jobs:
         run: |
           set -euo pipefail
           code=0
-          "$HOME/.local/bin/voxprint-movie-dubber" --dry-run --json > dry-run.json 2> dry-run.err || code=$?
+          "$VOX_PREFIX/bin/voxprint-dubber-cli" --version
+          "$VOX_PREFIX/bin/voxprint-movie-dubber" --dry-run --json > dry-run.json 2> dry-run.err || code=$?
           echo "exit code: $code"
           cat dry-run.err
           python3 - "$code" <<'PY'
@@ -130,7 +152,10 @@ jobs:
       - name: Uninstall
         run: |
           set -euo pipefail
-          /tmp/unpack/VoxprintMovieDubber-Linux-x86_64/install.sh --uninstall
+          /tmp/unpack/VoxprintMovieDubber-Linux-x86_64/install.sh --prefix "$VOX_PREFIX" --uninstall
+          test ! -e "$VOX_PREFIX/bin/voxprint-movie-dubber"
+          test ! -e "$VOX_PREFIX/bin/voxprint-dubber-cli"
+          test ! -e "$VOX_PREFIX/movie-dubber"
           test ! -e "$HOME/.local/bin/voxprint-movie-dubber"
           test ! -e "$HOME/.local/share/voxprint-movie-dubber"
           test ! -e "$HOME/.local/share/applications/voxprint-movie-dubber.desktop"

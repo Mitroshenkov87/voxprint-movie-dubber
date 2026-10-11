@@ -13,8 +13,15 @@
 ; It links the runtime as the runtime sub-folder of the program folder. The AI models are downloaded as the last
 ; step into LOCALAPPDATA\Voxprint\models (one copy for every Voxprint program). shared\manifest.json
 ; records which programs use each resource.
-; Start menu: the folder "Voxprint", shared with the Audiobook Builder. The uninstaller never touches the Audiobook Builder's
-; own folder. A shared resource is deleted only when no program still references it.
+; Program folder: Program Files\VOXPrint AI Suite\Movie Dubber. Launchers: voxprint-movie-dubber.exe (window)
+; and voxprint-dubber-cli.exe (console, same entry point as the headless CLI).
+; Start menu: the folder "VOXPrint AI Suite", with a "VOXPrint AI Movie Dubber" shortcut.
+; The uninstaller never touches another app's folder. A shared resource is deleted only when no program still references it.
+; An older install in Program Files\VoxprintMovieDubber, and its shortcuts in the Start menu group "Voxprint",
+; are removed on upgrade. User data under the Voxprint profile folder is kept. The AppId is unchanged, so Windows
+; treats the new setup as an upgrade.
+; voxprint-common 0.1.2 has no discovery helper. Setup writes HKLM\Software\VOXPrint AI Suite\Apps\movie-dubber
+; (InstallDir, Exe, Cli, Version, and DefaultInstallDir) so other programs can find this one.
 ; NOTE: never write Inno constants (curly-brace names) in comments - ISCC expands some of them and the build breaks.
 ; Per-machine install (Program Files), Start menu entries, an entry in Apps & features and a full uninstaller.
 ;
@@ -26,7 +33,9 @@
 ;   /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=<folder>    unattended install
 
 #define AppName "VoxprintMovieDubber"
-#define AppDisplayName "Voxprint AI Movie Dubber"
+#define AppDisplayName "VOXPrint AI Movie Dubber"
+#define SuiteDir "VOXPrint AI Suite\Movie Dubber"
+#define OldAppDir "VoxprintMovieDubber"
 ; APP_VERSION is read from dubber\appinfo.py. The offset and codename are read from BUILD.json.
 ; A CI build_info.json (build + codename) replaces the offset when the installer workflow wrote one.
 #define AppInfoFile AddBackslash(SourcePath) + "..\dubber\appinfo.py"
@@ -172,10 +181,11 @@ AppVerName={#AppDisplayName} {#VersionLabel}
 VersionInfoVersion={#FileVersion}
 VersionInfoProductVersion={#FileVersion}
 VersionInfoProductTextVersion={#VersionLabel}
-AppPublisher=Voxprint
-DefaultDirName={autopf}\{#AppName}
-DefaultGroupName=Voxprint
+AppPublisher=VOXPrint
+DefaultDirName={autopf}\{#SuiteDir}
+DefaultGroupName=VOXPrint AI Suite
 DisableProgramGroupPage=yes
+UsePreviousAppDir=no
 UsePreviousGroup=no
 UninstallDisplayName={#AppDisplayName}
 UninstallDisplayIcon={app}\assets\voxprint-dubber.ico
@@ -208,8 +218,17 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 RuntimeStatus=Installing Python and PyTorch, or reusing the copy shared with other Voxprint programs (several minutes, depends on your connection)...
 SiblingFound=Voxprint AI Audiobook Builder is installed on this PC: its AI models and voice library are shared with this program (nothing is downloaded twice).
 RuntimeFailed=The Python environment could not be installed.%n%nCheck the internet connection and run the setup again. Details: %1
-HardwareRequired=Voxprint AI Movie Dubber needs an NVIDIA GeForce RTX 40-series graphics card or newer (Ada Lovelace or later, compute capability 8.9 or higher) and an NVIDIA driver from the 600 branch or newer.%n%nThis PC does not meet that requirement, so setup stopped and nothing was installed. A processor-only copy is not offered.%n%nInstall a supported graphics card and driver, then run setup again.%n%nNVIDIA driver downloads: https://www.nvidia.com/Download/index.aspx
+HardwareRequired=VOXPrint AI Movie Dubber needs an NVIDIA GeForce RTX 40-series graphics card or newer (Ada Lovelace or later, compute capability 8.9 or higher) and an NVIDIA driver from the 600 branch or newer.%n%nThis PC does not meet that requirement, so setup stopped and nothing was installed. A processor-only copy is not offered.%n%nInstall a supported graphics card and driver, then run setup again.%n%nNVIDIA driver downloads: https://www.nvidia.com/Download/index.aspx
 UninstallDataQuestion=Also delete the dubbing projects, logs and reports (%1)?
+
+; The two .exe launchers are compiled here, before the files are packed. csc.exe ships with the .NET Framework.
+#define LaunchPs AddBackslash(SourcePath) + "launchers\write-launchers.ps1"
+#define LaunchOut AddBackslash(SourcePath) + "launchers"
+#define LaunchIcon AddBackslash(SourcePath) + "..\assets\voxprint-dubber.ico"
+#define LaunchCmd "-NoProfile -ExecutionPolicy Bypass -File """ + LaunchPs + """ -OutDir """ + LaunchOut + """ -Icon """ + LaunchIcon + """"
+#if Exec("powershell.exe", LaunchCmd, SourcePath, 1, 0) != 0
+  #error the Windows launchers could not be compiled (installer\launchers\write-launchers.ps1)
+#endif
 
 [Files]
 ; the download script, the dependency list and the pins are only needed during the setup
@@ -228,6 +247,8 @@ Source: "{#PayloadDir}\ffmpeg\*"; DestDir: "{tmp}\payload\ffmpeg"; Flags: dontco
 #endif
 ; the program
 Source: "..\main.py"; DestDir: "{app}"; Flags: ignoreversion
+Source: "launchers\voxprint-movie-dubber.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "launchers\voxprint-dubber-cli.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\BUILD.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\requirements.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dubber\*"; DestDir: "{app}\dubber"; Excludes: "__pycache__,*.pyc"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -241,8 +262,8 @@ Source: "..\docs\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\build_info.json"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Icons]
-Name: "{group}\{#AppDisplayName}"; Filename: "{#PyW}"; Parameters: """{app}\main.py"""; WorkingDir: "{app}"; IconFilename: "{app}\assets\voxprint-dubber.ico"
-Name: "{group}\{#AppDisplayName} - diagnostics"; Filename: "{#PyW}"; Parameters: """{app}\main.py"" --diagnose"; WorkingDir: "{app}"; IconFilename: "{app}\assets\voxprint-dubber.ico"
+Name: "{group}\{#AppDisplayName}"; Filename: "{app}\voxprint-movie-dubber.exe"; WorkingDir: "{app}"; IconFilename: "{app}\assets\voxprint-dubber.ico"
+Name: "{group}\{#AppDisplayName} - diagnostics"; Filename: "{app}\voxprint-movie-dubber.exe"; Parameters: "--diagnose"; WorkingDir: "{app}"; IconFilename: "{app}\assets\voxprint-dubber.ico"
 Name: "{group}\{cm:UninstallProgram,{#AppDisplayName}}"; Filename: "{uninstallexe}"
 
 [Run]
@@ -250,19 +271,30 @@ Name: "{group}\{cm:UninstallProgram,{#AppDisplayName}}"; Filename: "{uninstallex
 Filename: "{#Py}"; Parameters: """{app}\main.py"" --register-models-user"; WorkingDir: "{app}"; StatusMsg: "Registering the shared models folder..."; Flags: runhidden runasoriginaluser
 ; the shared Voxprint settings (suite.json: models folder, UI language) - written only where the file has no value yet
 Filename: "{#Py}"; Parameters: """{app}\main.py"" --sync-suite-settings"; WorkingDir: "{app}"; StatusMsg: "Saving the shared Voxprint settings..."; Flags: runhidden runasoriginaluser
-Filename: "{#PyW}"; Parameters: """{app}\main.py"" --diagnose"; WorkingDir: "{app}"; Description: "Start {#AppDisplayName} and run the diagnostics (a report is saved to the Desktop)"; Flags: nowait postinstall skipifsilent runasoriginaluser
+Filename: "{app}\voxprint-movie-dubber.exe"; Parameters: "--diagnose"; WorkingDir: "{app}"; Description: "Start {#AppDisplayName} and run the diagnostics (a report is saved to the Desktop)"; Flags: nowait postinstall skipifsilent runasoriginaluser
 
 [Registry]
 ; .vxdub opens in this program.  uninsdeletekey removes the type and the extension on uninstall.
 Root: HKLM; Subkey: "Software\Classes\.vxdub"; ValueType: string; ValueName: ""; ValueData: "Voxprint.MovieDubber.Project"; Flags: uninsdeletekey
 Root: HKLM; Subkey: "Software\Classes\.vxdub"; ValueType: string; ValueName: "Content Type"; ValueData: "application/vnd.voxprint.dub+zip"
-Root: HKLM; Subkey: "Software\Classes\Voxprint.MovieDubber.Project"; ValueType: string; ValueName: ""; ValueData: "Voxprint dubbing project"; Flags: uninsdeletekey
+Root: HKLM; Subkey: "Software\Classes\Voxprint.MovieDubber.Project"; ValueType: string; ValueName: ""; ValueData: "VOXPrint dubbing project"; Flags: uninsdeletekey
 Root: HKLM; Subkey: "Software\Classes\Voxprint.MovieDubber.Project\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\assets\vxdub.ico"
-Root: HKLM; Subkey: "Software\Classes\Voxprint.MovieDubber.Project\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{#PyW}"" ""{app}\main.py"" ""%1"""
+Root: HKLM; Subkey: "Software\Classes\Voxprint.MovieDubber.Project\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\voxprint-movie-dubber.exe"" ""%1"""
+; Suite discovery for other programs. voxprint-common has no helper for this key (checked through 0.1.2).
+; InstallDir is the folder setup used. DefaultInstallDir is the usual Program Files location.
+Root: HKLM64; Subkey: "Software\VOXPrint AI Suite\Apps\movie-dubber"; ValueType: string; ValueName: "InstallDir"; ValueData: "{app}"; Flags: uninsdeletekey
+Root: HKLM64; Subkey: "Software\VOXPrint AI Suite\Apps\movie-dubber"; ValueType: string; ValueName: "Exe"; ValueData: "{app}\voxprint-movie-dubber.exe"
+Root: HKLM64; Subkey: "Software\VOXPrint AI Suite\Apps\movie-dubber"; ValueType: string; ValueName: "Cli"; ValueData: "{app}\voxprint-dubber-cli.exe"
+Root: HKLM64; Subkey: "Software\VOXPrint AI Suite\Apps\movie-dubber"; ValueType: string; ValueName: "Version"; ValueData: "{#AppVersion}"
+Root: HKLM64; Subkey: "Software\VOXPrint AI Suite\Apps\movie-dubber"; ValueType: string; ValueName: "DefaultInstallDir"; ValueData: "{autopf}\{#SuiteDir}"
 
 [InstallDelete]
-; shortcuts of builds before 0.1.0-pre.3 (their own Start menu folder; now the shared "Voxprint" folder is used)
-Type: filesandordirs; Name: "{commonprograms}\{#AppDisplayName}"
+; Start menu folder used before 0.1.0-pre.3, and this app's shortcuts in the old "Voxprint" group.
+; The program folder itself is removed in MigrateOldInstall, after the runtime junction is unlinked.
+Type: filesandordirs; Name: "{commonprograms}\Voxprint AI Movie Dubber"
+Type: files; Name: "{commonprograms}\Voxprint\Voxprint AI Movie Dubber.lnk"
+Type: files; Name: "{commonprograms}\Voxprint\Voxprint AI Movie Dubber - diagnostics.lnk"
+Type: files; Name: "{commonprograms}\Voxprint\Uninstall Voxprint AI Movie Dubber.lnk"
 Type: files; Name: "{group}\Run diagnostics.lnk"
 
 [UninstallDelete]
@@ -401,6 +433,57 @@ end;
 
 { The [Run] entry ignores a non-zero exit, so a partial model download used to look successful.
   This step runs unless /SKIPMODELS=1, writes a report, and stops setup when a required model is missing. }
+function SameDir(const A, B: String): Boolean;
+begin
+  Result := CompareText(RemoveBackslash(A), RemoveBackslash(B)) = 0;
+end;
+
+function IsUserData(const Dir: String): Boolean;
+var
+  Root: String;
+begin
+  Root := Lowercase(AddBackslash(ExpandConstant('{localappdata}')));
+  Result := (Dir <> '') and (Pos(Root, Lowercase(AddBackslash(Dir))) = 1);
+end;
+
+{ Drop the runtime junction first so the shared runtime under the user profile is not deleted. }
+procedure RemoveProgramDir(const Dir: String);
+begin
+  if (Dir = '') or (not DirExists(Dir)) then Exit;
+  if IsUserData(Dir) then
+  begin
+    Log('keeping user data at ' + Dir);
+    Exit;
+  end;
+  RemoveDir(AddBackslash(Dir) + 'runtime');
+  if not DelTree(Dir, True, True, True) then
+    Log('could not remove the previous program folder ' + Dir)
+  else
+    Log('removed the previous program folder ' + Dir);
+end;
+
+procedure MigrateOldInstall;
+var
+  OldDir, Previous, NewDir, Group, Key: String;
+begin
+  NewDir := ExpandConstant('{app}');
+  OldDir := ExpandConstant('{autopf}\{#OldAppDir}');
+  if not SameDir(OldDir, NewDir) then
+    RemoveProgramDir(OldDir);
+  Previous := '';
+  Key := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{B3D84C11-52A7-4E5B-8F0D-6A9E2C41D7B5}_is1';
+  if not RegQueryStringValue(HKLM64, Key, 'InstallLocation', Previous) then
+    RegQueryStringValue(HKLM, Key, 'InstallLocation', Previous);
+  if (Previous <> '') and (not SameDir(Previous, NewDir)) and (not SameDir(Previous, OldDir)) then
+    RemoveProgramDir(Previous);
+  Group := ExpandConstant('{commonprograms}\Voxprint');
+  DeleteFile(Group + '\Voxprint AI Movie Dubber.lnk');
+  DeleteFile(Group + '\Voxprint AI Movie Dubber - diagnostics.lnk');
+  DeleteFile(Group + '\Uninstall Voxprint AI Movie Dubber.lnk');
+  RemoveDir(Group);
+  Log('User data in the Voxprint profile folder is kept');
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Rc: Integer;
@@ -408,6 +491,11 @@ var
   Raw: AnsiString;
   Page: TOutputProgressWizardPage;
 begin
+  if CurStep = ssInstall then
+  begin
+    MigrateOldInstall;
+    Exit;
+  end;
   if CurStep <> ssPostInstall then
     Exit;
   if not ShouldFetchModels then

@@ -67,14 +67,15 @@ TARGET_LANGS = {"en", "ru", "de"}
 def build_parser() -> argparse.ArgumentParser:
     """Headless command line. ``parse_args`` and the generated reference both read this parser."""
     parser = argparse.ArgumentParser(
-        prog="python main.py",
+        prog="voxprint-dubber-cli",
         add_help=False,
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description=(
             "Headless entry points for other Voxprint programs, scripts and agents. "
-            "The same process as `python main.py`. The window is not opened. Nothing waits for a prompt.\n\n"
-            "`python -m dubber.cli` takes the same arguments. On an installed copy the program is "
-            "`python main.py` inside the installation folder.\n\n"
+            "The installed command is `voxprint-dubber-cli`. It is the same entry point as "
+            "`python main.py` and `python -m dubber.cli`. The window is not opened. Nothing waits for a prompt.\n\n"
+            "On an installed copy, `voxprint-dubber-cli` is the console launcher. "
+            "`voxprint-movie-dubber` opens the window.\n\n"
             "The JSON object always has `ok`, `exit_code`, `command`, `dry_run`, `version`, `label`, `build` and "
             "`codename`. `label` is the same line as About. A failure also has `error`. A failed job also has "
             "`debug` with the traceback."
@@ -189,9 +190,10 @@ def build_parser() -> argparse.ArgumentParser:
 def build_window_parser() -> argparse.ArgumentParser:
     """Window and installer entry points. Not used to parse the headless commands."""
     parser = argparse.ArgumentParser(
-        prog="python main.py",
+        prog="voxprint-movie-dubber",
         add_help=False,
-        description="Open the window, or run an installer helper. These forms do not use the headless exit codes.",
+        description="Open the window, or run an installer helper. These forms do not use the headless exit codes. "
+                    "The installed window launcher is `voxprint-movie-dubber`.",
     )
     parser.add_argument("project", nargs="?", metavar="PROJECT.vxdub", help="Open this project file in the window.")
     parser.add_argument("--diagnose", action="store_true",
@@ -274,7 +276,7 @@ class Request:
 
 def _help_text() -> str:
     lines = [
-        "Voxprint AI Movie Dubber commands (see docs/CLI.md)",
+        "VOXPrint AI Movie Dubber commands (see docs/CLI.md)",
         "",
         "  version",
         "  diagnose",

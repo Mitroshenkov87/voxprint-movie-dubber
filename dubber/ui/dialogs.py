@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, 
                                QWidget)
 
 from dubber import models, settings
-from dubber.appinfo import version_label
+from dubber.appinfo import APP_DISPLAY_NAME, version_label
 from dubber.diag.runner import DiagnosticRunner, DiagOptions
 from dubber.i18n import tr
 from dubber import paths
@@ -61,7 +61,7 @@ class SettingsDialog(QDialog):
         self.setMinimumWidth(560)
         s = settings.load()
         lay = QVBoxLayout(self)
-        ver = QLabel(version_label())
+        ver = QLabel(f"{APP_DISPLAY_NAME}  ·  {version_label()}")
         ver.setObjectName("hint")
         lay.addWidget(ver)
         form = QFormLayout()

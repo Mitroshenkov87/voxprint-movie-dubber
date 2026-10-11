@@ -1,19 +1,19 @@
 # Command line
 
-Headless entry points for other Voxprint programs, scripts and agents. The same process as `python main.py`. The window is not opened. Nothing waits for a prompt.
+Headless entry points for other Voxprint programs, scripts and agents. The installed command is `voxprint-dubber-cli`. It is the same entry point as `python main.py` and `python -m dubber.cli`. The window is not opened. Nothing waits for a prompt.
 
-`python -m dubber.cli` takes the same arguments. On an installed copy the program is `python main.py` inside the installation folder.
+On an installed copy, `voxprint-dubber-cli` is the console launcher. `voxprint-movie-dubber` opens the window.
 
 The JSON object always has `ok`, `exit_code`, `command`, `dry_run`, `version`, `label`, `build` and `codename`. `label` is the same line as About. A failure also has `error`. A failed job also has `debug` with the traceback.
 
 ```
-python main.py version
-python main.py diagnose
-python main.py fetch-models [--models KEY,KEY]
-python main.py run-project PATH [--languages SRC,TGT] [--stages NAME,NAME]
-python main.py info PATH
-python main.py selftest
-python main.py --dry-run --json
+voxprint-dubber-cli version
+voxprint-dubber-cli diagnose
+voxprint-dubber-cli fetch-models [--models KEY,KEY]
+voxprint-dubber-cli run-project PATH [--languages SRC,TGT] [--stages NAME,NAME]
+voxprint-dubber-cli info PATH
+voxprint-dubber-cli selftest
+voxprint-dubber-cli --dry-run --json
 ```
 
 ## Global flags
@@ -75,7 +75,7 @@ Code 1 is not used. When several of these apply, usage is reported first, then a
 Prints the version line (build and codename included). Exit 0. With --dry-run, the same discovery object as a bare --dry-run is added, and an unsupported GPU exits 3.
 
 ```
-python main.py version
+voxprint-dubber-cli version
 ```
 
 ## diagnose
@@ -83,7 +83,7 @@ python main.py version
 Runs the same checks as --diagnose-cli. --dry-run lists the check groups and does not run them. The diagnostic flags still apply. A real run on a machine below the GPU minimum exits 3 unless VOXPRINT_SKIP_GPU_GATE is set. --dry-run still exits 3 on that machine.
 
 ```
-python main.py diagnose
+voxprint-dubber-cli diagnose
 ```
 
 ## fetch-models
@@ -91,7 +91,7 @@ python main.py diagnose
 Downloads the models the installer would fetch, or the keys passed to --models. An unknown key is exit 2. A download that does not finish is exit 4. --dry-run reports which of those keys are already on disk and does not download. The real download does not refuse to start because of the GPU.
 
 ```
-python main.py fetch-models
+voxprint-dubber-cli fetch-models
 ```
 
 ## run-project
@@ -99,7 +99,7 @@ python main.py fetch-models
 PATH is a video (.mkv, .mp4, .avi, .mov, .webm, .m4v, .ts, .m2ts), a .vxdub project, or a project folder that already contains project.json. Languages default to auto to ru. Values already stored in a project or a .vxdub file are kept when the flags are omitted. --dry-run describes the file, the languages, the stages and the models that would be needed. It does not create a project folder, load a model, or download. A missing file is exit 5. An unsupported GPU is exit 3. Missing models, once the GPU is acceptable, are exit 4. A real run exits 3 on an unsupported GPU (unless VOXPRINT_SKIP_GPU_GATE is set), 6 when the dub fails, and 7 when it is cancelled.
 
 ```
-python main.py run-project PATH
+voxprint-dubber-cli run-project PATH
 ```
 
 ## selftest
@@ -107,7 +107,7 @@ python main.py run-project PATH
 Checks the shared Python 3.14 runtime, the torch 2.11.0, torchaudio and torchcodec wheels, the CTranslate2 CUDA 12 libraries, ffmpeg and the models the default pipeline needs. A missing or broken piece is repaired. Progress is one JSON object per line on stderr. The result includes outcome: ok when nothing changed, repair when a piece was restored. An NVIDIA driver older than branch 600, or a GPU that is not an RTX 40-series card or newer, exits 3. The error names https://www.nvidia.com/Download/index.aspx. --dry-run checks and does not repair.
 
 ```
-python main.py selftest PATH
+voxprint-dubber-cli selftest PATH
 ```
 
 ## info (project-info)
@@ -115,14 +115,14 @@ python main.py selftest PATH
 Prints the kind, the languages and the line count. A video that is not yet a project is reported as video. A missing file is exit 5. This command does not need a GPU. --dry-run adds the discovery object and then uses the same GPU exit code as the other dry-runs.
 
 ```
-python main.py info
-python main.py project-info
+voxprint-dubber-cli info
+voxprint-dubber-cli project-info
 ```
 
 ## --dry-run
 
 ```
-python main.py --dry-run --json
+voxprint-dubber-cli --dry-run --json
 ```
 
 With no other command, --dry-run is discovery only:
@@ -137,7 +137,7 @@ No model is loaded. Nothing is downloaded. On a GPU-less machine the process exi
 
 ## Window and installer
 
-Open the window, or run an installer helper. These forms do not use the headless exit codes.
+Open the window, or run an installer helper. These forms do not use the headless exit codes. The installed window launcher is `voxprint-movie-dubber`.
 
 The desktop window returns 3 (gpu) when the graphics card is not an RTX 40-series or newer, or the NVIDIA driver is older than branch 600. `--selftest` uses the same codes. A repaired component is exit 0 with outcome `repair`.
 
