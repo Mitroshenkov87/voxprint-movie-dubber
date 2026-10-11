@@ -13,7 +13,7 @@ A dub is a project folder. Each stage reads and writes files in that folder, so 
 5. **Separation.** Split dialogue from music and effects (TIGER-DnR, or Mel-Band RoFormer when the card can run it). Songs stay in the original language.
 6. **ASR.** Recognise the dialogue (faster-whisper).
 7. **Script.** Turn the recognition into timed lines.
-8. **Diarization.** Assign lines to speakers when the film uses more than one voice. Without a Hugging Face token the simpler clustering path is used.
+8. **Diarization.** Assign lines to speakers when the film uses more than one voice. The pyannote pipeline is the ungated mirror. Clustering is used when that model cannot be loaded.
 9. **Translation.** Marian / Opus-MT into English, Russian, or German.
 10. **Voices.** Pick a cloned voice or a library voice for each speaker.
 11. **TTS, with time-fit.** Speak the lines in film order, in blocks of about a minute. A line that does not fit its slot is shortened and spoken again once, then placed, sped up, or moved into a pause.

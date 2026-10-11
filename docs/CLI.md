@@ -88,7 +88,7 @@ python main.py diagnose
 
 ## fetch-models
 
-Downloads the models the installer would fetch, or the keys passed to --models. An unknown key is exit 2. A download that does not finish is exit 4. --dry-run reports which of those keys are already on disk and does not download. The real download does not refuse to start because of the GPU.
+Downloads the models the installer would fetch, or the keys passed to --models. An unknown key is exit 2. A download that does not finish is exit 4. --dry-run reports which of those keys are already on disk and does not download. The real download does not refuse to start because of the GPU. The download is anonymous and does not use a Hugging Face token.
 
 ```
 python main.py fetch-models

@@ -21,11 +21,9 @@ r"""Voxprint AI Movie Dubber - entry point.
 
 Options for the diagnostics:  --out FILE  --quick  --no-download  --target ru|en|de  --skip system,gpu,network,models,tts,stages
 --tts-model tts_1_7b|tts_0_6b  --tts-modes standard_sdpa,graphs_sdpa,...  --cpu-tts  --cpu-sep  --clip FILE  --asr-repo REPO
-(the Hugging Face token, if needed, is read from the HF_TOKEN environment variable - never from the command line)
 """
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
@@ -53,7 +51,6 @@ def _options_from_argv(argv):
     o.quick = "--quick" in argv
     o.allow_download = "--no-download" not in argv
     o.target_lang = _arg(argv, "--target", "ru")
-    o.hf_token = os.environ.get("HF_TOKEN", "")
     o.skip = tuple(x for x in (_arg(argv, "--skip", "") or "").split(",") if x)
     o.tts_model = _arg(argv, "--tts-model", o.tts_model)
     modes = _arg(argv, "--tts-modes")
@@ -261,7 +258,6 @@ def _apply_cli(opt, argv) -> None:
         opt.allow_download = False
     if "--target" in argv:
         opt.target_lang = cli.target_lang
-    opt.hf_token = opt.hf_token or cli.hf_token
 
 
 if __name__ == "__main__":

@@ -527,6 +527,10 @@ try {
     Say "[4/5] ffmpeg (LGPL) installed into $ffDir"
 
     # 5. models live at <home>\models and are a model component. The setup downloads the weights unless -SkipModels.
+    # That download (the models task) is anonymous. HF_TOKEN is not required.
+    # TODO: fetching moves to voxprint-mdl later.
+    if (Test-Path Env:HF_TOKEN) { Remove-Item Env:HF_TOKEN }
+    if (Test-Path Env:HUGGINGFACE_HUB_TOKEN) { Remove-Item Env:HUGGINGFACE_HUB_TOKEN }
     $sharedModels = Join-Path $shared "models"
     $models = Join-Path $vxHome "models"
     if ((Test-Path -LiteralPath $sharedModels) -and -not (Test-Path -LiteralPath $models)) {

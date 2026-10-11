@@ -18,9 +18,14 @@ Not covered by that licence (each has its own terms):
     de->en, target token >>eng<<): (c) Language Technology Research Group at the University of Helsinki (Helsinki-NLP),
     from https://huggingface.co/Helsinki-NLP, licensed under Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0),
     used unmodified.
-  * pyannote speaker-diarization-community-1 (gated, downloaded when a Hugging Face token is set): (c) pyannote,
-    from https://huggingface.co/pyannote/speaker-diarization-community-1, licensed under CC BY 4.0
-    (https://creativecommons.org/licenses/by/4.0/). pyannote/embedding is MIT.
+  * pyannote speaker-diarization-community-1: (c) Hervé Bredin and the pyannote.audio authors,
+    original https://huggingface.co/pyannote/speaker-diarization-community-1, mirror
+    https://huggingface.co/Mitroshenkov87/voxprint-pyannote-speaker-diarization-community-1
+    (revision 9c851af727f1085a361777d13e32734f7f5ebb30), licensed under CC BY 4.0
+    (https://creativecommons.org/licenses/by/4.0/). No changes besides removing the access gate.
+  * pyannote/embedding: Copyright (c) 2022 CNRS, original https://huggingface.co/pyannote/embedding, mirror
+    https://huggingface.co/Mitroshenkov87/voxprint-pyannote-embedding
+    (revision 4655ca656e1d7b1d8fe8100b39b4fdbf3015c7b8), MIT. No changes besides removing the access gate.
   * Mel-Band RoFormer vocals checkpoint KimberleyJSN/melbandroformer, revision
     ac9b0614ab3cd7f77219e18ba494dfd93956c348 (2026-04-22, the commit that set the model card to MIT;
     https://huggingface.co/KimberleyJSN/melbandroformer).

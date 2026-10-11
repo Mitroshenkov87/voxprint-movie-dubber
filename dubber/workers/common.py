@@ -72,7 +72,7 @@ def _looks_like_oom(exc: BaseException) -> bool:
 
 
 def _prepare_environment(args: Dict[str, Any]) -> None:
-    """Hugging Face settings from the parent's request: offline mode when downloads are not allowed, token via env only."""
+    """Offline mode when downloads are not allowed. Model fetches are anonymous."""
     if not args.get("allow_download", True):
         os.environ["HF_HUB_OFFLINE"] = "1"
     os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")

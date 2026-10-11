@@ -400,7 +400,8 @@ begin
 end;
 
 { The [Run] entry ignores a non-zero exit, so a partial model download used to look successful.
-  This step runs unless /SKIPMODELS=1, writes a report, and stops setup when a required model is missing. }
+  This step runs unless /SKIPMODELS=1, writes a report, and stops setup when a required model is missing.
+  The models task fetches anonymously. A Hugging Face token is not passed. }
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Rc: Integer;
@@ -431,8 +432,6 @@ begin
       Body := 'The model download failed and wrote no report. Run the setup again, or download the models later from the program.';
     RaiseException(Body);
   end;
-  if Pos('GATED:', Body) > 0 then
-    SuppressibleMsgBox(Body, mbInformation, MB_OK, IDOK);
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

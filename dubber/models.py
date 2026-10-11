@@ -1,12 +1,10 @@
 """Model registry of the dubber on top of the shared Voxprint model store (:mod:`dubber.infra.model_store`).
 
 The models live in the suite model store (``%LOCALAPPDATA%\\Voxprint\\shared\\models`` by default, or ``VOXPRINT_MODELS_DIR``), one plain
-folder per model, so the 4.5 GB TTS base model is downloaded once for both programs.  The HF token (gated pyannote) comes from
-the ``HF_TOKEN`` environment variable of the worker process - never from the command line and never written to the report.
+folder per model, so the 4.5 GB TTS base model is downloaded once for both programs. Downloads are anonymous.
 """
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple, TypedDict
@@ -36,6 +34,9 @@ TC_BIG_FILES = ("config.json", "generation_config.json", "tokenizer_config.json"
 WHISPER_FILES = ("config.json", "preprocessor_config.json", "tokenizer.json", "vocabulary.json", "model.bin")
 TIGER_FILES = ("config.json", "model.safetensors")
 EMBED_FILES = ("config.yaml", "pytorch_model.bin")
+#: Inference files of the diarization mirror. Checksums are the SHA256SUMS of that revision.
+DIAR_FILES = ("config.yaml", "embedding/pytorch_model.bin", "segmentation/pytorch_model.bin",
+              "plda/plda.npz", "plda/xvec_transform.npz")
 ROFORMER_FILES = ("MelBandRoformer.ckpt",)
 
 SPECS: Dict[str, ModelSpec] = {s.key: s for s in (
@@ -45,10 +46,11 @@ SPECS: Dict[str, ModelSpec] = {s.key: s for s in (
               patterns=WHISPER_FILES, weights=("model.bin",)),
     ModelSpec("sep", "JusperLee/TIGER-DnR", "TIGER-DnR (dialogue / effects / music separation)", 0.02,
               "Apache-2.0 (weights), MIT (code)", patterns=TIGER_FILES, weights=("model.safetensors",)),
-    ModelSpec("diar", "pyannote/speaker-diarization-community-1", "pyannote speaker-diarization community-1", 0.05, "CC-BY-4.0, gated",
-              gated=True, weights=("*.bin", "*.ckpt", "*.safetensors", "config.yaml")),
-    ModelSpec("embed", "pyannote/embedding", "pyannote speaker embedding", 0.09, "MIT, gated",
-              gated=True, patterns=EMBED_FILES, weights=("pytorch_model.bin",)),
+    ModelSpec("diar", "Mitroshenkov87/voxprint-pyannote-speaker-diarization-community-1",
+              "pyannote speaker-diarization community-1", 0.04, "CC-BY-4.0",
+              patterns=DIAR_FILES, weights=("segmentation/*.bin", "embedding/*.bin", "config.yaml")),
+    ModelSpec("embed", "Mitroshenkov87/voxprint-pyannote-embedding", "pyannote speaker embedding", 0.09, "MIT",
+              patterns=EMBED_FILES, weights=("pytorch_model.bin",)),
     ModelSpec("roformer", "KimberleyJSN/melbandroformer", "Mel-Band RoFormer (vocals)", 0.85, "MIT",
               patterns=ROFORMER_FILES, weights=("*.ckpt",), require_config=False),
     ModelSpec("mt_en_ru", "Helsinki-NLP/opus-mt-tc-big-en-zle", "Opus-MT tc-big en->ru", 0.5, "CC-BY-4.0",
@@ -65,40 +67,9 @@ SPECS: Dict[str, ModelSpec] = {s.key: s for s in (
 
 
 #: Models fetched by the installer and by ``fetch-models`` when no key list is given.
-#: Gated pyannote models are in the list. Without a Hugging Face token they are reported and skipped;
-#: one-voice dubbing does not need them. Both TTS sizes are listed; :func:`dubber.infra.vram_tier.install_models`
-#: keeps the one the card can run.
+#: Both TTS sizes are listed; :func:`dubber.infra.vram_tier.install_models` keeps the one the card can run.
 INSTALL_MODELS = ("tts_1_7b", "tts_0_6b", "asr", "sep", "roformer", "diar", "embed",
                   "mt_en_ru", "mt_ru_en", "mt_en_de", "mt_de_en", "mt_ru_de", "mt_de_ru")
-
-
-def hf_token(explicit: Optional[str] = None) -> Optional[str]:
-    """Hugging Face token from the argument, the environment, or the local huggingface_hub login.
-
-    Checks ``HF_TOKEN``, then ``HUGGINGFACE_HUB_TOKEN``, then :func:`huggingface_hub.get_token`.
-    The token is never written to a report.
-
-    Args:
-        explicit: Token already supplied by the caller.
-
-    Returns:
-        The token, or None when the user has not logged in.
-    """
-    if explicit:
-        return explicit
-    token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN") or None
-    if token:
-        return token
-    try:
-        # Optional at import time: a partial install has no huggingface_hub yet.
-        from huggingface_hub import get_token
-    except Exception:  # noqa: BLE001 - the package is not installed
-        return None
-    try:
-        found = get_token()
-    except Exception:  # noqa: BLE001 - huggingface_hub can fail before a login exists
-        found = None
-    return found or None
 
 
 def mt_spec(source: str, target: str) -> Optional[ModelSpec]:
@@ -157,14 +128,16 @@ class EnsureInfo(TypedDict):
 
 def ensure(repo: str, allow_download: bool = True, token: Optional[str] = None,
            log: Callable[[str], None] = lambda m: None) -> Tuple[Path, EnsureInfo]:
-    """Return ``(folder, info)``; ``info`` = ``{"source": "present|downloaded", "download_s": float}``.  Raises ModelUnavailable."""
+    """Return ``(folder, info)``; ``info`` = ``{"source": "present|downloaded", "download_s": float}``.  Raises ModelUnavailable.
+
+    ``token`` is ignored. The download is anonymous.
+    """
+    del token
     found = locate(repo)
     if found:
         return found, {"source": "present", "download_s": 0.0}
     spec = _spec_for_repo(repo)
-    if spec and spec.gated and not token:
-        token = hf_token()
-    info = model_store.ensure_model(repo, allow_download=allow_download, token=token,
+    info = model_store.ensure_model(repo, allow_download=allow_download, token=None,
                                     patterns=(spec.patterns or None) if spec else None,
                                     weights=spec.weights if spec else model_store.DEFAULT_WEIGHTS, gated=bool(spec and spec.gated),
                                     size_gb=spec.size_gb if spec else 0.0, log_fn=log,

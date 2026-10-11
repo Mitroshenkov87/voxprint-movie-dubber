@@ -4,8 +4,7 @@
     .\scripts\vm_test.ps1 [-Smoke] [-Full] [-Json] [-Clips DIR]
 
   -Smoke  dry-run JSON, selftest, a fetch-models check, and one short clip dub.
-  -Full   every clip in the folder, plus one actor-blend dub, and a multi-voice
-          dub when HF_TOKEN is set.
+  -Full   every clip in the folder, plus one actor-blend dub and one multi-voice dub.
   -Json   print one JSON object on stdout. Progress stays on the information stream.
 
   Exit 0 pass, 1 a case failed, 2 the machine is not set up, 3 no NVIDIA GPU.
@@ -128,12 +127,8 @@ if ($Mode -eq "smoke") {
     }
     $actor = New-Project "actor" $short.FullName "actor"
     Invoke-Timed "actor-blend" @("$Root\main.py", "run-project", $actor, "--json") -WatchVram
-    if ($env:HF_TOKEN) {
-        $multi = New-Project "multi" $short.FullName "multi"
-        Invoke-Timed "multi-voice" @("$Root\main.py", "run-project", $multi, "--json") -WatchVram
-    } else {
-        Add-Case "multi-voice" 0 0 "skipped: HF_TOKEN is not set"
-    }
+    $multi = New-Project "multi" $short.FullName "multi"
+    Invoke-Timed "multi-voice" @("$Root\main.py", "run-project", $multi, "--json") -WatchVram
 }
 
 $text = Get-Content -LiteralPath $log -Raw -ErrorAction SilentlyContinue
