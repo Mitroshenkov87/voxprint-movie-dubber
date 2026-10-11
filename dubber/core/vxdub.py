@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from voxprint_common.hashing import sha256_file as file_digest
 import os
 import time
 import uuid
@@ -116,11 +117,7 @@ def fingerprint(path: Path) -> str:
 
 def sha256_file(path: Path) -> str:
     """SHA-256 of every byte.  Optional in the manifest; a movie is not hashed unless asked."""
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
+    return file_digest(path)
 
 
 def relative_hint(video: Path, package: Path) -> str:

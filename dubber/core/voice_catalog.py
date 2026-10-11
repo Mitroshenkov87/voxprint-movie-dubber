@@ -9,7 +9,6 @@ match before anything is extracted, only known file names are extracted, the fol
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import shutil
@@ -20,7 +19,8 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Callable, Dict, List, Optional
 
-from dubber.infra import shared_paths
+from dubber import paths
+from voxprint_common.hashing import sha256_file
 from dubber.infra.model_store import ModelLock
 
 DEFAULT_REPOS = ("Mitroshenkov87/voxprint-voices-ru",)
@@ -104,7 +104,7 @@ def list_remote(repo: str, fetch: Fetch = _fetch) -> List[RemoteVoice]:
 
 def installed_ids(root: Optional[Path] = None) -> Dict[str, Path]:
     """``repo_id`` (else folder name) -> folder, for voices already in the shared library."""
-    root = Path(root) if root is not None else shared_paths.voices_dir()
+    root = Path(root) if root is not None else paths.voices_dir()
     out: Dict[str, Path] = {}
     try:
         for d in root.iterdir():
@@ -120,11 +120,8 @@ def installed_ids(root: Optional[Path] = None) -> Dict[str, Path]:
 
 
 def _sha256(p: Path) -> str:
-    h = hashlib.sha256()
-    with open(p, "rb") as f:
-        for block in iter(lambda: f.read(1 << 20), b""):
-            h.update(block)
-    return h.hexdigest()
+    """Return the SHA-256 of ``p``."""
+    return sha256_file(p)
 
 
 def _download(url: str, dest: Path, expected: int, progress: Callable[[float], None], cancel: Callable[[], bool]) -> None:
@@ -171,7 +168,7 @@ def install(voice: RemoteVoice, root: Optional[Path] = None, progress: Callable[
             cancel: Callable[[], bool] = lambda: False,
             downloader: Optional[Callable[[str, Path, int, Callable[[float], None], Callable[[], bool]], None]] = None) -> Path:
     """Download, verify and add one voice to the shared library; returns its folder (an installed voice is not downloaded again)."""
-    root = Path(root) if root is not None else shared_paths.voices_dir()
+    root = Path(root) if root is not None else paths.voices_dir()
     have = installed_ids(root)
     if voice.id in have:
         return have[voice.id]

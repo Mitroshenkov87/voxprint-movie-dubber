@@ -22,8 +22,11 @@ shared/
   ffmpeg/n8.1/                         LGPL ffmpeg and ffprobe (BtbN FFmpeg-Builds, release 8.1)
     ffmpeg or ffmpeg.exe
     ffprobe or ffprobe.exe
-  models/                              the model store. VOXPRINT_MODELS_DIR, suite.json and models_dir.txt still override it
 ```
+
+Model weights live at `<home>/models` (`%LOCALAPPDATA%\Voxprint\models`), not inside `shared/`.
+`VOXPRINT_MODELS_DIR`, `suite.json` `models_dir`, and the older `state/models_dir.txt` still override that
+folder. They are not a manifest component: a path outside `shared/` cannot be recorded.
 
 The pin hash is still written into `runtime-key.json`. The directory name is the version, so a different Python
 or torch line is a different directory. A broken copy of the same version is repaired in place. It is never
@@ -36,90 +39,76 @@ not moved.
 
 ## manifest.json (schema 1)
 
-Other suite programs implement this file the same way. Unknown keys are copied through unchanged.
-The write is atomic (a temporary file, then replace). Writers take `manifest.lock` (an OS file lock) and,
-inside one process, a thread lock.
+The file format is [formats/SHARED-RUNTIME.md](formats/SHARED-RUNTIME.md). `voxprint_common.runtime_manifest`
+reads and writes it. `dubber/infra/components.py` chooses this program's ids, turns the older list-shaped
+file into the object the library can migrate, and deletes a directory when no component still points at it.
+The app id in `refs` is `movie-dubber`.
 
 ```json
 {
   "schema": 1,
-  "resources": [
-    {
-      "id": "runtime",
+  "components": {
+    "python-3.14": {
+      "kind": "runtime",
       "version": "py3.14-torch2.11-cu130",
-      "path": "C:\\Users\\me\\AppData\\Local\\Voxprint\\shared\\runtimes\\py3.14-torch2.11-cu130",
-      "sha256": null,
-      "size": null,
-      "apps": ["movie-dubber"]
-    },
-    {
-      "id": "torch",
-      "version": "2.11.0+cu130",
-      "path": "C:\\Users\\me\\AppData\\Local\\Voxprint\\shared\\runtimes\\py3.14-torch2.11-cu130",
-      "sha256": null,
-      "size": null,
-      "apps": ["movie-dubber"]
-    },
-    {
-      "id": "ctranslate2",
-      "version": "cu12",
-      "path": "C:\\Users\\me\\AppData\\Local\\Voxprint\\shared\\runtimes\\py3.14-torch2.11-cu130",
-      "sha256": null,
-      "size": null,
-      "apps": ["movie-dubber"]
-    },
-    {
-      "id": "ffmpeg",
-      "version": "n8.1",
-      "path": "C:\\Users\\me\\AppData\\Local\\Voxprint\\shared\\ffmpeg\\n8.1",
+      "path": "runtimes/py3.14-torch2.11-cu130",
       "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-      "size": 80000000,
-      "apps": ["movie-dubber", "audiobook-builder"]
+      "installed_at": "2026-10-11T12:00:00",
+      "refs": ["movie-dubber"]
     },
-    {
-      "id": "models",
-      "version": "store",
-      "path": "C:\\Users\\me\\AppData\\Local\\Voxprint\\shared\\models",
-      "sha256": null,
-      "size": null,
-      "apps": ["movie-dubber"]
+    "torch-2.11.0-cu130": {
+      "kind": "wheels",
+      "version": "2.11.0+cu130",
+      "path": "runtimes/py3.14-torch2.11-cu130",
+      "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "installed_at": "2026-10-11T12:00:00",
+      "refs": ["movie-dubber"]
+    },
+    "ctranslate2-cu12": {
+      "kind": "wheels",
+      "version": "cu12",
+      "path": "runtimes/py3.14-torch2.11-cu130",
+      "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "installed_at": "2026-10-11T12:00:00",
+      "refs": ["movie-dubber"]
+    },
+    "ffmpeg-8": {
+      "kind": "tool",
+      "version": "n8.1",
+      "path": "ffmpeg/n8.1",
+      "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "installed_at": "2026-10-11T12:00:00",
+      "refs": ["movie-dubber", "audiobook-builder"]
     }
-  ]
+  }
 }
 ```
 
-| Field | Meaning |
-| --- | --- |
-| `schema` | Always `1` for this document. |
-| `resources` | List of resource objects. A list keeps unknown per-resource keys intact. |
-| `id` | `runtime`, `torch`, `ctranslate2`, `ffmpeg`, `models`, or an id another app adds. |
-| `version` | The version string above. Same id and version are one resource. |
-| `path` | Absolute directory. Models follow `VOXPRINT_MODELS_DIR` when that variable is set. |
-| `sha256` | Hex digest of the file when the resource is one file (ffmpeg). `null` when it does not apply. An empty digest does not erase a digest already stored. |
-| `size` | Size in bytes when it applies, otherwise `null`. |
-| `apps` | App ids that hold a reference. This program's id is `movie-dubber`. |
+A component id matches `[a-z0-9][a-z0-9._-]*`. The same id, version, and sha256 is reused. A different
+version or digest is written only when no other app still references the component. Writes take
+`manifest.lock` for at most 30 seconds and publish through a temporary file, fsync, and rename.
+Paths are relative to `shared/`. The CPU package `onnxruntime` is refused.
 
 `torch` version `2.11.0+cu130` stands for torch 2.11.0, torchaudio 2.11.0 and torchcodec 0.17.0, all `+cu130`.
 `ctranslate2` version `cu12` means CTranslate2 can import and the CUDA 12 libraries are `nvidia-cublas-cu12==12.9.2.10`
-and `nvidia-cudnn-cu12==9.27.0.42`. The CPU runtime only requires CTranslate2 to import.
+and `nvidia-cudnn-cu12==9.27.0.42`. The CPU runtime only requires CTranslate2 to import. Its component id is
+`python-3.14-cpu` and its torch id is `torch-2.11.0-cpu`.
 
 ### Reference counting
 
-* Install adds `movie-dubber` to each resource. An entry with the same id, version and checksum, whose path
-  exists, is reused and is not downloaded again.
-* Uninstall removes `movie-dubber`. When `apps` becomes empty, the directory is deleted if it is inside
-  `shared/`. A path outside `shared/` (a models folder chosen with `VOXPRINT_MODELS_DIR`) is dropped from
-  the manifest and is not deleted.
+* Install adds `movie-dubber` to each component. An entry with the same id, version and checksum is reused
+  and is not downloaded again.
+* Uninstall removes `movie-dubber`. When `refs` becomes empty, the component is deleted. The directory is
+  deleted only when no remaining component still uses that path, and only when it is inside `shared/`.
 * A directory that this process is running from, or that cannot be deleted yet, is left on disk. The Windows
-  uninstaller deletes those pending paths after the process exits. They are still removed only because the
-  reference list was already empty.
-* When no resources remain, `manifest.json` is deleted. `manifest.lock` may stay.
+  uninstaller deletes those pending paths after the process exits.
+* When no components remain, `manifest.json` is deleted. `manifest.lock` may stay.
 
-The stdlib script `dubber/infra/shared_manifest.py` is what the installers run:
+The installers run:
 
 ```
-python shared_manifest.py add --home <voxprint home> --id ffmpeg --version n8.1 --path <dir> --app movie-dubber --sha256 <hex> --size <bytes>
-python shared_manifest.py release --home <voxprint home> --app movie-dubber
+python components.py add --home <voxprint home> --id ffmpeg-8 --kind tool --version n8.1 --path <dir> --app movie-dubber --sha256 <hex>
+python components.py release --home <voxprint home> --app movie-dubber
 ```
 
 ## Install

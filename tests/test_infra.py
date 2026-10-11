@@ -10,38 +10,40 @@ import pytest
 
 from dubber import models
 from dubber.engines.separation import _expose_roformer
-from dubber.infra import gpu_lock, model_store, shared_paths, stdio_guard
+from dubber import paths
+from dubber.infra import model_store, stdio_guard
+from voxprint_common.gpu_lock import Acquired, GpuLockTimeout, gpu_job, is_stale, release, try_acquire
 from dubber.ui.pages import TARGET_LANGS
 
 
 def test_models_dir_env_file_and_fallback(tmp_path, monkeypatch):
     home = Path(os.environ["VOXPRINT_HOME"])
-    assert shared_paths.models_dir() == home / "shared" / "models"
+    assert paths.models_dir() == home / "models"
     chosen = tmp_path / "big-disk" / "models"
-    shared_paths.set_models_dir(chosen)
+    paths.set_models_dir(chosen)
     assert (home / "state" / "models_dir.txt").read_text(encoding="utf-8").strip() == str(chosen)
-    assert shared_paths.models_dir() == chosen
+    assert paths.models_dir() == chosen
     monkeypatch.setenv("VOXPRINT_MODELS_DIR", str(tmp_path / "env-models"))
-    assert shared_paths.models_dir() == tmp_path / "env-models"
-    monkeypatch.setenv("VOXPRINT_MODELS_DIR", "relative/path")                    # only absolute paths count (same as the Audiobook Builder)
-    assert shared_paths.models_dir() == home / "shared" / "models"
+    assert paths.models_dir() == tmp_path / "env-models"
+    monkeypatch.setenv("VOXPRINT_MODELS_DIR", "relative/path")                    # only absolute paths count
+    assert paths.models_dir() == chosen
     monkeypatch.delenv("VOXPRINT_MODELS_DIR")
-    shared_paths.set_models_dir(None)
-    assert shared_paths.models_dir() == home / "shared" / "models"
+    paths.set_models_dir(None)
+    assert paths.models_dir() == home / "models"
 
 
 def test_unusable_configured_folder_falls_back(tmp_path, monkeypatch):
     blocker = tmp_path / "file"
     blocker.write_text("x")
     monkeypatch.setenv("VOXPRINT_MODELS_DIR", str(blocker / "models"))           # cannot be created (parent is a file)
-    assert shared_paths.models_dir() == shared_paths.default_models_dir()
+    assert paths.models_dir() == paths.default_models_dir()
 
 
 def test_backup_folder_is_never_the_models_folder(tmp_path, monkeypatch):
     b = tmp_path / "Voxprint-backup"
     (b / "models").mkdir(parents=True)
     monkeypatch.setenv("VOXPRINT_MODELS_DIR", str(b / "models"))
-    assert shared_paths.models_dir() == shared_paths.default_models_dir()
+    assert paths.models_dir() == paths.default_models_dir()
 
 
 def test_model_lock_is_exclusive_and_removed(tmp_path):
@@ -210,47 +212,47 @@ def test_checkpoint_model_is_checksummed_without_a_config(tmp_path, monkeypatch)
 
 
 # ------------------------------------------------------------------ GPU lock
-def test_gpu_lock_acquire_release_and_wait():
-    path = gpu_lock.lock_file()
-    with gpu_lock.gpu_job("tts", eta_s=100):
+def test_gpu_lock_acquire_release_and_wait(tmp_path):
+    path = tmp_path / "gpu.lock"
+    with gpu_job("movie-dubber", "tts", eta=100, path=path):
         data = json.loads(path.read_text())
-        assert data["owner"] == "movie-dubber" and data["job"] == "tts"
+        assert data["app"] == "movie-dubber" and data["stage"] == "tts"
         datetime.fromisoformat(data["started"]) and datetime.fromisoformat(data["eta"])
     assert not path.exists()
     now = datetime.now(timezone.utc)
-    path.write_text(json.dumps({"owner": "audiobook-builder", "job": "train", "started": now.isoformat(), "eta": (now + timedelta(hours=1)).isoformat()}))
-    with pytest.raises(gpu_lock.GpuLockTimeout):
-        with gpu_lock.gpu_job("tts", timeout=0.2, poll=0.05):
+    path.write_text(json.dumps({"app": "audiobook-builder", "stage": "train", "pid": os.getpid(),
+                                "started": now.isoformat(), "eta": (now + timedelta(hours=1)).isoformat()}))
+    with pytest.raises(GpuLockTimeout):
+        with gpu_job("movie-dubber", "tts", timeout=0.2, poll=0.05, path=path):
             pass
-    assert json.loads(path.read_text())["owner"] == "audiobook-builder"           # never removed by us
+    assert json.loads(path.read_text())["app"] == "audiobook-builder"           # never removed by us
 
 
-def test_gpu_lock_reentrant_keeps_the_outer_lock():
-    path = gpu_lock.lock_file()
-    with gpu_lock.gpu_job("whole run", eta_s=100):
-        with gpu_lock.gpu_job("tts", eta_s=10):
-            assert json.loads(path.read_text())["job"] == "whole run"
+def test_gpu_lock_reentrant_keeps_the_outer_lock(tmp_path):
+    path = tmp_path / "gpu.lock"
+    with gpu_job("movie-dubber", "whole run", eta=100, path=path):
+        with gpu_job("movie-dubber", "tts", eta=10, path=path):
+            assert json.loads(path.read_text())["stage"] == "whole run"
         assert path.exists()                                                          # inner stage did not release it
     assert not path.exists()
 
 
-def test_gpu_lock_staleness_rules(tmp_path):
-    p = tmp_path / "l"
-    p.write_text("x")
+def test_gpu_lock_staleness_rules():
     now = datetime.now(timezone.utc)
-    old = {"owner": "audiobook-builder", "eta": (now - timedelta(hours=3)).isoformat()}
-    assert gpu_lock.is_stale(old, p, busy=lambda: False)
-    assert not gpu_lock.is_stale(old, p, busy=lambda: True)                       # a python process still uses the GPU
-    recent = {"owner": "audiobook-builder", "eta": (now - timedelta(hours=1)).isoformat()}
-    assert not gpu_lock.is_stale(recent, p, busy=lambda: False)
+    old = {"app": "audiobook-builder", "pid": os.getpid(), "eta": (now - timedelta(hours=3)).isoformat()}
+    assert is_stale(old, now=now)                                                    # eta older than two hours, even if the pid is alive
+    recent = {"app": "audiobook-builder", "pid": os.getpid(), "eta": (now - timedelta(hours=1)).isoformat()}
+    assert not is_stale(recent, now=now)
+    dead = {"app": "audiobook-builder", "pid": 999999999, "eta": (now + timedelta(hours=1)).isoformat()}
+    assert is_stale(dead, now=now)
 
 
-def test_gpu_lock_left_by_our_crashed_run_is_taken_over():
-    path = gpu_lock.lock_file()
-    path.write_text(json.dumps({"owner": "movie-dubber", "job": "old", "started": "2026-01-01T00:00:00+00:00",
+def test_gpu_lock_left_by_our_crashed_run_is_taken_over(tmp_path):
+    path = tmp_path / "gpu.lock"
+    path.write_text(json.dumps({"app": "movie-dubber", "stage": "old", "started": "2026-01-01T00:00:00+00:00",
                                 "eta": "2099-01-01T00:00:00+00:00", "pid": 999999999}))
-    assert gpu_lock.try_acquire("new", 60) is None
-    gpu_lock.release()
+    assert isinstance(try_acquire("movie-dubber", "new", 60, path), Acquired)
+    release(path)
 
 
 def test_stdio_guard_swallows_dead_handles():
@@ -332,9 +334,9 @@ def test_vram_budget_keeps_headroom_and_sizes_the_tts_batch():
 
 def test_vram_fraction_cap_is_off_unless_set(monkeypatch):
     from dubber.infra import resources as R
-    from dubber.infra import suite
+    from voxprint_common import suite_settings as suite
     monkeypatch.delenv("VOXPRINT_VRAM_FRACTION", raising=False)
-    monkeypatch.setattr(suite, "read_raw", lambda: {"gpu": "auto"})
+    monkeypatch.setattr(suite, "read", lambda: {"gpu": "auto"})
     assert R.vram_fraction() is None
     assert R.Snapshot("RTX", 16.0, 15.0, 32.0, 20.0).vram_budget_gb == 13.0
     monkeypatch.setenv("VOXPRINT_VRAM_FRACTION", "0.5")
@@ -346,11 +348,11 @@ def test_vram_fraction_cap_is_off_unless_set(monkeypatch):
     monkeypatch.setenv("VOXPRINT_VRAM_FRACTION", "")
     assert R.vram_fraction() is None
     monkeypatch.delenv("VOXPRINT_VRAM_FRACTION")
-    monkeypatch.setattr(suite, "read_raw", lambda: {"gpu": {"device": "cuda:1", "vram_fraction": 0.25}})
+    monkeypatch.setattr(suite, "read", lambda: {"gpu": {"device": "cuda:1", "vram_fraction": 0.25}})
     assert suite.gpu() == "cuda:1" and suite.normalize_gpu("cuda:0") == "cuda:0"
     assert R.vram_fraction() == pytest.approx(0.25)
-    monkeypatch.setattr(suite, "read_raw", lambda: {"gpu": "cpu", "vram_fraction": 0.4})
-    assert suite.gpu() == "cpu" and R.vram_fraction() == pytest.approx(0.4)
+    monkeypatch.setattr(suite, "read", lambda: {"gpu": "cpu", "vram_fraction": 0.4})
+    assert suite.gpu() == "auto" and R.vram_fraction() == pytest.approx(0.4)
     assert R.vram_fraction({"gpu": {"vram_fraction": 0.3}}) == pytest.approx(0.3)
 
 

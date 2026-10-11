@@ -23,8 +23,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from dubber.infra import suite
-
 RAM_SHARE = 0.75
 #: leave at least this much VRAM unused: max(VRAM_HEADROOM_GB, VRAM_HEADROOM_FRAC * total)
 VRAM_HEADROOM_GB = 2.0
@@ -304,7 +302,9 @@ def vram_fraction(cfg: Optional[Dict[str, Any]] = None) -> Optional[float]:
     if cfg:
         if "vram_fraction" in cfg or (isinstance(cfg.get("gpu"), dict) and "vram_fraction" in cfg["gpu"]):
             return _fraction_from_mapping(cfg)
-    return _fraction_from_mapping(suite.read_raw())
+    from voxprint_common.suite_settings import read
+
+    return _fraction_from_mapping(read())
 
 
 def vram_allowance_gb(free_gb: float, total_gb: float, fraction: Optional[float] = None) -> float:

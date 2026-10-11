@@ -2,8 +2,11 @@
 
 The installer and the program detect the card's VRAM (at install and at every start) and pick the matching tier on their own:
 
-* ``16gb``: cards below 24 GB (RTX 4060 Ti 16 GB, 4070 Ti Super, 4080, RTX 4090 Laptop ...);
-* ``24gb``: cards with 24 GB or more (RTX 4090, RTX 5090 ...).
+* ``8gb``: below 15.5 GiB;
+* ``16gb``: from 15.5 GiB up to but not including 23.5 GiB (RTX 4060 Ti 16 GB, 4080, RTX 4090 Laptop ...);
+* ``24gb``: 23.5 GiB and above (RTX 4090, RTX 5090 ...).
+
+The cut points come from ``voxprint_common.gpu_probe``. Batch caps stay in this module.
 
 A tier is a set of caps, not a different pipeline: how many lines one TTS generate call may take (the measured VRAM
 budget still decides below that cap) and which models are offered at all.  A model is offered only when it fits the
@@ -16,11 +19,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
+from voxprint_common.gpu_probe import tier_for_gib
+
 AUTO = "auto"
+TIER_8 = "8gb"
 TIER_16 = "16gb"
 TIER_24 = "24gb"
-#: a "24 GB" card reports a little less than 24 GiB (23.5 to 24.0) through nvidia-smi and torch
-TIER_24_MIN_GB = 22.0
 
 
 @dataclass(frozen=True)
@@ -32,6 +36,7 @@ class Tier:
 
 
 TIERS: Dict[str, Tier] = {t.key: t for t in (
+    Tier(TIER_8, "8 GB", 2),
     Tier(TIER_16, "16 GB", 6),
     Tier(TIER_24, "24 GB or more", 12),
 )}
@@ -40,14 +45,21 @@ TTS_ORDER: Tuple[str, ...] = ("tts_1_7b", "tts_0_6b")
 
 
 def detect(total_gb: float) -> str:
-    """The tier for a card with ``total_gb`` of VRAM (16 GB tier when the size is unknown)."""
-    return TIER_24 if float(total_gb or 0.0) >= TIER_24_MIN_GB else TIER_16
+    """The tier for a card with ``total_gb`` of VRAM. Unknown, zero, or NaN is ``unknown``."""
+    size = float(total_gb or 0.0)
+    return tier_for_gib(None if size <= 0 else size).value
 
 
 def choices(total_gb: float) -> List[str]:
-    """Tiers the advanced override may pick on this card: the detected one and the ones below it."""
-    keys = list(TIERS)
-    return keys[: keys.index(detect(total_gb)) + 1]
+    """Tiers the advanced override may pick: the detected one and the ones below it.
+
+    An unknown card may pick any tier.
+    """
+    keys = [TIER_8, TIER_16, TIER_24]
+    found = detect(total_gb)
+    if found not in keys:
+        return keys
+    return keys[: keys.index(found) + 1]
 
 
 def resolve(total_gb: float, override: Optional[str] = AUTO) -> str:

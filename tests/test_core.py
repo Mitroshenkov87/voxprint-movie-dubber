@@ -2,7 +2,6 @@ import json
 import os
 import subprocess
 import sys
-import zipfile
 from pathlib import Path
 
 import numpy as np
@@ -29,7 +28,7 @@ def test_desktop_env_override_and_fallbacks(tmp_path, monkeypatch):
 
 
 def test_data_folders_follow_override(tmp_path):
-    assert paths.models_dir().parent == Path(os.environ["VOXPRINT_HOME"]) / "shared"
+    assert paths.models_dir() == Path(os.environ["VOXPRINT_HOME"]) / "models"
     assert paths.logs_dir().parent == Path(os.environ["VOXPRINT_DUBBER_HOME"])
     assert paths.reports_dir().is_dir()
 
@@ -212,5 +211,6 @@ def test_fetch_models_cli_rejects_unknown_key():
 
 
 def test_cli_version_prints_a_version():
+    codename = json.loads((ROOT / "BUILD.json").read_text(encoding="utf-8"))["codename"]
     r = subprocess.run([sys.executable, str(ROOT / "main.py"), "--version"], capture_output=True, text=True, timeout=60)
-    assert r.returncode == 0 and "1.0.0 RC" in r.stdout and "Bochan" in r.stdout
+    assert r.returncode == 0 and "1.0.0 RC" in r.stdout and codename in r.stdout

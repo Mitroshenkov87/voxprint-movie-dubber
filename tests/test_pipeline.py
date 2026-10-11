@@ -267,9 +267,9 @@ def _fake_voice(root: Path, vid: str, name: str):
 
 
 def test_shared_voice_library_is_read_only(tmp_path):
-    from dubber.infra import shared_paths
+    from dubber import paths
 
-    root = shared_paths.voices_dir()
+    root = paths.voices_dir()
     assert voices.list_library() == []
     _fake_voice(root, "anna", "Anna")
     (root / "broken").mkdir()
@@ -552,8 +552,8 @@ def test_actor_voice_resolves_blends_and_saves(tmp_path, monkeypatch):
 
 
 def test_end_to_end_mock_with_actor_voice(tmp_path, film):
-    from dubber.infra import shared_paths
-    _lib_voice(shared_paths.voices_dir(), "levi", "male", [1, 0, 0])
+    from dubber import paths
+    _lib_voice(paths.voices_dir(), "levi", "male", [1, 0, 0])
     p = Project.create(tmp_path / "proj", film, target_lang="ru", source_lang="en", multi_voice=True)
     assert R.Runner(p, S.MOCK_CFG).run(until_stage="translation").ok
     q = Project(p.folder)

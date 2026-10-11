@@ -11,7 +11,6 @@ them in a dialog. ``--selftest`` prints each one as a JSON line on stderr.
 """
 from __future__ import annotations
 
-import hashlib
 import importlib.metadata
 import json
 import os
@@ -30,7 +29,7 @@ from dubber import models as model_registry
 from dubber import paths
 from dubber.appinfo import resource_dir
 from dubber.i18n import tr
-from dubber.infra import shared_manifest, shared_paths
+from dubber.infra.components import APP_ID, OutsideShared, add_component, component_id_for, guard_cpu_onnxruntime
 from dubber.infra.gpu_policy import (
     NVIDIA_DRIVER_URL,
     driver_branch,
@@ -40,7 +39,8 @@ from dubber.infra.gpu_policy import (
     startup_detail_key,
     with_driver_link,
 )
-from dubber.infra.shared_manifest import APP_ID
+from voxprint_common.hashing import sha256_file
+from voxprint_common.paths import home as suite_home
 
 Progress = Callable[[Dict[str, Any]], None]
 RUNTIME_STEM = "py3.14-torch2.11"
@@ -127,7 +127,7 @@ def ffmpeg_path(home: Path, version: str = FFMPEG_VERSION) -> Path:
 
 def ffmpeg_executable(home: Optional[Path] = None, version: str = FFMPEG_VERSION) -> Path:
     """Path of the shared ffmpeg binary for this platform (the file need not exist yet)."""
-    root = Path(home) if home is not None else shared_paths.voxprint_home()
+    root = Path(home) if home is not None else suite_home()
     name = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
     return ffmpeg_path(root, version) / name
 
@@ -161,14 +161,6 @@ def _python_exe(root: Path) -> Path:
 
 def _event(resource: str, status: str, message: str) -> Dict[str, Any]:
     return {"progress": True, "resource": resource, "status": status, "message": message}
-
-
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 def _run_text(cmd: Sequence[str], timeout: float = 30) -> str:
@@ -243,7 +235,7 @@ def live_pieces(home: Path) -> List[Piece]:
     runtime_ok = py_version.startswith("3.14.") and (root / ".install-complete").is_file() and python.is_file()
     ffmpeg = ffmpeg_executable(home)
     ffmpeg_line = _binary_ok(ffmpeg)
-    models = shared_paths.models_dir()
+    models = paths.models_dir()
     if model_fetch_skipped():
         models_ok = True
         models_detail = "model download is skipped for this run"
@@ -251,7 +243,7 @@ def live_pieces(home: Path) -> List[Piece]:
         missing = [key for key in model_registry.INSTALL_MODELS if model_registry.locate(model_registry.SPECS[key].repo) is None]
         models_ok = not missing
         models_detail = "" if models_ok else "missing " + ", ".join(missing)
-    ffmpeg_sha = _sha256_file(ffmpeg) if ffmpeg.is_file() else None
+    ffmpeg_sha = sha256_file(ffmpeg) if ffmpeg.is_file() else None
     ffmpeg_size = ffmpeg.stat().st_size if ffmpeg.is_file() else None
     return [
         Piece("runtime", version, str(root), runtime_ok, "" if runtime_ok else "Python 3.14 runtime is missing or incomplete"),
@@ -388,7 +380,7 @@ def install_shared_ffmpeg(home: Path, progress: Progress, opener: Any = urllib.r
     except (OSError, URLError) as exc:
         raise RepairError("ffmpeg", f"could not read the ffmpeg checksum list: {exc}") from exc
     want = _checksum(archive_name, text)
-    have = _sha256_file(archive)
+    have = sha256_file(archive)
     if want and have != want:
         archive.unlink(missing_ok=True)
         raise RepairError("ffmpeg", "ffmpeg download is corrupt (SHA-256 mismatch)")
@@ -433,10 +425,10 @@ def _extract_ffmpeg(archive: Path, dest: Path) -> None:
 def install_shared_models(progress: Progress) -> Path:
     """Download the models the default pipeline needs. Partial downloads are kept and resumed."""
     if model_fetch_skipped():
-        path = shared_paths.models_dir()
+        path = paths.models_dir()
         path.mkdir(parents=True, exist_ok=True)
         return path
-    folder = shared_paths.models_dir()
+    folder = paths.models_dir()
     for key in model_registry.INSTALL_MODELS:
         spec = model_registry.SPECS[key]
         progress(_event("models", "repairing", f"Checking model {key}"))
@@ -507,10 +499,10 @@ def _empty_dir(path: Path) -> None:
 def migrate(home: Optional[Path] = None, app_dir: Optional[Path] = None) -> List[str]:
     """Move this app's old runtime and ffmpeg into ``shared/`` and remove the old directories.
 
-    Models that still sit in ``<home>/models`` (the previous default) move to ``shared/models`` when that
-    folder has not been created yet. After this returns, discovery does not read the old paths.
+    Weights stay at ``<home>/models``. A copy that an older installer moved into ``shared/models`` is moved
+    back when ``<home>/models`` does not exist yet. After this returns, discovery does not read the old runtime path.
     """
-    home = Path(home) if home is not None else shared_paths.voxprint_home()
+    home = Path(home) if home is not None else suite_home()
     actions: List[str] = []
     actions.extend(_migrate_runtimes(home, app_dir))
     actions.extend(_migrate_ffmpeg(home, app_dir))
@@ -582,22 +574,31 @@ def _migrate_ffmpeg(home: Path, app_dir: Optional[Path]) -> List[str]:
 
 
 def _migrate_models(home: Path) -> List[str]:
-    old = home / "models"
-    new = home / "shared" / "models"
-    if not old.is_dir():
+    """Move ``shared/models`` up to ``<home>/models`` when the suite default is still empty."""
+    shared = home / "shared" / "models"
+    dest = home / "models"
+    if not shared.is_dir() or dest.exists():
         return []
-    if new.exists():
-        return []
-    new.parent.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(old), str(new))
-    return [f"moved models to {new}"]
+    shutil.move(str(shared), str(dest))
+    return [f"moved models to {dest}"]
 
 
 def _register(home: Path, piece: Piece) -> None:
-    if not piece.ok:
+    if not piece.ok or piece.id == "models":
         return
-    shared_manifest.add_ref(home, resource_id=piece.id, version=piece.version, path=Path(piece.path), app=APP_ID,
-                            sha256=piece.sha256, size=piece.size)
+    component_id, kind = component_id_for(piece.id, piece.version)
+    try:
+        add_component(
+            home,
+            component_id,
+            kind=kind,
+            version=piece.version,
+            path=Path(piece.path),
+            app=APP_ID,
+            sha256=piece.sha256 or "",
+        )
+    except OutsideShared:
+        return
 
 
 def _exit_for(resource_id: str) -> tuple[str, int]:
@@ -664,7 +665,13 @@ def run_selftest(progress: Progress, *, gpu: Callable[[], GpuStatus], inspect: C
 
 def live_selftest(progress: Progress, *, repair: bool = True, check_gpu: bool = True) -> Report:
     """Migrate old folders, then check and repair the shared pieces on this machine."""
-    home = shared_paths.voxprint_home()
+    blocked = guard_cpu_onnxruntime()
+    if blocked:
+        from dubber.cli import EXIT_JOB
+
+        progress(_event("runtime", "failed", blocked))
+        return Report("failed", EXIT_JOB, blocked)
+    home = suite_home()
     migrate(home, _app_dir())
 
     def gpu() -> GpuStatus:

@@ -33,7 +33,9 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from dubber.infra import model_store, shared_paths
+from dubber.infra import model_store
+from voxprint_common.paths import home as suite_home
+from voxprint_common.paths import shared_dir
 
 LOCK_PATH = Path(__file__).with_name("runtime_lock.json")
 PREFIX = "py3.14-torch2.11-"
@@ -96,7 +98,7 @@ def choose_flavor(lock: Dict[str, Any], driver_cuda: Optional[tuple]) -> Optiona
 
 def runtime_dir(flavor: str) -> Path:
     """Return ``<Voxprint home>/shared/runtimes/py3.14-torch2.11-<flavor>``."""
-    return shared_paths.shared_root() / "runtimes" / f"{PREFIX}{flavor}"
+    return shared_dir() / "runtimes" / f"{PREFIX}{flavor}"
 
 
 def is_runtime_dir(path: Path) -> bool:
@@ -134,7 +136,7 @@ def current_runtime_dir(app_dir: Optional[Path] = None) -> Optional[Path]:
 
 def installed_runtimes() -> List[Path]:
     """Return versioned runtime folders that contain ``runtime-key.json``, sorted by path."""
-    root = shared_paths.shared_root() / "runtimes"
+    root = shared_dir() / "runtimes"
     if not root.is_dir():
         return []
     return sorted(p for p in root.glob(f"{PREFIX}*") if p.is_dir() and is_runtime_dir(p))
@@ -152,26 +154,30 @@ def _manifest_version(root: Path) -> str:
 
 
 def register_user(root: Optional[Path] = None) -> Optional[Dict[str, bool]]:
-    """Add this program's reference to the runtime entry in ``shared/manifest.json``."""
-    from dubber.infra.shared_manifest import add_ref
+    """Add this program's reference to the runtime component in ``shared/manifest.json``."""
+    from dubber.infra.components import add_component, component_id_for
 
     root = root or current_runtime_dir()
     if root is None:
         return None
-    add_ref(shared_paths.voxprint_home(), resource_id="runtime", version=_manifest_version(root), path=root, app=USER_KEY)
+    version = _manifest_version(root)
+    component_id, kind = component_id_for("runtime", version)
+    add_component(suite_home(), component_id, kind=kind, version=version, path=root, app=USER_KEY)
     return {USER_KEY: True}
 
 
 def unregister_user(root: Optional[Path] = None) -> List[str]:
     """Drop this program's runtime reference. Returns the other apps still using that runtime."""
-    from dubber.infra.shared_manifest import release_app, resource_apps
+    from dubber.infra.components import component_id_for, component_refs, release_component
 
     root = root or current_runtime_dir()
     if root is None:
         return []
     version = _manifest_version(root)
-    others = [name for name in resource_apps(shared_paths.voxprint_home(), "runtime", version) if name != USER_KEY]
-    release_app(shared_paths.voxprint_home(), USER_KEY, resource_id="runtime")
+    component_id, _kind = component_id_for("runtime", version)
+    home = suite_home()
+    others = [name for name in component_refs(home, component_id) if name != USER_KEY]
+    release_component(home, component_id, USER_KEY)
     return sorted(others)
 
 

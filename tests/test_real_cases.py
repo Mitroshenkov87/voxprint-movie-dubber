@@ -288,27 +288,28 @@ def test_runtime_key_is_exact_and_matches_the_installer_script():
     assert runtime.runtime_key("cpu", req, con) != k and runtime.runtime_key("cu130", req + "\nnumpy<3", con) != k
     ps = (Path(__file__).resolve().parent.parent / "installer" / "install-runtime.ps1").read_text(encoding="utf-8")
     assert 'python=$($lockObj.python);platform=$($lockObj.platform);torch=$($lockObj.torch_version)+$flavor;' in ps
-    assert r"shared\runtimes\py3.14-torch2.11-" in ps and "shared_manifest.py" in ps and "New-Item -ItemType Junction" in ps
+    assert r"shared\runtimes\py3.14-torch2.11-" in ps and "components.py" in ps and "New-Item -ItemType Junction" in ps
     assert "never upgraded" in ps
 
 
 def test_runtime_users_and_cli(tmp_path, monkeypatch):
     import main as app_main
-    from dubber.infra import runtime, shared_manifest, shared_paths
-    home = shared_paths.voxprint_home()
+    from dubber.infra import components, runtime
+    from voxprint_common.paths import home as suite_home
+    home = suite_home()
     rt = home / "shared" / "runtimes" / "py3.14-torch2.11-cu130"
     (rt / "env").mkdir(parents=True)
     (rt / "runtime-key.json").write_text('{"flavor": "cu130"}', encoding="utf-8")
-    shared_manifest.add_ref(home, resource_id="runtime", version=rt.name, path=rt, app="movie-dubber")
-    shared_manifest.add_ref(home, resource_id="runtime", version=rt.name, path=rt, app="future-app")
+    components.add_component(home, "python-3.14", kind="runtime", version=rt.name, path=rt, app="movie-dubber")
+    components.add_component(home, "python-3.14", kind="runtime", version=rt.name, path=rt, app="future-app")
     monkeypatch.setattr(runtime, "current_runtime_dir", lambda: rt)
     out = tmp_path / "o.txt"
     assert app_main.main(["--unregister-runtime-user", "--out", str(out)]) == 0
     assert out.read_text(encoding="utf-8").splitlines() == ["1", str(rt)]
-    assert shared_manifest.resource_apps(home, "runtime", rt.name) == ["future-app"]
+    assert components.component_refs(home, "python-3.14") == ["future-app"]
     assert runtime.is_runtime_dir(rt) and not runtime.is_runtime_dir(home / "runtime")
     assert app_main.main(["--register-runtime-user"]) == 0
-    assert "movie-dubber" in shared_manifest.resource_apps(home, "runtime", rt.name)
+    assert "movie-dubber" in components.component_refs(home, "python-3.14")
 
 
 def test_cuda_dll_dirs_are_found_without_importing_torch():
@@ -320,58 +321,68 @@ def test_cuda_dll_dirs_are_found_without_importing_torch():
 
 # ------------------------------------------------------------------ 6. suite.json
 def test_suite_json_schema_atomic_and_unknown_keys_kept():
-    from dubber.infra import suite
-    f = suite.path()
+    from voxprint_common import suite_settings as suite
+    f = suite.file()
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_text('{"schema": 1, "future_key": {"x": 1}, "theme": "neon"}', encoding="utf-8")
     assert suite.theme() == "glass-dark" and suite.gpu() == "auto" and suite.models_dir() is None
-    suite.set_value("gpu", "cuda")
-    suite.set_value("ui_language", "ru-RU")
+    suite.set_gpu("cuda")
+    suite.set_ui_language("ru-RU")
     data = json.loads(f.read_text(encoding="utf-8"))
-    assert data == {"schema": 1, "future_key": {"x": 1}, "theme": "neon", "gpu": "cuda:0", "ui_language": "ru"}
+    assert data["schema"] == 1 and data["future_key"] == {"x": 1} and data["theme"] == "neon"
+    assert data["gpu"] == "cuda:0" and data["ui_language"] == "ru-RU"
     assert not list(f.parent.glob("*.tmp"))
     with pytest.raises(ValueError):
-        suite.set_value("gpu", "rocm")
+        suite.set_gpu("rocm")
     with pytest.raises(ValueError):
         suite.set_value("output_format", "mp4")                     # app-specific settings never go to suite.json
 
 
 def test_models_dir_from_suite_then_legacy_txt(tmp_path, monkeypatch):
-    from dubber.infra import shared_paths, suite
+    from dubber import paths
+    from voxprint_common import suite_settings as suite
+    from voxprint_common.paths import home as suite_home
+    from voxprint_common.paths import state_dir
     legacy = tmp_path / "legacy-models"
-    (shared_paths.shared_state_dir() / "models_dir.txt").write_text(str(legacy), encoding="utf-8")
-    assert shared_paths.configured_models_dir() == legacy               # no suite.json yet: the older file counts
-    suite.set_value("models_dir", None)
-    assert shared_paths.configured_models_dir() is None                # explicit null = the default folder
+    state_dir().mkdir(parents=True, exist_ok=True)
+    (state_dir() / "models_dir.txt").write_text(str(legacy), encoding="utf-8")
+    assert paths.models_dir() == legacy                                 # no suite.json yet: the older file counts
+    suite.set_models_dir(None)
+    assert paths.models_dir() == legacy                                 # an explicit null does not hide models_dir.txt
     chosen = tmp_path / "chosen"
-    shared_paths.set_models_dir(chosen)
-    assert json.loads(suite.path().read_text())["models_dir"] == str(chosen) and shared_paths.models_dir() == chosen
+    paths.set_models_dir(chosen)
+    assert json.loads(suite.file().read_text())["models_dir"] == str(chosen) and paths.models_dir() == chosen
     monkeypatch.setenv("VOXPRINT_MODELS_DIR", str(tmp_path / "env"))
-    assert shared_paths.configured_models_dir() == tmp_path / "env"    # the environment variable always wins
+    assert paths.models_dir() == tmp_path / "env"                       # the environment variable always wins
+    monkeypatch.delenv("VOXPRINT_MODELS_DIR")
+    paths.set_models_dir(None)
+    assert paths.models_dir() == suite_home() / "models"
 
 
 def test_device_and_language_are_shared(monkeypatch):
     from dubber import i18n, settings
-    from dubber.infra import suite
+    from voxprint_common import suite_settings as suite
     assert settings.device() == "auto"
     settings.set_device("cuda")
     assert suite.gpu() == "cuda:0" and settings.engine_cfg()["device"] == "cuda"
-    suite.set_value("gpu", "cpu")                                  # a sibling app may still store this
+    suite.file().write_text(json.dumps({"schema": 1, "gpu": "cpu"}), encoding="utf-8")
     assert settings.device() == "auto" and settings.engine_cfg()["device"] == "auto"
-    suite.set_value("ui_language", "ru")
+    suite.set_ui_language("ru")
     i18n.reset()
     monkeypatch.delenv("VOXPRINT_LANG", raising=False)
     assert i18n.detect_language() == "ru"
     i18n.set_language("en")
-    assert suite.ui_language() == "en"
+    assert suite.read()["ui_language"] == "en"
 
 
 def test_sync_suite_settings_cli(tmp_path):
     import main as app_main
-    from dubber.infra import shared_paths, suite
-    (shared_paths.shared_state_dir() / "models_dir.txt").write_text(str(tmp_path / "m"), encoding="utf-8")
+    from voxprint_common import suite_settings as suite
+    from voxprint_common.paths import state_dir
+    state_dir().mkdir(parents=True, exist_ok=True)
+    (state_dir() / "models_dir.txt").write_text(str(tmp_path / "m"), encoding="utf-8")
     assert app_main.main(["--sync-suite-settings"]) == 0
-    d = json.loads(suite.path().read_text())
+    d = json.loads(suite.file().read_text())
     assert d["schema"] == 1 and d["models_dir"] == str(tmp_path / "m") and d["ui_language"] in ("en", "ru")
 
 

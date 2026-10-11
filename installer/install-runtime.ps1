@@ -12,7 +12,7 @@
     -Payload       full (offline) installer only: folder with uv\uv.exe, python\ (the Python build + release.txt), wheels\ and
                    ffmpeg\ (installer\make-full-payload.ps1 builds it).  Nothing is downloaded when it is given.
     -SkipGpuGate   CI only: lets the full installer's cu130 runtime be installed on a GPU-less test runner.  Not offered to users.
-    -ManifestScript dubber\infra\shared_manifest.py (stdlib). Records this program's reference in shared\manifest.json.
+    -ManifestScript dubber\infra\components.py. Records this program's reference in shared\manifest.json.
     -SkipModels    CI only: create the shared models folder and its reference, but do not treat a missing download as a failure.
                    The setup's own last step downloads the weights unless /SKIPMODELS=1 is passed.
   Rules (docs/SHARED-RESOURCES.md; dubber/infra/runtime.py has the same key logic):
@@ -243,12 +243,11 @@ function Resume-Download([string]$Url, [string]$Dest) {
     Move-Item -LiteralPath $partial -Destination $Dest -Force
 }
 
-function Add-SharedRef([string]$Id, [string]$Version, [string]$ResourcePath, [string]$Sha, [string]$Size) {
-    if (-not $script:ManifestScript) { throw "-ManifestScript is required (dubber\infra\shared_manifest.py)" }
+function Add-SharedRef([string]$Id, [string]$Kind, [string]$Version, [string]$ResourcePath, [string]$Sha) {
+    if (-not $script:ManifestScript) { throw "-ManifestScript is required (dubber\infra\components.py)" }
     if (-not (Test-Path -LiteralPath $script:py)) { throw "the shared Python is not available, so the manifest cannot be updated" }
-    $arguments = @($script:ManifestScript, "add", "--home", $script:vxHome, "--id", $Id, "--version", $Version, "--path", $ResourcePath, "--app", $script:UserKey)
+    $arguments = @($script:ManifestScript, "add", "--home", $script:vxHome, "--id", $Id, "--kind", $Kind, "--version", $Version, "--path", $ResourcePath, "--app", $script:UserKey)
     if ($Sha) { $arguments += @("--sha256", $Sha) }
-    if ($Size -ne "") { $arguments += @("--size", $Size) }
     & $script:py @arguments
     if ($LASTEXITCODE -ne 0) { throw "could not record $Id $Version in shared\manifest.json" }
 }
@@ -410,6 +409,10 @@ try {
             Run "[2/5] Installing PyTorch $tv ($flavor build), torchaudio $taBase and torchcodec $tcBase" $uv @("pip", "install", "--python", $py, "--compile-bytecode", "torch==$tv", "torchaudio==$taBase", "torchcodec==$tcBase", "--torch-backend=$flavor")
         }
         Run "[3/5] Installing the other packages" $uv (@("pip", "install", "--python", $py, "--compile-bytecode", "-r", $Requirements, "-c", $pins) + $offline)
+        if (-not $Payload) {
+            Run "Pinning voxprint-common 0.1.0" $uv @("pip", "install", "--python", $py, "--compile-bytecode", "voxprint-common @ git+https://github.com/Mitroshenkov87/voxprint-common.git@v0.1.0")
+        }
+        Run "Checking voxprint-common 0.1.0" $py @("-c", "import voxprint_common; from voxprint_common.runtime_manifest import cpu_onnxruntime_conflicts; assert voxprint_common.__version__ == '0.1.0', voxprint_common.__version__; raise SystemExit('The CPU package onnxruntime is installed. The shared runtime must not contain it.' if cpu_onnxruntime_conflicts() else 0)")
         # no --torch-backend on this step: it would re-resolve every requirement against the PyTorch index
         Run "Checking the installation" $py $check
         $info = [ordered]@{ key = $key; python = $lockObj.python; platform = $lockObj.platform; torch = "$tv+$flavor"; flavor = $flavor
@@ -502,20 +505,24 @@ try {
     $ErrorActionPreference = "Stop"
     Say "[4/5] ffmpeg (LGPL) installed into $ffDir"
 
-    # 5. shared models folder and the manifest references. The setup downloads the weights unless -SkipModels.
-    $models = Join-Path $shared "models"
+    # 5. models live at <home>\models (not a manifest component). The setup downloads the weights unless -SkipModels.
+    $sharedModels = Join-Path $shared "models"
+    $models = Join-Path $vxHome "models"
+    if ((Test-Path -LiteralPath $sharedModels) -and -not (Test-Path -LiteralPath $models)) {
+        Move-Item -LiteralPath $sharedModels -Destination $models
+    }
     New-Item -ItemType Directory -Force -Path $models | Out-Null
     if ($SkipModels) {
-        Say "[5/5] CI switch -SkipModels: the shared models folder is ready and the weights are not downloaded here"
+        Say "[5/5] CI switch -SkipModels: the models folder is ready and the weights are not downloaded here"
     } else {
-        Say "[5/5] Shared models folder $models (the setup downloads the default-pipeline models next)"
+        Say "[5/5] Models folder $models (the setup downloads the default-pipeline models next)"
     }
-    Add-SharedRef "runtime" $rtName $rt "" ""
-    Add-SharedRef "torch" "$tv+$flavor" $rt "" ""
-    Add-SharedRef "ctranslate2" "cu12" $rt "" ""
-    $ffItem = Get-Item -LiteralPath $ffExe
-    Add-SharedRef "ffmpeg" "n8.1" $ffDir ((Get-FileHash -LiteralPath $ffExe -Algorithm SHA256).Hash.ToLower()) $ffItem.Length.ToString()
-    Add-SharedRef "models" "store" $models "" ""
+    $runtimeId = if ($flavor -eq "cpu") { "python-3.14-cpu" } else { "python-3.14" }
+    $torchId = if ($flavor -eq "cpu") { "torch-2.11.0-cpu" } else { "torch-2.11.0-cu130" }
+    Add-SharedRef $runtimeId "runtime" $rtName $rt ""
+    Add-SharedRef $torchId "wheels" "$tv+$flavor" $rt ""
+    Add-SharedRef "ctranslate2-cu12" "wheels" "cu12" $rt ""
+    Add-SharedRef "ffmpeg-8" "tool" "n8.1" $ffDir ((Get-FileHash -LiteralPath $ffExe -Algorithm SHA256).Hash.ToLower())
 
     Say "Python environment is ready."
     exit 0

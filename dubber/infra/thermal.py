@@ -18,12 +18,20 @@ import time
 from collections import deque
 from typing import Callable, Deque, Optional, Tuple
 
-FULL_SPEED_S = 2.5 * 3600
+from voxprint_common.thermal import (
+    FULL_SPEED_S as FULL_SPEED_S,
+    PAUSE_C,
+    RESUME_C,
+    THROTTLE_S,
+    Action,
+    decide,
+)
+
 #: pause while the median GPU temperature over MEDIAN_WINDOW_S is at or above HOT_C
-HOT_C = 83.0
+HOT_C = PAUSE_C
 MEDIAN_WINDOW_S = 300.0
-COOL_C = 75.0
-THROTTLE_HOLD_S = 60.0
+COOL_C = RESUME_C
+THROTTLE_HOLD_S = THROTTLE_S
 MAX_PAUSE_S = 600.0
 PAUSE_STEP_S = 5.0
 #: nvidia-smi clocks throttle bits that mean the card is actually holding back: SW thermal, HW thermal, HW power brake
@@ -123,12 +131,8 @@ class Guard:
     def should_pause(self, now: Optional[float] = None) -> bool:
         """True only after the full-speed window, and only for a hot 5-min median or a throttle that has lasted."""
         t = self._now() if now is None else now
-        if self.elapsed(t) < FULL_SPEED_S:
-            return False
-        median = self.median_temp()
-        if median is not None and median >= HOT_C:
-            return True
-        return self.throttle_seconds(t) > THROTTLE_HOLD_S
+        decision = decide(self.elapsed(t), self.median_temp(), self.throttle_seconds(t), paused=False)
+        return decision.action is Action.PAUSE
 
     def cool_enough(self) -> bool:
         """Resume point: 75 C or below, and the throttle reason gone.  Unknown temperature follows the throttle bit."""

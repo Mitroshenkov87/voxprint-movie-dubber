@@ -14,7 +14,7 @@ from PySide6.QtGui import QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 
 from dubber.appinfo import resource_dir
-from dubber.ui.theme import TEXT, TEXT_DISABLED
+from voxprint_common.ui.theme import TEXT, TEXT_DISABLED
 
 ICON_NAMES = ("save", "save-as", "save-copy", "export", "download")
 _SIZE = 18

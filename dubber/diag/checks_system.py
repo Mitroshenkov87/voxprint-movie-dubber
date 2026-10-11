@@ -69,12 +69,13 @@ def check_app() -> CheckResult:
     r.summary = version_line()
     r.kv("program", version_line()).kv("executable", sys.executable).kv("frozen", bool(getattr(sys, "frozen", False)))
     r.kv("data folder", paths.app_home()).kv("models folder", paths.models_dir())
-    from dubber.infra import gpu_lock, model_store
+    from dubber.infra import model_store
+    from voxprint_common.gpu_lock import read_holder
 
     users = model_store.read_users()
     r.kv("models folder users", ", ".join(sorted(users)) if users else "none registered")
-    held = gpu_lock.read_lock()
-    r.kv("shared GPU lock", "free" if held is None else f"{held.get('owner', '?')} / {held.get('job', '?')} (eta {held.get('eta', '?')})")
+    held = read_holder()
+    r.kv("shared GPU lock", "free" if held is None else f"{held.app} / {held.stage} (eta {held.eta})")
     r.kv("working dir", os.getcwd())
     env = {k: os.environ[k] for k in ("CUDA_VISIBLE_DEVICES", "HF_HOME", "HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE", "VOXPRINT_DUBBER_HOME", "VOXPRINT_HOME", "VOXPRINT_MODELS_DIR",
                                       "VOXPRINT_FFMPEG", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "PYTORCH_CUDA_ALLOC_CONF") if k in os.environ}

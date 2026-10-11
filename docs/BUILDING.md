@@ -48,11 +48,11 @@ Setup switches: `/TORCH=auto|cu130` (PyTorch flavor). `/TORCH=cpu` installs the 
 The setup stops, and installs nothing, when no NVIDIA GPU has compute capability 8.9 or higher (GeForce RTX 40 / Ada or newer) or the driver branch is below 600. The window does the same check with PyTorch before it opens (`VOXPRINT_SKIP_GPU_GATE=1` skips that check for tests and CI).
 The setup puts its shortcuts into the Start menu folder "Voxprint" (shared with the Audiobook Builder), adds an Apps & features entry
 and a full uninstaller. The uninstaller never touches the Audiobook Builder. It drops this program's references in
-`shared\manifest.json` and deletes a shared runtime, ffmpeg build, or models folder only when no program still references it.
+`shared\manifest.json` and deletes a shared runtime or ffmpeg build only when no program still references it.
 Projects, logs and reports are removed only when you answer Yes (default: keep).
 
 Shared settings: `%LOCALAPPDATA%\Voxprint\state\suite.json` (schema 1: `ui_language`, `theme`, `models_dir`, `gpu`), read and written by
-both programs (`dubber/infra/suite.py`).
+both programs (`voxprint_common.suite_settings`).
 
 ## Version and codename
 

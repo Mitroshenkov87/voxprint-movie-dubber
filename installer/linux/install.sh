@@ -65,7 +65,7 @@ refresh_desktop() {
 }
 
 add_ref() {
-  python3 "$PREFIX/app/dubber/infra/shared_manifest.py" add --home "$VX_HOME" --app "$REF_APP" "$@"
+  "$PY" "$PREFIX/app/dubber/infra/components.py" add --home "$VX_HOME" --app "$REF_APP" "$@"
 }
 
 download_resumable() {
@@ -113,8 +113,10 @@ install_ffmpeg() {
 
 if [ "$UNINSTALL" = 1 ]; then
   say "Removing Voxprint AI Movie Dubber from $PREFIX"
-  if [ -f "$PREFIX/app/dubber/infra/shared_manifest.py" ]; then
-    python3 "$PREFIX/app/dubber/infra/shared_manifest.py" release --home "$VX_HOME" --app "$REF_APP" || true
+  if [ -x "$PY" ]; then
+    "$PY" "$PREFIX/app/dubber/infra/components.py" release --home "$VX_HOME" --app "$REF_APP" || true
+  elif [ -f "$PREFIX/app/dubber/infra/components.py" ]; then
+    python3 "$PREFIX/app/dubber/infra/components.py" release --home "$VX_HOME" --app "$REF_APP" || true
   fi
   rm -rf "$PREFIX"
   rm -f "$BIN_DIR/$APP_ID" "$DATA_HOME/applications/$APP_ID.desktop" "$DATA_HOME/mime/packages/$APP_ID.xml" \
@@ -176,10 +178,31 @@ if [ -d "$PREFIX/env" ] && [ ! -x "$PY" ]; then
   mkdir -p "$RT"
   mv "$PREFIX/env" "$ENV_DIR"
 fi
-if [ -d "$VX_HOME/models" ] && [ ! -e "$SHARED/models" ]; then
-  mkdir -p "$SHARED"
-  mv "$VX_HOME/models" "$SHARED/models"
+if [ -d "$SHARED/models" ] && [ ! -e "$VX_HOME/models" ]; then
+  mv "$SHARED/models" "$VX_HOME/models"
 fi
+# A private %LOCALAPPDATA%\Voxprint\runtime-<12 hex> folder (Linux: $VX_HOME/runtime-<hash>)
+# moves into the shared runtime once, then the old directory is removed.
+moved_runtime=0
+for old in "$VX_HOME"/runtime-*; do
+  [ -d "$old" ] || continue
+  base="$(basename "$old")"
+  case "$base" in
+    runtime-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f])
+      if [ "$moved_runtime" = 0 ] && [ ! -f "$RT/runtime-key.json" ] && [ -f "$old/runtime-key.json" ] \
+         && grep -q '"flavor"[[:space:]]*:[[:space:]]*"cu130"' "$old/runtime-key.json"; then
+        mkdir -p "$(dirname "$RT")"
+        rm -rf "$RT"
+        mv "$old" "$RT"
+        moved_runtime=1
+        say "Moved the old runtime folder $base into $RT"
+      else
+        rm -rf "$old"
+        say "Removed the old runtime folder $base"
+      fi
+      ;;
+  esac
+done
 export UV_PYTHON_INSTALL_DIR="$RT/python"
 export UV_PYTHON_PREFERENCE=only-managed
 export PYTHONUTF8=1
@@ -204,7 +227,9 @@ trap 'rm -f "$PINS"' EXIT
 { printf 'torch==%s+cu130\ntorchaudio==%s+cu130\ntorchcodec==%s+cu130\n' "$TV" "$TA" "$TC"; cat "$PREFIX/app/runtime-constraints.txt"; } > "$PINS"
 say "[3/5] Installing the other packages and the CUDA 12 libraries"
 "$UV" pip install --python "$PY" --quiet -r "$PREFIX/app/requirements.txt" -c "$PINS"
+"$UV" pip install --python "$PY" --quiet "voxprint-common @ git+https://github.com/Mitroshenkov87/voxprint-common.git@v0.1.0"
 "$UV" pip install --python "$PY" --quiet "nvidia-cublas-cu12==12.9.2.10" "nvidia-cudnn-cu12==9.27.0.42"
+"$PY" -c "import voxprint_common; from voxprint_common.runtime_manifest import cpu_onnxruntime_conflicts; assert voxprint_common.__version__ == '0.1.0', voxprint_common.__version__; raise SystemExit('The CPU package onnxruntime is installed. The shared runtime must not contain it.' if cpu_onnxruntime_conflicts() else 0)"
 "$PY" -c "import torch, transformers, PySide6, faster_whisper, ctranslate2; print('torch', torch.__version__, '- CUDA available:', torch.cuda.is_available())"
 date -u +%Y-%m-%dT%H:%M:%SZ > "$RT/.install-complete"
 "$PY" - "$RT/runtime-key.json" "$TV" <<'PYEOF'
@@ -217,7 +242,7 @@ PYEOF
 
 # 5. ffmpeg, models, manifest
 install_ffmpeg
-mkdir -p "$SHARED/models"
+mkdir -p "$VX_HOME/models"
 if [ "$SKIP_MODELS" = 1 ]; then
   say "[5/5] Skipping the model download (--skip-models, CI only)"
 else
@@ -226,11 +251,10 @@ else
 fi
 ff_sha="$(sha256sum "$FF_DIR/ffmpeg" | awk '{ print $1 }')"
 ff_size="$(wc -c < "$FF_DIR/ffmpeg" | tr -d ' ')"
-add_ref --id runtime --version "$RUNTIME_VERSION" --path "$RT"
-add_ref --id torch --version "${TV}+cu130" --path "$RT"
-add_ref --id ctranslate2 --version cu12 --path "$RT"
-add_ref --id ffmpeg --version "$FFMPEG_VERSION" --path "$FF_DIR" --sha256 "$ff_sha" --size "$ff_size"
-add_ref --id models --version store --path "$SHARED/models"
+add_ref --id python-3.14 --kind runtime --version "$RUNTIME_VERSION" --path "$RT"
+add_ref --id torch-2.11.0-cu130 --kind wheels --version "${TV}+cu130" --path "$RT"
+add_ref --id ctranslate2-cu12 --kind wheels --version cu12 --path "$RT"
+add_ref --id ffmpeg-8 --kind tool --version "$FFMPEG_VERSION" --path "$FF_DIR" --sha256 "$ff_sha"
 
 # 6. launcher, menu entry, icons and the .vxdub file type
 say "Adding the launcher $BIN_DIR/$APP_ID"

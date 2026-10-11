@@ -34,7 +34,7 @@ from dubber.ui.icons import suite_icon
 from dubber.ui.jobs import PipelineThread
 from dubber.ui.pages import TARGET_LANGS, CharactersPage, DubPage, FilmPage, LinesPage, fmt_eta, fmt_time
 from dubber.ui.player import HAVE_MULTIMEDIA, Player
-from dubber.ui.theme import build_style
+from voxprint_common.ui.theme import build_style
 
 MIN_W, MIN_H = 720, 520
 VIDEO_EXTS = {".mkv", ".mp4", ".avi", ".mov", ".webm", ".m4v", ".ts", ".m2ts"}
@@ -846,7 +846,6 @@ class MainWindow(QWidget):
         from PySide6.QtWidgets import QInputDialog, QMessageBox
 
         from dubber.core import actor_voice
-        from dubber.infra import shared_paths
 
         project = self.project
         sp = project.speaker(sid) if project else None
@@ -861,7 +860,7 @@ class MainWindow(QWidget):
             return
         try:
             path = actor_voice.save_to_library(actor_voice.folder(project.folder, sid), name.strip(), tr("actor.consent_note"),
-                                               shared_paths.voices_dir(), project.settings.get("target_lang", ""))
+                                               paths.voices_dir(), project.settings.get("target_lang", ""))
             self.chars.lbl_multi_status.setText(tr("actor.saved", path=str(path)))
             self.chars.load(project)
         except (OSError, ValueError) as exc:

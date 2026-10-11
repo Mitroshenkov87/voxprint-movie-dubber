@@ -1,7 +1,6 @@
 import sys
 import textwrap
 
-from dubber.diag import procs
 from dubber.diag.procs import decode_throttle, describe_exit_code, run_worker
 from dubber.diag.report import CheckResult, Status
 from dubber.diag.runner import DiagnosticRunner, DiagOptions, guarded

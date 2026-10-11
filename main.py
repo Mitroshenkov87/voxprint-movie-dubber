@@ -155,9 +155,9 @@ def main(argv=None) -> int:
             return 0
         return runtime.unregister_cli(_arg(argv, "--out"))
     if "--sync-suite-settings" in argv:
-        from dubber.infra import suite
+        from dubber.settings import sync_suite_settings
 
-        return suite.sync_cli()
+        return sync_suite_settings()
     if "--release-shared" in argv:
         return _release_shared(argv)
     if "--selftest" in argv and "--json" in argv:
@@ -187,19 +187,21 @@ def main(argv=None) -> int:
     if ensured.exit_code != 0:
         QMessageBox.critical(None, tr("gpu.gate_title"), ensured.message or "A shared component could not be repaired.")
         return ensured.exit_code
-    from dubber.ui import splash as splash_mod
+    from dubber.ui.splash_hook import show_splash
 
-    splash = splash_mod.show()                               # the first thing on screen: before the heavy UI imports below
-    splash.loading_ui()
+    splash = show_splash()                               # the first thing on screen: before the heavy UI imports below
+    splash.set_stage(tr("splash.loading_ui"))
+    splash.set_progress(0.3)
     from dubber.ui.window import MainWindow
 
-    splash.opening()
+    splash.set_stage(tr("splash.opening"))
+    splash.set_progress(0.8)
     win = MainWindow(autorun="--diagnose" in argv, options_hook=(lambda o: _apply_cli(o, argv)) if "--diagnose" in argv else None)
     win.show()
     opened = project_file_from_argv(argv)
     if opened:
         win.open_vxdub(Path(opened))
-    splash.finish(win)                                       # closes once the main window is on screen
+    splash.finish()                                       # fades once the splash has been up for the minimum time
     if "--selftest" in argv:
         QTimer.singleShot(400, app.quit)
     return app.exec()
@@ -211,11 +213,11 @@ def _release_shared(argv) -> int:
     ``--out FILE`` receives one pending path per line (still on disk because this process is using it).
     The uninstaller deletes those after this process exits.
     """
-    from dubber.infra.shared_manifest import APP_ID, release_app
-    from dubber.infra.shared_paths import voxprint_home
+    from dubber.infra.components import APP_ID, release_app
+    from voxprint_common.paths import home as suite_home
 
     try:
-        result = release_app(voxprint_home(), APP_ID)
+        result = release_app(suite_home(), APP_ID)
         out = _arg(argv, "--out")
         if out:
             Path(out).write_text("".join(f"{path}\n" for path in result.pending), encoding="utf-8")
@@ -229,7 +231,8 @@ def _release_shared(argv) -> int:
 
 def _models_users(argv) -> int:
     """Installer / uninstaller helper for the shared ``models/.users.json`` (never fails the setup: exit 0 unless writing failed)."""
-    from dubber.infra import model_store, shared_paths
+    from dubber import paths
+    from dubber.infra import model_store
 
     try:
         model_store.sweep_stale_locks()
@@ -239,7 +242,7 @@ def _models_users(argv) -> int:
         others = model_store.unregister_user()
         out = _arg(argv, "--out")
         if out:
-            Path(out).write_text(f"{len(others)}\n{shared_paths.models_dir()}\n", encoding="utf-8")
+            Path(out).write_text(f"{len(others)}\n{paths.models_dir()}\n", encoding="utf-8")
         print(f"other programs using the models: {', '.join(others) or 'none'}", flush=True)
         return 0
     except OSError as exc:

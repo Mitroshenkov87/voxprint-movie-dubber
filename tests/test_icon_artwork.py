@@ -37,7 +37,8 @@ def _ico_sizes(path: Path) -> set:
 
 def test_icon_and_splash_files():
     assert _png_size(ROOT / "assets" / "voxprint-dubber.png") == (1024, 1024)
-    assert _jpeg_size(ROOT / "assets" / "splash.jpg") == (1024, 1024)
+    splash_w, splash_h = _jpeg_size(ROOT / "assets" / "splash.jpg")
+    assert splash_w >= 960 and splash_h * 16 == splash_w * 9
     assert _png_size(ROOT / "installer" / "linux" / "voxprint-dubber-256.png") == (256, 256)
     for name in ("voxprint-dubber.ico", "voxprint-dubber-setup.ico"):
         assert _ico_sizes(ROOT / "assets" / name) == {(s, s) for s in ICON_SIZES}
@@ -53,7 +54,7 @@ def test_installer_and_window_use_the_icons():
     dubber_line = next(line for line in iss.splitlines() if r"..\dubber\*" in line)
     assert "*.svg" not in dubber_line.split("Excludes:", 1)[-1]
     main = (ROOT / "main.py").read_text(encoding="utf-8")
-    assert main.index("splash_mod.show()") < main.index("from dubber.ui.window import MainWindow")
+    assert main.index("show_splash()") < main.index("from dubber.ui.window import MainWindow")
     window = (ROOT / "dubber" / "ui" / "window.py").read_text(encoding="utf-8")
     assert "TODO(icons)" not in window
 
@@ -95,11 +96,12 @@ def test_splash_paints_name_and_status():
     pytest.importorskip("PySide6")
     from PySide6.QtWidgets import QApplication
     QApplication.instance() or QApplication([])
-    from dubber.ui import splash
-    s = splash.show()
-    s.loading_ui()
-    assert s.message() and s._fraction > 0
-    assert not s.pixmap().isNull()
-    pm = s.grab()
+    from dubber.ui.splash_hook import show_splash
+    splash = show_splash()
+    splash.set_stage("Loading the interface")
+    splash.set_progress(0.4)
+    window = splash._window
+    assert splash._stage and splash._fraction == 0.4
+    pm = window.grab()
     assert pm.width() > 200
-    s.close()
+    window.close()

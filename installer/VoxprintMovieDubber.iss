@@ -217,7 +217,7 @@ Source: "install-runtime.ps1"; DestDir: "{tmp}"; Flags: dontcopy
 Source: "..\requirements.txt"; DestDir: "{tmp}"; Flags: dontcopy
 Source: "runtime-constraints.txt"; DestDir: "{tmp}"; Flags: dontcopy
 Source: "..\dubber\infra\runtime_lock.json"; DestDir: "{tmp}"; Flags: dontcopy
-Source: "..\dubber\infra\shared_manifest.py"; DestDir: "{tmp}"; Flags: dontcopy
+Source: "..\dubber\infra\components.py"; DestDir: "{tmp}"; Flags: dontcopy
 #ifdef Full
 Source: "{#PayloadDir}\payload.json"; DestDir: "{tmp}\payload"; Flags: dontcopy
 Source: "{#PayloadDir}\uv\*"; DestDir: "{tmp}\payload\uv"; Flags: dontcopy nocompression
@@ -301,11 +301,11 @@ begin
   Req := ExpandConstant('{tmp}\requirements.txt');
   LogFile := ExpandConstant('{%TEMP}\VoxprintMovieDubber-setup.log');
   HwFile := ExpandConstant('{%TEMP}\VoxprintMovieDubber-hardware.txt');
-  ExtractTemporaryFile('shared_manifest.py');
+  ExtractTemporaryFile('components.py');
   Params := '-NoProfile -ExecutionPolicy Bypass -File "' + Script + '" -AppDir "' + ExpandConstant('{app}') +
             '" -Requirements "' + Req + '" -Constraints "' + ExpandConstant('{tmp}\runtime-constraints.txt') +
             '" -Lock "' + ExpandConstant('{tmp}\runtime_lock.json') +
-            '" -ManifestScript "' + ExpandConstant('{tmp}\shared_manifest.py') +
+            '" -ManifestScript "' + ExpandConstant('{tmp}\components.py') +
             '" -Backend "' + CmdParam('TORCH', 'auto') + '" -HardwareFile "' + HwFile + '" -Log "' + LogFile + '"';
   if CmdParam('SKIPMODELS', '') = '1' then
     Params := Params + ' -SkipModels';

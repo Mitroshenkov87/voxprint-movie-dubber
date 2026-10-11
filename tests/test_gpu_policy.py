@@ -228,13 +228,14 @@ def test_settings_ui_has_no_cpu_device(monkeypatch):
     from PySide6.QtWidgets import QApplication
 
     from dubber import settings
-    from dubber.infra import suite
+    from voxprint_common import suite_settings as suite
     from dubber.ui.dialogs import SettingsDialog
 
     QApplication.instance() or QApplication([])
     monkeypatch.delenv("VOXPRINT_SKIP_GPU_GATE", raising=False)
     assert settings.device() == "auto"
-    suite.set_value("gpu", "cpu")
+    suite.file().parent.mkdir(parents=True, exist_ok=True)
+    suite.file().write_text('{"schema": 1, "gpu": "cpu"}', encoding="utf-8")
     assert settings.device() == "auto"
     dialog = SettingsDialog()
     choices = [dialog.cmb_device.itemData(i) for i in range(dialog.cmb_device.count())]
