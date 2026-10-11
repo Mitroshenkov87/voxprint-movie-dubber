@@ -11,7 +11,7 @@
 ; LOCALAPPDATA\Voxprint\shared\runtimes\py3.14-torch2.11-cu130 (Python 3.14, PyTorch 2.11.0+cu130,
 ; torchaudio, torchcodec, the CTranslate2 CUDA 12 libraries), the shared ffmpeg, and the shared models folder.
 ; It links the runtime as the runtime sub-folder of the program folder. The AI models are downloaded as the last
-; step into LOCALAPPDATA\Voxprint\shared\models (one copy for every Voxprint program). shared\manifest.json
+; step into LOCALAPPDATA\Voxprint\models (one copy for every Voxprint program). shared\manifest.json
 ; records which programs use each resource.
 ; Start menu: the folder "Voxprint", shared with the Audiobook Builder. The uninstaller never touches the Audiobook Builder's
 ; own folder. A shared resource is deleted only when no program still references it.
@@ -249,7 +249,6 @@ Name: "{group}\{cm:UninstallProgram,{#AppDisplayName}}"; Filename: "{uninstallex
 Filename: "{#Py}"; Parameters: """{app}\main.py"" --register-models-user"; WorkingDir: "{app}"; StatusMsg: "Registering the shared models folder..."; Flags: runhidden runasoriginaluser
 ; the shared Voxprint settings (suite.json: models folder, UI language) - written only where the file has no value yet
 Filename: "{#Py}"; Parameters: """{app}\main.py"" --sync-suite-settings"; WorkingDir: "{app}"; StatusMsg: "Saving the shared Voxprint settings..."; Flags: runhidden runasoriginaluser
-Filename: "{#Py}"; Parameters: """{app}\main.py"" --fetch-models"; WorkingDir: "{app}"; StatusMsg: "Downloading the AI models (this can take a while)..."; Flags: runasoriginaluser; Check: ShouldFetchModels
 Filename: "{#PyW}"; Parameters: """{app}\main.py"" --diagnose"; WorkingDir: "{app}"; Description: "Start {#AppDisplayName} and run the diagnostics (a report is saved to the Desktop)"; Flags: nowait postinstall skipifsilent runasoriginaluser
 
 [Registry]
@@ -396,6 +395,42 @@ begin
   Log(Format('shared resources: release rc=%d, pending file=%s', [Rc, PendingFile]));
   { runtime-dir.txt in the program folder names the shared runtime; the junction is only a link }
   RemoveDir(ExpandConstant('{app}\runtime'));
+end;
+
+{ The [Run] entry ignores a non-zero exit, so a partial model download used to look successful.
+  This step runs unless /SKIPMODELS=1, writes a report, and stops setup when a required model is missing. }
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  Rc: Integer;
+  Report, Params, Body: String;
+  Raw: AnsiString;
+  Page: TOutputProgressWizardPage;
+begin
+  if CurStep <> ssPostInstall then
+    Exit;
+  if not ShouldFetchModels then
+    Exit;
+  Report := ExpandConstant('{%TEMP}\VoxprintMovieDubber-models.txt');
+  Params := '"' + ExpandConstant('{app}\main.py') + '" --fetch-models --report "' + Report + '"';
+  Page := CreateOutputProgressPage('AI models', 'Downloading the AI models (this can take a while)...');
+  Page.Show;
+  try
+    if not Exec(ExpandConstant('{#Py}'), Params, ExpandConstant('{app}'), SW_SHOWNORMAL, ewWaitUntilTerminated, Rc) then
+      Rc := -1;
+  finally
+    Page.Hide;
+  end;
+  Body := '';
+  if LoadStringFromFile(Report, Raw) then
+    Body := Trim(String(Raw));
+  if Rc <> 0 then
+  begin
+    if Body = '' then
+      Body := 'The model download failed and wrote no report. Run the setup again, or download the models later from the program.';
+    RaiseException(Body);
+  end;
+  if Pos('GATED:', Body) > 0 then
+    SuppressibleMsgBox(Body, mbInformation, MB_OK, IDOK);
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

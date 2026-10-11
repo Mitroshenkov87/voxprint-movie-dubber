@@ -114,7 +114,10 @@ class WorkerSession:
                     on_log(line)
                 if msg.get("status") == "OK":
                     return str(msg.get("summary", ""))
-                raise RuntimeError(str(msg.get("summary") or f"{key} failed"))
+                # runner imports this module, so the helper stays inside the method.
+                from dubber.pipeline.runner import stage_error
+
+                raise stage_error(str(msg.get("summary") or f"{key} failed"), str(msg.get("traceback") or ""))
             if msg.get("t") == "result" and msg.get("status") == "FAIL" and not msg.get("stage"):
                 raise RuntimeError(str(msg.get("summary") or "session failed"))
 

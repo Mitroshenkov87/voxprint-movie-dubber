@@ -40,6 +40,8 @@ STALL_SECONDS = 180.0
 WATCH_INTERVAL = 5.0
 DEFAULT_WEIGHTS = ("*.safetensors", "*.bin")
 CONFIG_NAMES = ("config.json", "config.yaml", "params.json")
+DOWNLOAD_ATTEMPTS = 4
+RETRY_BACKOFF_S = (1.0, 2.0, 4.0)
 
 
 class ModelUnavailable(RuntimeError):
@@ -377,6 +379,23 @@ def _watched(func: Callable[[], None], part: Path, size_gb: float, log_fn: Calla
         raise err[0]
 
 
+def _transient_download_error(exc: BaseException) -> bool:
+    """True for a DNS or CDN blip that is worth retrying. A stall or a checksum error is not.
+
+    ``getaddrinfo`` failures showed up on the first 4090 install and aborted the model fetch.
+    """
+    if isinstance(exc, ModelUnavailable):
+        return False
+    text = " ".join(str(exc).split()).lower()
+    name = type(exc).__name__.lower()
+    markers = ("getaddrinfo", "name or service not known", "temporary failure in name resolution",
+               "nodename nor servname", "connection reset", "connection aborted", "timed out",
+               "timeout", "429", "502", "503", "504")
+    if any(marker in text or marker in name for marker in markers):
+        return True
+    return isinstance(exc, (ConnectionError, TimeoutError))
+
+
 def ensure_model(repo: str, *, allow_download: bool = True, token: Optional[str] = None, patterns: Optional[Sequence[str]] = None,
                  weights: Sequence[str] = DEFAULT_WEIGHTS, gated: bool = False, size_gb: float = 0.0,
                  log_fn: Callable[[str], None] = lambda m: None, downloader: Optional[Downloader] = None,
@@ -402,13 +421,20 @@ def ensure_model(repo: str, *, allow_download: bool = True, token: Optional[str]
         part.mkdir(parents=True, exist_ok=True)
         dl = downloader or hf_download
         t0 = time.time()
-        try:
-            _watched(lambda: dl(repo, part, pinned_revision(repo), list(patterns) if patterns else None, token), part, size_gb,
-                     log_fn, repo, stall_s)
-        except ModelUnavailable:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            raise ModelUnavailable(f"download of {repo} failed: {type(exc).__name__}: {' '.join(str(exc).split())[:200]}") from exc
+        for attempt in range(DOWNLOAD_ATTEMPTS):
+            try:
+                _watched(lambda: dl(repo, part, pinned_revision(repo), list(patterns) if patterns else None, token), part, size_gb,
+                         log_fn, repo, stall_s)
+                break
+            except ModelUnavailable:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                if attempt + 1 >= DOWNLOAD_ATTEMPTS or not _transient_download_error(exc):
+                    raise ModelUnavailable(
+                        f"download of {repo} failed: {type(exc).__name__}: {' '.join(str(exc).split())[:200]}") from exc
+                wait = RETRY_BACKOFF_S[min(attempt, len(RETRY_BACKOFF_S) - 1)]
+                log_fn(f"download of {repo} hit a network error ({type(exc).__name__}); retrying in {wait:.0f} s")
+                time.sleep(wait)
         log_fn(f"verifying {repo} (checksums)")
         if not verify_structure(part, weights, require_config):
             raise ModelUnavailable(f"{repo}: the download finished but the folder looks incomplete ({part})")

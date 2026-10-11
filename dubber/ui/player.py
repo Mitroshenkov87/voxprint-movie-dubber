@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from PySide6.QtCore import Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout, QWidget
 
 from dubber.core.watch import WatchState
@@ -48,6 +49,12 @@ class Player(QWidget):
         self._seeking = False
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
+        self.poster = QLabel()
+        self.poster.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.poster.setMinimumHeight(220)
+        self.poster.setScaledContents(True)
+        self.poster.hide()
+        lay.addWidget(self.poster, 1)
         if HAVE_MULTIMEDIA:
             self.video = QVideoWidget()
             self.video.setMinimumHeight(220)
@@ -97,11 +104,24 @@ class Player(QWidget):
             return False
         self.stop()
         self.source, self.watch, self.end_s = source, watch, end
+        self.poster.hide()
+        if self.video is not None:
+            self.video.show()
         self.media.setSource(QUrl.fromLocalFile(str(film)))
         self.media.setPosition(int(start * 1000))
         self._cursor = start
         self._open_sink()
         return True
+
+    def show_poster(self, image: Path) -> None:
+        """Show a still frame until playback starts. A missing or unreadable image leaves the video widget as it is."""
+        pix = QPixmap(str(image))
+        if pix.isNull():
+            return
+        self.poster.setPixmap(pix)
+        self.poster.show()
+        if self.video is not None:
+            self.video.hide()
 
     def play(self) -> None:
         """Start playback unless Watch mode is still buffering."""
@@ -109,6 +129,9 @@ class Player(QWidget):
             return
         if self.watch is not None and self.watch.buffering:
             return
+        self.poster.hide()
+        if self.video is not None:
+            self.video.show()
         self._restart_sound(self.position())
         self.media.play()
         self.timer.start()

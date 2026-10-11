@@ -128,9 +128,17 @@ def test_one_button_dub_with_preset_defaults(tmp_path, clip):
     assert out.exists() and out.name == "clip.dub-ru.mkv", w.film.lbl_prepare.text()
     assert w.stack.currentIndex() == 0 and "clip.dub-ru.mkv" in w.film.lbl_prepare.text()
     assert w.film.btn_show.isVisibleTo(w.film) and w.film.btn_watch.isVisibleTo(w.film)
-    # Characters stay disabled with one voice; Lines is an optional review tab
-    assert not w.step_buttons[1].isEnabled() and "different voices" in w.step_buttons[1].toolTip().lower()
-    assert w.step_buttons[2].isEnabled()
+    # One voice can open Characters (the single voice and its likeness). Lines stays a review tab.
+    assert w.step_buttons[1].isEnabled() and w.step_buttons[2].isEnabled()
+    w.go(1)
+    assert w.stack.currentIndex() == 1 and w.chars.box_one.isVisibleTo(w)
+    w.chars.sld_one.setValue(80)
+    w.chars.sld_one.sliderReleased.emit()
+    assert w.project.settings["single_voice"]["actor_weight"] == 0.8
+    assert w.film.sld_likeness.value() == 80
+    from PySide6.QtWidgets import QScrollArea
+    assert isinstance(w.film._scroll, QScrollArea)
+    w.go(0)
     # options are remembered for the next film
     w.film.cmb_profanity.setCurrentIndex(1)
     w.film.cmb_format.setCurrentIndex(1)

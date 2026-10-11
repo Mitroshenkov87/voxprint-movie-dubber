@@ -19,7 +19,9 @@ CONTEXT_S = 0.5
 def chunk_batch_size(total_gb: float, budget_gb: Optional[float] = None) -> int:
     """How many separation chunks to run at once.  4 on a 16 GB card, 8 on a 24 GB card.
 
-    A tight VRAM budget (under 3 GB) halves that.  Cards below the 16 GB class take fewer."""
+    A tight VRAM budget (under 3 GB) halves that.  Cards below the 16 GB class take fewer.
+    This sizes RoFormer copies. TIGER-DnR is always one block: its forward indexes tracks, not items.
+    """
     if total_gb >= 20.0:
         n = 8
     elif total_gb >= 14.0:
@@ -31,6 +33,98 @@ def chunk_batch_size(total_gb: float, budget_gb: Optional[float] = None) -> int:
     if budget_gb is not None and budget_gb < 3.0:
         n = max(1, n // 2)
     return n
+
+
+#: TIGER-DnR ``forward`` returns dialogue, effects, music. A batch of 1 is squeezed to this length.
+N_TRACKS = 3
+
+
+def stems_are_per_item(dialog: object, effect: object, music: object, n_items: int) -> bool:
+    """True when each stem's leading axis is one row per mixture, not TIGER's track axis.
+
+    TIGER-DnR squeezes a batch of 1 into ``[ntrack, nch, T]`` (``ntrack`` is 3) and ``forward``
+    indexes that axis. A stack of N mixtures still comes back track-major, so ``stem[i]`` reads
+    a track: N greater than 3 raises IndexError, and N of 3 or less silently swaps stems.
+    A real batch has leading size ``n_items``. When ``n_items`` is 3 that shape is also the
+    track axis, so a leading 3 is not treated as a batch.
+
+    Args:
+        dialog: Dialogue stem, array or tensor.
+        effect: Effects stem.
+        music: Music stem.
+        n_items: How many mixtures were stacked.
+
+    Returns:
+        True when it is safe to index each stem with the mixture index.
+    """
+    if n_items <= 1:
+        return True
+    if n_items == N_TRACKS:
+        return False
+    for stem in (dialog, effect, music):
+        shape = getattr(stem, "shape", None)
+        if shape is None or len(shape) < 1 or int(shape[0]) != n_items:
+            return False
+        if int(shape[0]) == N_TRACKS:
+            return False
+    return True
+
+
+def _as_numpy(stem: object) -> np.ndarray:
+    """A tensor or array as float32. Tensors are detached and moved to CPU first."""
+    if hasattr(stem, "detach"):
+        stem = stem.detach()
+    if hasattr(stem, "float"):
+        stem = stem.float()
+    if hasattr(stem, "cpu"):
+        stem = stem.cpu()
+    if hasattr(stem, "numpy"):
+        return np.asarray(stem.numpy(), dtype=np.float32)
+    return np.asarray(stem, dtype=np.float32)
+
+
+def separate_with_forward(forward: Callable, segs: Sequence[np.ndarray]) -> List[Tuple[np.ndarray, np.ndarray]]:
+    """Separate each segment. Stack only when the model returns one row per item.
+
+    A stacked call is kept only when :func:`stems_are_per_item` accepts it. Anything else,
+    including an exception from the model, is separated one segment at a time. TIGER-DnR
+    never passes the check, so it cannot swap stems or raise on the track axis.
+
+    Args:
+        forward: ``forward(batch) -> (dialog, effect, music)``. A single segment is ``[1, 1, T]``.
+        segs: One waveform per mixture.
+
+    Returns:
+        ``(speech, background)`` per segment, background being effects plus music.
+    """
+    prepared = [np.asarray(seg, np.float32).reshape(-1) for seg in segs]
+    if not prepared:
+        return []
+
+    def one(seg: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        dialog, effect, music = forward(seg[None, None, :])
+        speech = _as_numpy(dialog).reshape(-1)[: len(seg)]
+        back = (_as_numpy(effect) + _as_numpy(music)).reshape(-1)[: len(seg)]
+        return speech, back
+
+    if len(prepared) == 1:
+        return [one(prepared[0])]
+    width = max(len(seg) for seg in prepared)
+    stacked = np.zeros((len(prepared), 1, width), np.float32)
+    for i, seg in enumerate(prepared):
+        stacked[i, 0, : len(seg)] = seg
+    try:
+        dialog, effect, music = forward(stacked)
+    except Exception:  # noqa: BLE001 - a model that rejects a batch falls back to one chunk
+        return [one(seg) for seg in prepared]
+    if not stems_are_per_item(dialog, effect, music, len(prepared)):
+        return [one(seg) for seg in prepared]
+    outs: List[Tuple[np.ndarray, np.ndarray]] = []
+    for i, seg in enumerate(prepared):
+        speech = _as_numpy(dialog[i]).reshape(-1)[: len(seg)]
+        back = (_as_numpy(effect[i]) + _as_numpy(music[i])).reshape(-1)[: len(seg)]
+        outs.append((speech, back))
+    return outs
 
 
 def safe_compute_dtype(cuda: bool, bf16: bool) -> str:
@@ -129,7 +223,12 @@ def separate_windows(mix44: Path, windows: Sequence[Window], out_speech: Path, o
 
 
 def build_tiger(device: str, allow_download: bool, log: Callable[[str], None]):
-    """Construct TIGER-DnR (not cached).  Half precision stays inside the network; waveforms come back as fp32."""
+    """Construct TIGER-DnR (not cached).  Half precision stays inside the network; waveforms come back as fp32.
+
+    One block at a time. ``wav_chunk_inference`` squeezes a batch of 1 into ``[ntrack, nch, T]``
+    and ``forward`` indexes tracks. A stack of N blocks is still track-major, so a batched call
+    swaps stems or raises. There is no ``separate_batch`` on the returned function.
+    """
     import contextlib
 
     import torch
@@ -167,33 +266,9 @@ def build_tiger(device: str, allow_download: bool, log: Callable[[str], None]):
             dialog, back = audio.resample(dialog, 44100, src_sr), audio.resample(back, 44100, src_sr)
         return dialog, back
 
-    def separate_batch(segs: Sequence[np.ndarray], sr: int):
-        prepared = []
-        for seg in segs:
-            if sr != 44100:
-                seg = audio.resample(seg, sr, 44100)
-            prepared.append(np.asarray(seg, np.float32).reshape(-1))
-        width = max(len(s) for s in prepared)
-        stacked = np.zeros((len(prepared), 1, width), np.float32)
-        for i, seg in enumerate(prepared):
-            stacked[i, 0, : len(seg)] = seg
-        try:
-            d, e, m = _forward(torch.from_numpy(stacked).to(device))
-        except Exception:  # noqa: BLE001 - a model that rejects a batch falls back to one chunk
-            return [_one(seg, 44100) for seg in prepared]
-        outs = []
-        for i, seg in enumerate(prepared):
-            dialog = d[i].float().cpu().numpy().reshape(-1)[: len(seg)]
-            back = (e[i] + m[i]).float().cpu().numpy().reshape(-1)[: len(seg)]
-            if sr != 44100:
-                dialog, back = audio.resample(dialog, 44100, sr), audio.resample(back, 44100, sr)
-            outs.append((dialog, back))
-        return outs
-
     def run(seg: np.ndarray, sr: int):
         return _one(seg, sr)
 
-    run.separate_batch = separate_batch  # type: ignore[attr-defined]
     run.dtype_name = dtype  # type: ignore[attr-defined]
     return run
 

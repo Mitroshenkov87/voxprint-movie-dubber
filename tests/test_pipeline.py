@@ -353,7 +353,11 @@ def test_backend_order(monkeypatch):
     # auto, CUDA, no adapters: Graphs first (clip 3: 67.5 s vs 208.9 s batched). standard/sdpa only when asked, else last fallback.
     assert tts_mod.QwenTTS.candidates(True) == [("graphs", "sdpa"), ("standard", "flash_attention_2"), ("standard", "sdpa")]
     assert tts_mod.QwenTTS.candidates(True, "standard/sdpa")[0] == ("standard", "sdpa")
+    monkeypatch.setattr(tts_mod, "graphs_accepts_prompt", lambda: False)
     assert ("graphs", "sdpa") not in tts_mod.QwenTTS.candidates(True, need_adapters=True)
+    assert "blend" in tts_mod.graphs_skip_reason(True, True).lower()
+    monkeypatch.setattr(tts_mod, "graphs_accepts_prompt", lambda: True)
+    assert tts_mod.QwenTTS.candidates(True, need_adapters=True)[0] == ("graphs", "sdpa")
     assert tts_mod.QwenTTS.candidates(False) == [("standard", "sdpa")]
 
 

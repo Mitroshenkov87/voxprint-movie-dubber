@@ -6,14 +6,18 @@ runs it without a window.
 """
 from __future__ import annotations
 
+import copy
 import json
+import logging
 import shutil
 import threading
 import time
+import traceback
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from dubber.core import audio, mixing
+from dubber.core import audio, mixing, subtitles
 from dubber.core.project import CHUNK_S, Line, Project, read_json, write_json
 from dubber.core.watch import Eta
 from dubber.pipeline import stages as S
@@ -45,10 +49,31 @@ class Callbacks:
 
 @dataclass
 class RunResult:
-    """Outcome of one pipeline run. ``message`` is the output path, ``cancelled``, or the failing stage and its error; ``stages`` maps each key to ``cached``, ``done``, or ``failed``."""
+    """Outcome of one pipeline run.
+
+    ``message`` is the output path, ``cancelled``, or the failing stage and its short error.
+    ``stages`` maps each key to ``cached``, ``done``, or ``failed``. ``debug`` is the traceback
+    for a failure and stays empty on success. The user-facing message does not include it.
+    """
     ok: bool
     message: str = ""
     stages: Dict[str, str] = field(default_factory=dict)
+    debug: str = ""
+
+
+def stage_error(summary: str, debug: str = "") -> RuntimeError:
+    """A stage failure. ``summary`` is shown to the user; ``debug`` keeps the traceback.
+
+    Args:
+        summary: Short error, usually ``TypeName: message``.
+        debug: Full traceback from the worker, or empty when the caller will format one.
+
+    Returns:
+        RuntimeError with a ``debug`` attribute.
+    """
+    err = RuntimeError(summary)
+    err.debug = debug  # type: ignore[attr-defined]
+    return err
 
 
 class Runner:
@@ -66,9 +91,17 @@ class Runner:
         self._gpu_cm: Any = None
         self._t_start = 0.0
 
+    def _seed_preview(self) -> None:
+        """When this project is a fragment of a finished film, reuse that film's stage files."""
+        raw = self.p.settings.get("preview_of")
+        if not raw:
+            return
+        reuse_preview(Project(Path(str(raw))), self.p, self.cfg)
+
     # ------------------------------------------------------------------ public
     def run(self, until_stage: str = "mux", from_stage: Optional[str] = None) -> RunResult:
         """Run every stage from probe through ``until_stage``, re-running ``from_stage`` even when its cache is fresh, and release the GPU lock if this run held it."""
+        self._seed_preview()
         keys = S.ORDER[: S.ORDER.index(until_stage) + 1]
         total_w = sum(WEIGHTS[k] for k in keys)
         prev = ""
@@ -103,9 +136,11 @@ class Runner:
                 return RunResult(False, "cancelled", res.stages)
             except Exception as exc:  # noqa: BLE001 - one stage failing ends the run with a clear message
                 msg = f"{type(exc).__name__}: {exc}"
+                debug = str(getattr(exc, "debug", "") or "") or traceback.format_exc()
+                logging.getLogger("dubber.pipeline").error("stage %s failed: %s\n%s", key, msg, debug)
                 self.cb.stage(key, "failed", msg)
                 res.stages[key] = "failed"
-                return RunResult(False, f"{key}: {msg}", res.stages)
+                return RunResult(False, f"{key}: {msg}", res.stages, debug)
             if self._isolated(key):
                 self.p = Project(self.p.folder)               # the worker saved its results
             self.p.mark_done(key, inputs, time.time() - t0, summary=summary)
@@ -278,11 +313,11 @@ class Runner:
         if r.get("status") == "OK":
             return str(r.get("summary", ""))
         if out.timed_out:
-            raise RuntimeError(f"timed out after {out.seconds:.0f} s")
+            raise stage_error(f"timed out after {out.seconds:.0f} s", str(r.get("traceback") or ""))
         from dubber.diag.procs import describe_exit_code
 
-        raise RuntimeError(r.get("summary") or f"worker ended without a result ({describe_exit_code(out.returncode)}): "
-                           + out.stderr_tail[-400:])
+        raise stage_error(r.get("summary") or f"worker ended without a result ({describe_exit_code(out.returncode)}): "
+                          + out.stderr_tail[-400:], str(r.get("traceback") or ""))
 
     # ------------------------------------------------------------------ Watch mode
     def _on_until(self, seconds: float) -> None:
@@ -326,6 +361,125 @@ def block_lines(p: Project) -> List[Line]:
 
 
 # ---------------------------------------------------------------------------------------------- preview fragment
+_REUSE_STOP = ("tts", "mix", "mux")
+
+
+def _seed_span(start: float, end: float, t0: float, t1: float) -> Optional[Tuple[float, float]]:
+    """Clip ``[start, end)`` to ``[t0, t1)`` and shift it so ``t0`` is zero. None when the ranges miss."""
+    a, b = max(float(start), t0), min(float(end), t1)
+    if b <= a:
+        return None
+    return a - t0, b - t0
+
+
+def reuse_preview(parent: Project, sub: Project, cfg: Dict[str, Any]) -> None:
+    """Copy a finished film's stage outputs into a preview and mark that prefix fresh.
+
+    The preview range is already on ``sub``. Audio, windows, subtitles, recognition and the
+    script are sliced to that range and shifted to start at zero. Voice references are copied
+    as they are (they are short clips, not a timeline). TTS, mix and mux stay undone so only
+    the fragment is synthesised. A second run of the same preview leaves edits in place.
+
+    Args:
+        parent: The full film, with stages already marked done.
+        sub: The preview project. ``settings["range"]`` is ``[start, end]``.
+        cfg: The engine config the preview run will use, so the cache hashes match.
+    """
+    if sub.settings.get("preview_seeded"):
+        return
+    rng = sub.settings.get("range") or [0.0, 0.0]
+    t0, t1 = float(rng[0]), float(rng[1])
+    if t1 <= t0:
+        return
+    prefix: List[str] = []
+    for key in S.ORDER:
+        if key in _REUSE_STOP:
+            break
+        if not (parent.stages.get(key) or {}).get("done"):
+            break
+        prefix.append(key)
+    if not prefix:
+        return
+    sub.settings["duration"] = round(t1 - t0, 3)
+    if "extract" in prefix:
+        for name in ("mix16.wav", "mix44.wav", "mix48s.wav"):
+            src = parent.folder / "audio" / name
+            if src.is_file():
+                data, sr = audio.read_range(src, t0, t1, mono=False)
+                audio.write(sub.path("audio", name), data, sr)
+    if "subtitles" in prefix:
+        subs_dir = parent.folder / "subs"
+        if subs_dir.is_dir():
+            for src in sorted(subs_dir.iterdir()):
+                if not src.is_file():
+                    continue
+                try:
+                    cues = subtitles.load_file(src)
+                except (OSError, ValueError):
+                    continue
+                kept = []
+                for cue in cues:
+                    span = _seed_span(cue.start, cue.end, t0, t1)
+                    if span is not None:
+                        kept.append(subtitles.Cue(span[0], span[1], cue.text))
+                subtitles.write_srt(kept, sub.path("subs", src.name))
+    if "vad" in prefix:
+        windows = []
+        for raw in read_json(parent.folder / "analysis" / "windows.json", []) or []:
+            span = _seed_span(float(raw[0]), float(raw[1]), t0, t1)
+            if span is not None:
+                windows.append([span[0], span[1]])
+        write_json(sub.path("analysis", "windows.json"), windows)
+    if "separation" in prefix:
+        for name in ("speech.wav", "background.wav", "speech16.wav"):
+            src = parent.folder / "stems" / name
+            if src.is_file():
+                data, sr = audio.read_range(src, t0, t1, mono=False)
+                audio.write(sub.path("stems", name), data, sr)
+    if "asr" in prefix:
+        asr = read_json(parent.folder / "analysis" / "asr.json", None)
+        if isinstance(asr, dict):
+            segs = []
+            for seg in asr.get("segments") or []:
+                if not isinstance(seg, dict) or "start" not in seg or "end" not in seg:
+                    continue
+                span = _seed_span(float(seg["start"]), float(seg["end"]), t0, t1)
+                if span is None:
+                    continue
+                item = dict(seg)
+                item["start"], item["end"] = span
+                segs.append(item)
+            shifted = dict(asr)
+            shifted["segments"] = segs
+            write_json(sub.path("analysis", "asr.json"), shifted)
+    if "script" in prefix:
+        lines: List[Line] = []
+        for ln in parent.lines:
+            span = _seed_span(ln.start, ln.end, t0, t1)
+            if span is None:
+                continue
+            copied = copy.deepcopy(ln)
+            copied.start, copied.end = span
+            copied.audio, copied.audio_s = "", 0.0
+            copied.place_start, copied.stretch, copied.fit, copied.spoken = -1.0, 1.0, "", ""
+            lines.append(copied)
+        sub.lines = lines
+        sub.speakers = [copy.deepcopy(sp) for sp in parent.speakers]
+    if "voices" in prefix:
+        src_voices = parent.folder / "voices"
+        if src_voices.is_dir():
+            shutil.copytree(src_voices, sub.folder / "voices", dirs_exist_ok=True)
+    sub.settings["preview_seeded"] = True
+    sub.save()
+    prev = ""
+    for key in S.ORDER:
+        inputs = S.inputs_for(key, sub, cfg, prev)
+        prev = inputs
+        if key not in prefix:
+            continue
+        sub.mark_done(key, inputs, 0.0, summary="reused from the full film")
+
+
 def best_preview_start(p: Project, length: float = 60.0) -> float:
     """Start of the minute with the most dialogue (from the windows, if known), else 10 % into the film."""
     total = float(p.settings.get("duration") or (p.settings.get("media") or {}).get("duration") or 0)
@@ -351,6 +505,7 @@ def preview_project(p: Project, start: float, length: float = 60.0) -> Project:
         sub = Project(folder)
     sub.settings.update(keep)
     sub.settings["range"] = [round(start, 3), round(start + length, 3)]
+    sub.settings["preview_of"] = str(p.folder.resolve())
     if p.settings.get("multi_voice") and p.speakers:
         sub.settings["voice_hint"] = {s.id: {"kind": s.voice.kind, "id": s.voice.id} for s in p.speakers}
     sub.save()
