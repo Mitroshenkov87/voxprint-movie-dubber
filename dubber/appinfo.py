@@ -27,7 +27,7 @@ from typing import Any
 from voxprint_common.buildinfo import BuildInfo, load
 
 APP_NAME = "VoxprintMovieDubber"            # technical name: folders, exe, logs - never localised
-APP_DISPLAY_NAME = "Voxprint AI Movie Dubber"
+APP_DISPLAY_NAME = "VOXPrint AI Movie Dubber"
 APP_VERSION = "1.0.0-rc"
 BUILD_FILE = "BUILD.json"
 DEV_BUILD = "dev"
@@ -120,7 +120,7 @@ def version_label() -> str:
 
 
 def release_title() -> str:
-    """GitHub release title, e.g. ``Voxprint AI Movie Dubber 1.0.0 RC · build 1001 "Bochan"``."""
+    """GitHub release title, e.g. ``VOXPrint AI Movie Dubber 1.0.0 RC · build 1001 "Bochan"``."""
     return f"{APP_DISPLAY_NAME} {version_label()}"
 
 

@@ -166,8 +166,8 @@ def save_to_library(dirpath: Path, name: str, consent_note: str, library_root: P
                                                   encoding="utf-8")
         info = {"schema": 3, "id": target.name, "name": name, "language": language, "base_model": rec.get("base_model", ""),
                 "adapter_scale": rec.get("adapter_scale", 0.5), "license": "personal use",
-                "description": f"Actor-like voice made by Voxprint AI Movie Dubber from a film speaker blended with '{rec.get('library_id', '')}'.",
-                "prepared_by": "Voxprint AI Movie Dubber", "commercial_use": False,
+                "description": f"Actor-like voice made by VOXPrint AI Movie Dubber from a film speaker blended with '{rec.get('library_id', '')}'.",
+                "prepared_by": "VOXPrint AI Movie Dubber", "commercial_use": False,
                 "consent": {"scope": "personal", "method": "user statement", "confirmed": True, "statement": consent_note.strip()}}
         (stage / "voice.json").write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
         stage.replace(target)

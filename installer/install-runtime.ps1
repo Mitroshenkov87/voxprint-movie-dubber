@@ -1,5 +1,5 @@
 ﻿<#
-  Voxprint AI Movie Dubber - runtime part of the installer (online and full).
+  VOXPrint AI Movie Dubber - runtime part of the installer (online and full).
   Installs (or reuses) the shared Python runtime and links it into the program folder.  Nothing is installed system-wide.
     -AppDir        installation folder (gets the junction <AppDir>\runtime -> <runtime>\env and the uv tool)
     -Requirements  requirements.txt (everything except torch)
@@ -81,8 +81,8 @@ function RuntimeKey($lockObj, [string]$flavor) {
 }
 
 # The setup wizard has no language catalog. The dialog is this English text; the same facts are also logged in Russian.
-$InstallerLead = "Voxprint AI Movie Dubber needs an NVIDIA GeForce RTX 40-series graphics card or newer (Ada Lovelace or later, compute capability 8.9 or higher) and an NVIDIA driver from the 600 branch or newer."
-$InstallerLeadRu = "Для Voxprint AI Movie Dubber нужна видеокарта NVIDIA GeForce RTX 40 или новее (Ada Lovelace и новее, вычислительная способность 8.9 или выше) и драйвер NVIDIA ветки 600 или новее."
+$InstallerLead = "VOXPrint AI Movie Dubber needs an NVIDIA GeForce RTX 40-series graphics card or newer (Ada Lovelace or later, compute capability 8.9 or higher) and an NVIDIA driver from the 600 branch or newer."
+$InstallerLeadRu = "Для VOXPrint AI Movie Dubber нужна видеокарта NVIDIA GeForce RTX 40 или новее (Ada Lovelace и новее, вычислительная способность 8.9 или выше) и драйвер NVIDIA ветки 600 или новее."
 
 function DriverCuda {
     # "CUDA Version: 12.8" / "CUDA UMD Version: 13.4" from the nvidia-smi header = the newest CUDA the driver supports; $null without an NVIDIA GPU
@@ -322,7 +322,7 @@ try {
     $envDir = Join-Path $rt "env"
     $py = Join-Path $envDir "Scripts\python.exe"
     $check = @("-c", "import torch, transformers, PySide6, faster_qwen3_tts, faster_whisper; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())")
-    Say "[1/5] Voxprint AI Movie Dubber: runtime $rtName (Python $($lockObj.python), torch $tv+$flavor) -> $rt"
+    Say "[1/5] VOXPrint AI Movie Dubber: runtime $rtName (Python $($lockObj.python), torch $tv+$flavor) -> $rt"
     # An older runtime-<12 hex digits> folder moves into this versioned directory once. <home>\runtime is the Audiobook Builder's and is not touched.
     if (-not (Test-Path (Join-Path $rt "runtime-key.json"))) {
         foreach ($old in (Get-ChildItem -LiteralPath $vxHome -Directory -Filter "runtime-*" -ErrorAction SilentlyContinue)) {

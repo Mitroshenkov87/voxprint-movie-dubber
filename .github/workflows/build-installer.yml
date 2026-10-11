@@ -1,4 +1,4 @@
-# Builds both installers of Voxprint AI Movie Dubber on free GitHub-hosted Windows runners (no secrets are used):
+# Builds both installers of VOXPrint AI Movie Dubber on free GitHub-hosted Windows runners (no secrets are used):
 #   online: the small installer that downloads Python, PyTorch and the dependencies during setup;
 #   full:   the offline installer that carries them (installer/make-full-payload.ps1), split into parts below 2 GB.
 # Each one is installed silently, the installed program is checked and tested, then uninstalled; the installers are kept
@@ -41,6 +41,8 @@ jobs:
       QT_QPA_PLATFORM: offscreen
       VOXPRINT_SKIP_GPU_GATE: "1"
       VOXPRINT_SKIP_MODEL_FETCH: "1"
+      # Default install directory. Do not pass /DIR: the check must see the suite path.
+      VMD_APP: 'C:\Program Files\VOXPrint AI Suite\Movie Dubber'
     steps:
       - uses: actions/checkout@v7
 
@@ -140,7 +142,23 @@ jobs:
             $setup = (Resolve-Path installer\Output\VoxprintMovieDubber-Setup.exe).Path
             $ci = "/TORCH=cpu"
           }
-          $p = Start-Process $setup -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/DIR=C:\vmd",$ci,"/SKIPMODELS=1","/LOG=C:\vmd-install.log" -Wait -PassThru
+          # A previous install lived in Program Files\VoxprintMovieDubber, with shortcuts in the Start menu group Voxprint.
+          # Setup must remove that program folder and those shortcuts, and leave user data under LOCALAPPDATA\Voxprint.
+          $old = Join-Path $env:ProgramFiles "VoxprintMovieDubber"
+          New-Item -ItemType Directory -Force $old | Out-Null
+          Set-Content -Path (Join-Path $old "old-marker.txt") -Value "old-install"
+          $oldMenu = Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs\Voxprint"
+          New-Item -ItemType Directory -Force $oldMenu | Out-Null
+          foreach ($name in @("Voxprint AI Movie Dubber.lnk", "Voxprint AI Movie Dubber - diagnostics.lnk", "Uninstall Voxprint AI Movie Dubber.lnk")) {
+            Set-Content -Path (Join-Path $oldMenu $name) -Value "old"
+          }
+          $keep = Join-Path $env:LOCALAPPDATA "Voxprint\state"
+          New-Item -ItemType Directory -Force $keep | Out-Null
+          Set-Content -Path (Join-Path $keep "keep.txt") -Value "keep-user-data"
+          # A dev build wrote this key. Setup must delete it.
+          New-Item -Path "HKLM:\SOFTWARE\VOXPrint AI Suite\Apps\movie-dubber" -Force | Out-Null
+          New-ItemProperty -Path "HKLM:\SOFTWARE\VOXPrint AI Suite\Apps\movie-dubber" -Name "InstallDir" -Value "C:\old" -PropertyType String -Force | Out-Null
+          $p = Start-Process $setup -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART",$ci,"/SKIPMODELS=1","/LOG=C:\vmd-install.log" -Wait -PassThru
           "install exit code: $($p.ExitCode)"
           if ($p.ExitCode -ne 0) {
             if (Test-Path C:\vmd-install.log) { Get-Content C:\vmd-install.log -Tail 80 }
@@ -152,16 +170,24 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          foreach ($f in "main.py", "runtime\Scripts\pythonw.exe", "runtime\Scripts\python.exe", "unins000.exe", "assets\voxprint-dubber.ico", "dubber\appinfo.py") {
-            if (-not (Test-Path "C:\vmd\$f")) { throw "missing after install: $f" }
+          $app = $env:VMD_APP
+          if (-not $app) { throw "VMD_APP is not set" }
+          foreach ($f in "main.py", "voxprint-movie-dubber.exe", "voxprint-movie-dubber-cli.exe", "runtime\Scripts\pythonw.exe", "runtime\Scripts\python.exe", "unins000.exe", "assets\voxprint-dubber.ico", "dubber\appinfo.py") {
+            if (-not (Test-Path "$app\$f")) { throw "missing after install: $f" }
           }
-          $menu = Get-ChildItem "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Voxprint" -Filter "*.lnk" | Where-Object { $_.Name -like "*Voxprint AI Movie Dubber*" }
+          if (Test-Path (Join-Path $env:ProgramFiles "VoxprintMovieDubber")) { throw "the old Program Files\VoxprintMovieDubber folder is still there" }
+          $oldMenu = Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs\Voxprint"
+          if (Test-Path $oldMenu) { throw "the old Start menu group Voxprint is still there" }
+          $keep = Join-Path $env:LOCALAPPDATA "Voxprint\state\keep.txt"
+          if ((Get-Content $keep -Raw).Trim() -ne "keep-user-data") { throw "user data under LOCALAPPDATA\Voxprint was not kept" }
+          $menuDir = Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs\VOXPrint AI Suite"
+          $menu = Get-ChildItem $menuDir -Filter "*.lnk" | Where-Object { $_.Name -like "*VOXPrint AI Movie Dubber*" }
           $menu | ForEach-Object { "start menu: " + $_.FullName }
-          if (-not ($menu | Where-Object { $_.Name -eq "Voxprint AI Movie Dubber.lnk" })) { throw "no Start menu shortcut in the shared Voxprint folder" }
-          if (-not ($menu | Where-Object { $_.Name -eq "Voxprint AI Movie Dubber - diagnostics.lnk" })) { throw "no diagnostics shortcut" }
+          if (-not ($menu | Where-Object { $_.Name -eq "VOXPrint AI Movie Dubber.lnk" })) { throw "no Start menu shortcut in VOXPrint AI Suite" }
+          if ($menu | Where-Object { $_.Name -eq "VOXPrint AI Movie Dubber - diagnostics.lnk" }) { throw "the diagnostics Start menu shortcut must not be installed" }
           # the runtime: a junction to LOCALAPPDATA\Voxprint\shared\runtimes\py3.14-torch2.11-<flavor>
-          $link = Get-Item C:\vmd\runtime -Force
-          if (-not ($link.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw "C:\vmd\runtime is not a link to the shared runtime" }
+          $link = Get-Item "$app\runtime" -Force
+          if (-not ($link.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw "$app\runtime is not a link to the shared runtime" }
           $flavor = if ("${{ matrix.kind }}" -eq "full") { "cu130" } else { "cpu" }
           $shared = "$env:LOCALAPPDATA\Voxprint\shared"
           $rt = Get-Item "$shared\runtimes\py3.14-torch2.11-$flavor"
@@ -185,10 +211,10 @@ jobs:
           }
           if ($manifest.components.models.kind -ne "model") { throw "models component kind is $($manifest.components.models.kind)" }
           "manifest components: " + (($manifest.components.PSObject.Properties.Name) -join ", ")
-          & C:\vmd\runtime\Scripts\python.exe -c "import torch; print('torch', torch.__version__); assert torch.__version__.startswith('2.11.0')"
+          & "$app\runtime\Scripts\python.exe" -c "import torch; print('torch', torch.__version__); assert torch.__version__.startswith('2.11.0')"
           if ($LASTEXITCODE -ne 0) { throw "the runtime does not have the pinned PyTorch 2.11.0" }
           if ("${{ matrix.kind }}" -eq "full") {
-            & C:\vmd\runtime\Scripts\python.exe -c "import torch; print('torch', torch.__version__); assert torch.__version__.endswith('+cu130')"
+            & "$app\runtime\Scripts\python.exe" -c "import torch; print('torch', torch.__version__); assert torch.__version__.endswith('+cu130')"
             if ($LASTEXITCODE -ne 0) { throw "the full installer did not install the cu130 build" }
             if (Select-String -Path "$env:TEMP\VoxprintMovieDubber-setup.log" -Pattern "Downloading uv|Downloading ffmpeg" -Quiet) { throw "the full installer downloaded components" }
           }
@@ -196,18 +222,45 @@ jobs:
           if (-not (Test-Path $suite)) { throw "suite.json was not written" }
           "suite.json: " + (Get-Content $suite -Raw)
           $sh = New-Object -ComObject WScript.Shell
-          $lnk = $sh.CreateShortcut(($menu | Where-Object { $_.Name -eq "Voxprint AI Movie Dubber.lnk" }).FullName)
+          $lnk = $sh.CreateShortcut(($menu | Where-Object { $_.Name -eq "VOXPrint AI Movie Dubber.lnk" }).FullName)
           "shortcut target: $($lnk.TargetPath) $($lnk.Arguments)"
           if (-not (Test-Path $lnk.TargetPath)) { throw "shortcut target does not exist" }
-          $reg = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*","HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like "Voxprint AI Movie Dubber*" }
+          if ($lnk.TargetPath -ne "$app\voxprint-movie-dubber.exe") { throw "shortcut target is $($lnk.TargetPath), expected $app\voxprint-movie-dubber.exe" }
+          $reg = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*","HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like "VOXPrint AI Movie Dubber*" }
           if (-not $reg) { throw "no Apps and features entry" }
           "apps and features: $($reg.DisplayName) $($reg.DisplayVersion)"
-          if (-not (Test-Path C:\vmd\build_info.json)) { throw "build_info.json was not installed" }
+          if (Test-Path "HKLM:\SOFTWARE\VOXPrint AI Suite\Apps\movie-dubber") { throw "the old suite key was not removed" }
+          $suiteKey = "HKLM:\SOFTWARE\VOXPrint\MovieDubber"
+          $suiteReg = Get-ItemProperty $suiteKey
+          "suite registry: InstallPath=$($suiteReg.InstallPath) Exe=$($suiteReg.Exe) CliExe=$($suiteReg.CliExe) Version=$($suiteReg.Version) Build=$($suiteReg.Build) IpcName=[$($suiteReg.IpcName)] ProtocolVersion=$($suiteReg.ProtocolVersion)"
+          if ($suiteReg.InstallPath.TrimEnd('\') -ne $app) { throw "InstallPath is $($suiteReg.InstallPath)" }
+          if ($suiteReg.Exe -ne "$app\voxprint-movie-dubber.exe") { throw "Exe is $($suiteReg.Exe)" }
+          if ($suiteReg.CliExe -ne "$app\voxprint-movie-dubber-cli.exe") { throw "CliExe is $($suiteReg.CliExe)" }
+          $ver = (Select-String -Path dubber\appinfo.py -Pattern '^APP_VERSION\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
+          if ($suiteReg.Version -ne $ver) { throw "Version is $($suiteReg.Version), expected $ver" }
+          $stamp = Get-Content "$app\build_info.json" -Raw | ConvertFrom-Json
+          if ([string]$suiteReg.Build -ne [string]$stamp.build) { throw "Build is $($suiteReg.Build), expected $($stamp.build)" }
+          if (-not ($suiteReg.PSObject.Properties.Name -contains "IpcName")) { throw "IpcName is missing" }
+          if ($suiteReg.IpcName -ne "") { throw "IpcName is [$($suiteReg.IpcName)]" }
+          if ([int]$suiteReg.ProtocolVersion -ne 0) { throw "ProtocolVersion is $($suiteReg.ProtocolVersion)" }
+          foreach ($pair in @(
+            @{ Name = "voxprint-movie-dubber.exe"; File = "$app\voxprint-movie-dubber.exe" },
+            @{ Name = "voxprint-movie-dubber-cli.exe"; File = "$app\voxprint-movie-dubber-cli.exe" }
+          )) {
+            $pathKey = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\$($pair.Name)"
+            $item = Get-Item -LiteralPath $pathKey
+            $target = $item.GetValue("")
+            $dir = $item.GetValue("Path")
+            "app path $($pair.Name): $target Path=$dir"
+            if ($target -ne $pair.File) { throw "App Paths default for $($pair.Name) is $target" }
+            if ($dir.TrimEnd('\') -ne $app) { throw "App Paths Path for $($pair.Name) is $dir" }
+          }
+          if (-not (Test-Path "$app\build_info.json")) { throw "build_info.json was not installed" }
           $users = "$env:LOCALAPPDATA\Voxprint\models\.users.json"
           if (-not (Test-Path $users)) { throw "the shared models users file was not created: $users" }
           "models users: " + (Get-Content $users -Raw)
           if (-not ((Get-Content $users -Raw | ConvertFrom-Json).'movie-dubber')) { throw "movie-dubber is not registered in $users" }
-          "installed size: {0:N0} MB" -f ((Get-ChildItem C:\vmd -Recurse -File | Measure-Object Length -Sum).Sum / 1MB)
+          "installed size: {0:N0} MB" -f ((Get-ChildItem $app -Recurse -File | Measure-Object Length -Sum).Sum / 1MB)
 
       - name: Run the installed program (version, window self-test, test suite)
         shell: pwsh
@@ -216,12 +269,14 @@ jobs:
           $env:VOXPRINT_DUBBER_HOME = "C:\vmd-data"
           $env:VOXPRINT_DESKTOP = "C:\vmd-desktop"
           New-Item -ItemType Directory -Force C:\vmd-desktop | Out-Null
-          $py = "C:\vmd\runtime\Scripts\python.exe"
-          & $py C:\vmd\main.py --version; if ($LASTEXITCODE -ne 0) { throw "--version failed" }
+          $app = $env:VMD_APP
+          $py = "$app\runtime\Scripts\python.exe"
+          & "$app\voxprint-movie-dubber-cli.exe" --version; if ($LASTEXITCODE -ne 0) { throw "CLI launcher --version failed" }
+          & $py "$app\main.py" --version; if ($LASTEXITCODE -ne 0) { throw "--version failed" }
           & $py -c "import PySide6, os, glob; d = os.path.dirname(PySide6.__file__); print('Qt FFmpeg:', [os.path.basename(f) for f in glob.glob(os.path.join(d, 'av*.dll'))]); assert glob.glob(os.path.join(d, 'plugins', 'multimedia', 'ffmpegmediaplugin.dll'))"
           if ($LASTEXITCODE -ne 0) { throw "Qt Multimedia FFmpeg backend missing" }
-          & $py C:\vmd\main.py --selftest; if ($LASTEXITCODE -ne 0) { throw "window self-test failed" }
-          & C:\vmd\tools\uv\uv.exe pip install --python $py pytest; if ($LASTEXITCODE -ne 0) { throw "pytest install failed" }
+          & $py "$app\main.py" --selftest; if ($LASTEXITCODE -ne 0) { throw "window self-test failed" }
+          & "$app\tools\uv\uv.exe" pip install --python $py pytest; if ($LASTEXITCODE -ne 0) { throw "pytest install failed" }
           & $py -m pytest tests -p no:cacheprovider; if ($LASTEXITCODE -ne 0) { throw "tests failed" }
 
       - name: Download a small model with the installer's own command
@@ -229,7 +284,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $env:VOXPRINT_DUBBER_HOME = "C:\vmd-data"
-          & C:\vmd\runtime\Scripts\python.exe C:\vmd\main.py --fetch-models --models sep
+          & "$env:VMD_APP\runtime\Scripts\python.exe" "$env:VMD_APP\main.py" --fetch-models --models sep
           if ($LASTEXITCODE -ne 0) { throw "model download failed" }
 
       - name: Diagnostics on the runner (CPU, short run); the report is kept as an artifact
@@ -239,24 +294,34 @@ jobs:
           New-Item -ItemType Directory -Force ci-report | Out-Null
           $env:VOXPRINT_DESKTOP = "$PWD\ci-report"
           $env:VOXPRINT_DUBBER_HOME = "C:\vmd-data"
-          & C:\vmd\runtime\Scripts\python.exe C:\vmd\main.py --diagnose-cli --quick --asr-repo Systran/faster-whisper-tiny
+          & "$env:VMD_APP\runtime\Scripts\python.exe" "$env:VMD_APP\main.py" --diagnose-cli --quick --asr-repo Systran/faster-whisper-tiny
 
       - name: Uninstall (silent) and check that nothing is left
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          $app = $env:VMD_APP
           # no -Wait: the uninstaller starts a temporary copy of itself and Start-Process would wait for the whole tree
-          Start-Process C:\vmd\unins000.exe -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/LOG=C:\vmd-uninstall.log" | Out-Null
-          for ($i = 0; $i -lt 90 -and (Test-Path C:\vmd); $i++) { Start-Sleep 2 }
-          if (Test-Path C:\vmd) {
+          Start-Process "$app\unins000.exe" -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/LOG=C:\vmd-uninstall.log" | Out-Null
+          for ($i = 0; $i -lt 90 -and (Test-Path $app); $i++) { Start-Sleep 2 }
+          if (Test-Path $app) {
             if (Test-Path C:\vmd-uninstall.log) { Get-Content C:\vmd-uninstall.log -Tail 40 }
-            Get-ChildItem C:\vmd | Select-Object -First 20 | Format-Table Name
+            Get-ChildItem $app | Select-Object -First 20 | Format-Table Name
             throw "the installation folder is still there after the uninstall"
           }
-          $menu = Get-ChildItem "$env:ProgramData\Microsoft\Windows\Start Menu\Programs" -Recurse -Filter "*.lnk" -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*Voxprint AI Movie Dubber*" }
+          $menu = Get-ChildItem "$env:ProgramData\Microsoft\Windows\Start Menu\Programs" -Recurse -Filter "*.lnk" -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*VOXPrint AI Movie Dubber*" -or $_.Name -like "*Voxprint AI Movie Dubber*" }
           if ($menu) { throw "Start menu shortcuts are still there" }
-          $reg = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*","HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like "Voxprint AI Movie Dubber*" }
+          $reg = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*","HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like "VOXPrint AI Movie Dubber*" }
           if ($reg) { throw "the Apps and features entry is still there" }
+          if (Test-Path "HKLM:\SOFTWARE\VOXPrint AI Suite\Apps\movie-dubber") { throw "the old suite registry key is still there" }
+          if (Test-Path "HKLM:\SOFTWARE\VOXPrint\MovieDubber") { throw "the MovieDubber registry key is still there" }
+          foreach ($name in @("voxprint-movie-dubber.exe", "voxprint-movie-dubber-cli.exe")) {
+            if (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\$name") { throw "App Paths\$name is still there" }
+          }
+          if (Test-Path "HKLM:\SOFTWARE\VOXPrint") {
+            $left = @(Get-ChildItem "HKLM:\SOFTWARE\VOXPrint" -ErrorAction SilentlyContinue)
+            if ($left.Count -eq 0) { throw "Software\VOXPrint is empty and should have been removed" }
+          }
           # movie-dubber is the only app on this runner, so every component goes when its reference count hits zero.
           $flavor = if ("${{ matrix.kind }}" -eq "full") { "cu130" } else { "cpu" }
           $shared = "$env:LOCALAPPDATA\Voxprint\shared"
@@ -330,7 +395,7 @@ jobs:
           ls -l dist
           notes="docs/release-notes/$tag.md"
           if [ ! -f "$notes" ]; then
-            echo "Pre-release of Voxprint AI Movie Dubber. Windows 11 24H2 or newer, or x86_64 Linux; NVIDIA GeForce RTX 40-series or newer with a 600+ driver." > /tmp/notes.md
+            echo "Pre-release of VOXPrint AI Movie Dubber. Windows 11 24H2 or newer, or x86_64 Linux; NVIDIA GeForce RTX 40-series or newer with a 600+ driver." > /tmp/notes.md
           else
             cp "$notes" /tmp/notes.md
           fi

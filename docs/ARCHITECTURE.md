@@ -1,6 +1,6 @@
 # Architecture
 
-Voxprint AI Movie Dubber is a Windows desktop program. It adds one dubbed audio track to a movie and leaves the picture and the original audio untouched. The window is Qt (PySide6). The heavy steps run in worker processes so a model crash does not take the window with it. Everything in this overview is local: there is no account and no server.
+VOXPrint AI Movie Dubber is a Windows desktop program. It adds one dubbed audio track to a movie and leaves the picture and the original audio untouched. The window is Qt (PySide6). The heavy steps run in worker processes so a model crash does not take the window with it. Everything in this overview is local: there is no account and no server.
 
 ## Pipeline
 

@@ -101,7 +101,7 @@ def test_window_gate_shows_the_localized_dialog(monkeypatch):
 
     monkeypatch.setattr(app_main, "probe_torch", lambda: (False, None, ""))
     assert app_main._refuse_unsupported_gpu(_Box) is True
-    assert shown["title"] == "This PC cannot run Voxprint AI Movie Dubber"
+    assert shown["title"] == "This PC cannot run VOXPrint AI Movie Dubber"
     assert "PyTorch does not see a usable NVIDIA GPU on this PC." in shown["body"]
     assert "compute capability 8.9 or higher" in shown["body"]
     assert "The program will close." in shown["body"]
@@ -122,7 +122,7 @@ def test_window_gate_shows_the_localized_dialog(monkeypatch):
     i18n.set_language("ru", save=False)
     monkeypatch.setattr(app_main, "probe_torch", lambda: (False, None, ""))
     assert app_main._refuse_unsupported_gpu(_Box) is True
-    assert shown["title"] == "Этот компьютер не может запустить Voxprint AI Movie Dubber"
+    assert shown["title"] == "Этот компьютер не может запустить VOXPrint AI Movie Dubber"
     assert "PyTorch не видит подходящую видеокарту NVIDIA на этом компьютере." in shown["body"]
     assert "8.9" in shown["body"] and "600" in shown["body"]
 
@@ -137,11 +137,11 @@ def test_startup_dialog_is_localized():
     root = Path(__file__).resolve().parents[1] / "dubber" / "locales"
     en = json.loads((root / "en.json").read_text(encoding="utf-8"))
     ru = json.loads((root / "ru.json").read_text(encoding="utf-8"))
-    assert en["gpu.gate_title"] == "This PC cannot run Voxprint AI Movie Dubber"
+    assert en["gpu.gate_title"] == "This PC cannot run VOXPrint AI Movie Dubber"
     assert en["gpu.gate_no_cuda"] == "PyTorch does not see a usable NVIDIA GPU on this PC."
     assert "{name}" in en["gpu.gate_low_compute"] and "{capability}" in en["gpu.gate_low_compute"]
     assert "8.9" in en["gpu.gate_body"] and "{detail}" in en["gpu.gate_body"]
-    assert ru["gpu.gate_title"] == "Этот компьютер не может запустить Voxprint AI Movie Dubber"
+    assert ru["gpu.gate_title"] == "Этот компьютер не может запустить VOXPrint AI Movie Dubber"
     assert "8.9" in ru["gpu.gate_body"] and "600" in ru["gpu.gate_body"]
     assert ru["gpu.gate_no_cuda"]
     assert "{name}" in ru["gpu.gate_low_compute"]

@@ -10,7 +10,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
-from dubber.appinfo import _identity, resource_dir
+from dubber.appinfo import APP_DISPLAY_NAME, _identity, resource_dir
 from dubber.i18n import tr
 from dubber.ui.easter_egg import ClickBurst
 from voxprint_common.buildinfo import BuildInfo
@@ -63,8 +63,21 @@ class _EggOverlay(QWidget):
 
 
 def splash_build() -> BuildInfo:
-    """Build identity for the splash. The second line is :func:`voxprint_common.buildinfo.label`."""
-    return _identity()
+    """Build identity for the splash.
+
+    The painted name is :data:`dubber.appinfo.APP_DISPLAY_NAME`. voxprint-common maps the
+    suite id ``movie-dubber`` to an older spelling, and :func:`voxprint_common.ui.splash.display_name`
+    keeps a name it does not know. The second line is :func:`voxprint_common.buildinfo.label`.
+    """
+    info = _identity()
+    return BuildInfo(
+        app=APP_DISPLAY_NAME,
+        version=info.version,
+        rc=info.rc,
+        build=info.build,
+        codename=info.codename,
+        show_rc=info.show_rc,
+    )
 
 
 def show_splash() -> Splash:
@@ -91,6 +104,7 @@ def show_splash() -> Splash:
     window = splash._window
     if not isinstance(window, QWidget):
         raise TypeError("the shared splash window is not a QWidget")
+    window.setWindowTitle(APP_DISPLAY_NAME)
     overlay = _EggOverlay(window)
     overlay_box["overlay"] = overlay
     # The shared Splash has no field for the picture. setattr keeps the attribute

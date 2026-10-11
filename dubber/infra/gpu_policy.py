@@ -1,4 +1,4 @@
-"""Minimum GPU for Voxprint AI Movie Dubber: NVIDIA compute capability 8.9 (RTX 40 / Ada) and driver branch 600.
+"""Minimum GPU for VOXPrint AI Movie Dubber: NVIDIA compute capability 8.9 (RTX 40 / Ada) and driver branch 600.
 
 The installer asks ``nvidia-smi`` before it downloads anything. The window asks PyTorch before it opens.
 Diagnostics report the same facts and fail the check when the machine is below the minimum.
@@ -20,11 +20,11 @@ SKIP_ENV = "VOXPRINT_SKIP_GPU_GATE"
 NVIDIA_DRIVER_URL = "https://www.nvidia.com/Download/index.aspx"
 
 INSTALLER_LEAD = (
-    "Voxprint AI Movie Dubber needs an NVIDIA GeForce RTX 40-series graphics card or newer "
+    "VOXPrint AI Movie Dubber needs an NVIDIA GeForce RTX 40-series graphics card or newer "
     "(Ada Lovelace or later, compute capability 8.9 or higher) and an NVIDIA driver from the 600 branch or newer."
 )
 INSTALLER_LEAD_RU = (
-    "Для Voxprint AI Movie Dubber нужна видеокарта NVIDIA GeForce RTX 40 или новее "
+    "Для VOXPrint AI Movie Dubber нужна видеокарта NVIDIA GeForce RTX 40 или новее "
     "(Ada Lovelace и новее, вычислительная способность 8.9 или выше) и драйвер NVIDIA ветки 600 или новее."
 )
 _NEED = (
