@@ -6,15 +6,18 @@ from dubber.infra import vram_tier as vt
 
 
 def test_tier_is_picked_from_the_card():
+    assert vt.detect(8.0) == vt.TIER_8
     assert vt.detect(16.0) == vt.TIER_16          # RTX 4090 Laptop, 4080
     assert vt.detect(23.99) == vt.TIER_24         # RTX 4090 reports a little under 24 GiB
     assert vt.detect(31.5) == vt.TIER_24          # RTX 5090
-    assert vt.detect(0.0) == vt.TIER_16           # unknown size: the smaller tier
+    assert vt.detect(0.0) == "unknown"
 
 
 def test_override_can_only_pick_a_tier_the_card_supports():
-    assert vt.choices(16.0) == [vt.TIER_16]
-    assert vt.choices(24.0) == [vt.TIER_16, vt.TIER_24]
+    assert vt.choices(8.0) == [vt.TIER_8]
+    assert vt.choices(16.0) == [vt.TIER_8, vt.TIER_16]
+    assert vt.choices(24.0) == [vt.TIER_8, vt.TIER_16, vt.TIER_24]
+    assert vt.choices(0.0) == [vt.TIER_8, vt.TIER_16, vt.TIER_24]
     assert vt.resolve(16.0, vt.TIER_24) == vt.TIER_16
     assert vt.resolve(24.0, vt.TIER_16) == vt.TIER_16
     assert vt.resolve(24.0, "auto") == vt.TIER_24

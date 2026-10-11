@@ -1,8 +1,9 @@
 """ffmpeg / ffprobe discovery and the few operations the pipeline needs (extract audio, probe, add a dubbed track).
 
-Search order: ``VOXPRINT_FFMPEG`` (file or folder) -> ``bin/`` next to the program -> the tools folder of the app data
-(where a future installer step may put an LGPL build) -> ``PATH`` (only if ``-version`` really runs) -> the ``imageio-ffmpeg``
-wheel (a GPL build; offline fallback, no ffprobe).  The video stream is NEVER re-encoded (``-c:v copy``).
+Search order: ``VOXPRINT_FFMPEG`` (file or folder) -> the shared suite ffmpeg (``shared/ffmpeg/<version>``) -> ``PATH``
+(only if ``-version`` really runs) -> the ``imageio-ffmpeg`` wheel (a GPL build; offline fallback, no ffprobe).
+Older per-app copies are moved into the shared folder on launch and are not searched. The video stream is NEVER
+re-encoded (``-c:v copy``).
 """
 from __future__ import annotations
 
@@ -11,13 +12,11 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, TypedDict
 
-from dubber import paths
-from dubber.appinfo import resource_dir
+from dubber.infra.shared_deps import ffmpeg_executable
 
 EXE = ".exe" if os.name == "nt" else ""
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
@@ -55,9 +54,7 @@ def _candidates() -> List[tuple]:
     if env:
         p = Path(env)
         out.append(("VOXPRINT_FFMPEG", p / f"ffmpeg{EXE}" if p.is_dir() else p))
-    for d, label in ((resource_dir() / "bin", "program folder"), (Path(sys.executable).parent / "bin", "python/exe folder"),
-                     (paths.app_home() / "tools", "app tools folder")):
-        out.append((label, d / f"ffmpeg{EXE}"))
+    out.append(("shared ffmpeg", ffmpeg_executable()))
     return out
 
 

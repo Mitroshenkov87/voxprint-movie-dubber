@@ -394,33 +394,34 @@ def test_splash_overlay_shows_once_and_does_not_close_the_splash():
     from PySide6.QtGui import QMouseEvent
     from PySide6.QtWidgets import QApplication
 
-    from dubber.ui import splash
+    from dubber.ui.splash_hook import show_splash
 
-    QApplication.instance() or QApplication([])
+    app = QApplication.instance() or QApplication([])
 
     def press(widget) -> None:
         local = QPointF(8, 8)
-        event = QMouseEvent(QEvent.Type.MouseButtonPress, local, local, Qt.MouseButton.LeftButton,
-                            Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
-        widget.mousePressEvent(event)
+        event = QMouseEvent(QEvent.Type.MouseButtonPress, local, widget.mapToGlobal(local.toPoint()),
+                            Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+        app.sendEvent(widget, event)
 
-    screen = splash.show()
+    screen = show_splash()
+    window = screen._window
     try:
         for _ in range(5):
-            press(screen)
-        assert screen._egg is None or not screen._egg.isVisible()
-        press(screen)
-        assert screen.isVisible()
-        assert screen._egg is not None and screen._egg.isVisible()
-        assert screen._egg.caption.text()
-        press(screen._egg)
-        assert not screen._egg.isVisible()
-        assert screen.isVisible()
+            press(window)
+        assert not screen._easter.isVisible()
+        press(window)
+        assert window.isVisible()
+        assert screen._easter.isVisible()
+        assert screen._easter.caption.text()
+        press(screen._easter)
+        assert not screen._easter.isVisible()
+        assert window.isVisible()
         for _ in range(6):
-            press(screen)
-        assert not screen._egg.isVisible()
+            press(window)
+        assert not screen._easter.isVisible()
     finally:
-        screen.close()
+        window.close()
 
 
 def test_session_probe_on_the_test_clip(tmp_path, clip):

@@ -2,7 +2,7 @@ import pytest
 
 pytest.importorskip("PySide6")
 
-from dubber.ui import theme
+from voxprint_common.ui import theme
 
 
 def _lum(hex_color):
@@ -27,8 +27,8 @@ def test_style_sheet_formats_cleanly():
     assert "{{" not in css and "QPushButton" in css
     assert theme.PRIMARY in css and theme.PRIMARY_HOVER in css and theme.TEXT_ON_PRIMARY in css
     assert theme.MENU_BG in css and theme.MENU_SELECTION in css
-    from dubber.ui import splash
-    assert splash.BAR == "#b98cff"
+    from dubber.ui.splash_hook import IDENTITY
+    assert IDENTITY == "#b98cff"
 
 
 def _app():
@@ -83,8 +83,8 @@ def test_locales_have_the_same_keys_and_cover_the_ui():
 
 
 def _library_voice(name="narrator-anna", lang="ru", ref=False):
-    from dubber.infra import shared_paths
-    lib = shared_paths.voices_dir() / name                     # a voice made by the Audiobook Builder
+    from dubber import paths
+    lib = paths.voices_dir() / name                     # a voice made by the Audiobook Builder
     lib.mkdir(parents=True)
     for n in ("adapter_model.safetensors", "adapter_config.json"):
         (lib / n).write_bytes(b"{}")
@@ -236,7 +236,7 @@ def test_watch_chunk_source_reads_across_chunk_borders(tmp_path):
 def test_settings_and_diagnostics_dialogs(tmp_path):
     _app()
     from dubber import settings
-    from dubber.infra import shared_paths
+    from dubber import paths
     from dubber.ui import dialogs
     d = dialogs.SettingsDialog()
     assert not d.chk_download.icon().isNull()
@@ -247,7 +247,7 @@ def test_settings_and_diagnostics_dialogs(tmp_path):
     d.accept()
     s = settings.load()
     assert s["subdl_key"] == "k1" and s["hf_token"] == "hf_x" and s["device"] == "cuda"
-    assert shared_paths.configured_models_dir() == tmp_path / "models-elsewhere"
+    assert paths.models_dir() == tmp_path / "models-elsewhere"
     assert settings.redacted(s)["hf_token"] == "set"
     g = dialogs.DiagnosticsDialog(target_lang=lambda: "de")
     assert not g.chk_download.icon().isNull()

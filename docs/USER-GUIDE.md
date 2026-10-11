@@ -109,8 +109,9 @@ The program pauses briefly between batches only when a long job keeps the card h
 | What | Where |
 | --- | --- |
 | Program | `C:\Program Files\VoxprintMovieDubber` |
-| AI models (shared with Audiobook Builder) | `%LOCALAPPDATA%\Voxprint\models` (can be changed in Settings) |
-| Python runtime (shared) | `%LOCALAPPDATA%\Voxprint\runtime-<key>` |
+| AI models (shared with the other Voxprint programs) | `%LOCALAPPDATA%\Voxprint\shared\models` (can be changed in Settings) |
+| Python runtime (shared) | `%LOCALAPPDATA%\Voxprint\shared\runtimes\py3.14-torch2.11-cu130` |
+| ffmpeg (shared) | `%LOCALAPPDATA%\Voxprint\shared\ffmpeg\n8.1` |
 | Projects and stage cache | `%LOCALAPPDATA%\VoxprintMovieDubber\projects` |
 | Logs | `%LOCALAPPDATA%\VoxprintMovieDubber\logs` |
 | Settings | `%LOCALAPPDATA%\VoxprintMovieDubber\state\settings.json` and the shared `%LOCALAPPDATA%\Voxprint\state\suite.json` |
@@ -123,6 +124,5 @@ The program pauses briefly between batches only when a long job keeps the card h
 Use **Settings > Apps > Installed apps > Voxprint AI Movie Dubber > Uninstall**, or the uninstall shortcut in the Start menu folder "Voxprint".
 
 - The uninstaller asks whether to delete your projects, logs and reports (default: keep).
-- The shared models are deleted only when no other Voxprint program uses them and you answer Yes (default: keep).
-- The shared Python runtime is removed when no other Voxprint program uses it.
+- The shared Python runtime, ffmpeg and models are removed when no other Voxprint program still uses them.
 - Voxprint AI Audiobook Builder is never touched.

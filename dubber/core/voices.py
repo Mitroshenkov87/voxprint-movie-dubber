@@ -18,7 +18,7 @@ import numpy as np
 from dubber.core import audio
 from dubber.core.project import Line
 from dubber.engines.diarization import try_speaker_embeddings
-from dubber.infra import shared_paths
+from dubber import paths
 from dubber.workers.common import wer
 
 REQUIRED_FILES = ("adapter_model.safetensors", "adapter_config.json")
@@ -81,7 +81,7 @@ def _scale(value) -> float:
 
 def list_library(root: Optional[Path] = None) -> List[LibraryVoice]:
     """Usable voices of the shared library (complete adapter + reference clip), sorted by name.  Missing folder -> []."""
-    root = Path(root) if root is not None else shared_paths.voices_dir()
+    root = Path(root) if root is not None else paths.voices_dir()
     out: List[LibraryVoice] = []
     try:
         folders = sorted(d for d in root.iterdir() if d.is_dir() and not d.name.startswith("."))

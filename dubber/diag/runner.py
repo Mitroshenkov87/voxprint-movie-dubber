@@ -203,17 +203,17 @@ class DiagnosticRunner:
         """Run a worker and turn whatever happened into a :class:`CheckResult`."""
         args = dict(args)
         args.setdefault("allow_download", self.opt.allow_download)
-        from dubber.infra import gpu_lock
+        from voxprint_common.gpu_lock import GpuLockTimeout, gpu_job
 
-        def waiting(holder: Dict[str, Any], seconds: float) -> None:
-            self.on_progress(-1.0, f"waiting for the GPU: {holder.get('owner', '?')} is running {holder.get('job', '?')} ({seconds:.0f} s)")
+        def waiting(holder: Any, seconds: float) -> None:
+            self.on_progress(-1.0, f"waiting for the GPU: {holder.app} is running {holder.stage} ({seconds:.0f} s)")
 
         try:
             # the shared GPU lock: never run a GPU check while Voxprint Audiobook Builder trains or narrates
-            with gpu_lock.gpu_job(f"diagnostics:{check_id}", eta_s=timeout, on_wait=waiting, cancel=self._cancel.is_set):
+            with gpu_job("movie-dubber", f"diagnostics:{check_id}", eta=timeout, on_wait=waiting, cancel=self._cancel.is_set):
                 out: WorkerOutcome = run_worker(name, args, timeout=timeout * self.opt.timeout_scale, env=self._env(),
                                                 on_log=lambda m: self.on_progress(-1.0, m), cancel=self._cancel)
-        except gpu_lock.GpuLockTimeout as exc:
+        except GpuLockTimeout as exc:
             r = CheckResult(check_id, title)
             r.status, r.summary = Status.SKIP, str(exc)
             return r

@@ -188,12 +188,12 @@ class Runner:
         if self.cfg.get("resident_models", True):
             self._hold_gpu(key, cfg)
             return self._session_stage(key, emit, cfg)
-        from dubber.infra import gpu_lock
+        from voxprint_common.gpu_lock import gpu_job
 
         if key in S.GPU and cfg.get("device") == "cuda":
             eta = TIMEOUT_PER_FILM_S.get(key, 1.0) * float(self.p.settings.get("duration") or 600) / 4
-            with gpu_lock.gpu_job(f"dubbing:{key}", eta_s=eta, cancel=self.cancel.is_set,
-                                  on_wait=lambda h, s: self.cb.log(f"waiting for the GPU: {h.get('owner', '?')} runs {h.get('job', '?')}")):
+            with gpu_job("movie-dubber", f"dubbing:{key}", eta=eta, cancel=self.cancel.is_set,
+                         on_wait=lambda holder, _seconds: self.cb.log(f"waiting for the GPU: {holder.app} runs {holder.stage}")):
                 return self._worker(key, emit, cfg)
         return self._worker(key, emit, cfg)
 
@@ -201,11 +201,11 @@ class Runner:
         """One lock for every CUDA stage of this run.  Released in :meth:`run` so the next film can take the GPU."""
         if self._gpu_cm is not None or key not in S.GPU or cfg.get("device") != "cuda":
             return
-        from dubber.infra import gpu_lock
+        from voxprint_common.gpu_lock import gpu_job
 
         eta = TIMEOUT_PER_FILM_S.get(key, 1.0) * float(self.p.settings.get("duration") or 600)
-        cm = gpu_lock.gpu_job(f"dubbing:{key}", eta_s=eta, cancel=self.cancel.is_set,
-                              on_wait=lambda h, s: self.cb.log(f"waiting for the GPU: {h.get('owner', '?')} runs {h.get('job', '?')}"))
+        cm = gpu_job("movie-dubber", f"dubbing:{key}", eta=eta, cancel=self.cancel.is_set,
+                     on_wait=lambda holder, _seconds: self.cb.log(f"waiting for the GPU: {holder.app} runs {holder.stage}"))
         cm.__enter__()
         self._gpu_cm = cm
 

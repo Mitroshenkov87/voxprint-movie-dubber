@@ -5,6 +5,7 @@ worker processes through the environment / argument file and never written to lo
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Dict
 
 from dubber import paths
@@ -61,25 +62,67 @@ def engine_cfg() -> Dict[str, Any]:
 
 
 def device() -> str:
-    """auto | cuda. Shared suite.json may still say ``cpu`` (an older choice or the sibling app); this program reads that as auto."""
-    from dubber.infra import suite
+    """auto | cuda. A stored ``cpu`` (an older choice or the sibling app) is read as auto."""
+    from voxprint_common.suite_settings import normalize_gpu, read
 
-    if suite.has("gpu"):
-        v = suite.device_setting()
-    else:
-        v = str(load().get("device") or "auto")
-    if v == "cpu":
+    raw = read()
+    if "gpu" in raw:
+        normalized = normalize_gpu(raw.get("gpu"))
+        return "cuda" if normalized and normalized.startswith("cuda") else "auto"
+    value = str(load().get("device") or "auto")
+    if value == "cpu":
         return "auto"
-    return v if v in ("auto", "cuda") else "auto"
+    return value if value in ("auto", "cuda") else "auto"
 
 
 def set_device(value: str) -> None:
     """Remember auto or cuda in the shared suite file. ``cpu`` is not a choice this program offers."""
-    from dubber.infra import suite
+    from voxprint_common.suite_settings import set_gpu
 
-    if value not in ("auto", "cuda"):
-        value = "auto"
-    suite.set_quietly("gpu", {"cuda": "cuda:0"}.get(value, value))
+    choice = "cuda" if value == "cuda" else "auto"
+    try:
+        set_gpu(choice)
+    except ValueError:
+        return
+
+
+def sync_suite_settings() -> int:
+    """Write the models folder and UI language into suite.json when those keys are still absent.
+
+    Exit code 0 when done, 1 on any error. The installer ignores the error.
+    """
+    import json
+
+    from voxprint_common.paths import state_dir
+    from voxprint_common.suite_settings import normalize_language, read, set_models_dir, set_ui_language, values
+
+    try:
+        if "models_dir" not in read():
+            legacy = _legacy_models_choice(state_dir() / "models_dir.txt")
+            set_models_dir(legacy)
+        if "ui_language" not in read():
+            from dubber import i18n
+
+            code = i18n.saved_language() or i18n.system_language() or "en"
+            set_ui_language(normalize_language(code) or "en")
+        print(json.dumps(values()), flush=True)
+        return 0
+    except Exception as exc:  # noqa: BLE001 - the installer must keep going
+        print(f"suite settings: {exc}", flush=True)
+        return 1
+
+
+def _legacy_models_choice(path: Path) -> Path | None:
+    """Absolute path from the older one-line models file, or None."""
+    try:
+        lines = path.read_text(encoding="utf-8-sig").splitlines()
+    except OSError:
+        return None
+    text = next((line.strip().strip('"') for line in lines if line.strip()), "")
+    if not text:
+        return None
+    folder = Path(text)
+    return folder if folder.is_absolute() else None
 
 
 def redacted(values: Dict[str, Any]) -> Dict[str, Any]:

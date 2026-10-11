@@ -2,6 +2,10 @@
 # torch and torchaudio are installed separately so that the matching CUDA build is picked:
 #     uv pip install torch torchaudio --torch-backend=auto
 
+# Shared suite library, voxprint-common 0.1.0 "Yesod". The tag is the pin (the
+# v0.1.0 release has no wheel asset). Do not float this to a later commit.
+voxprint-common @ git+https://github.com/Mitroshenkov87/voxprint-common.git@v0.1.0
+
 PySide6>=6.7
 psutil>=5.9
 numpy>=1.26

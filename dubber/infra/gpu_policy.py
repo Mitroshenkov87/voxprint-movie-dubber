@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
+import subprocess
 from dataclasses import dataclass
 from typing import Dict, Literal, Mapping, Never, Optional, Sequence, Tuple
 
 MIN_COMPUTE: Tuple[int, int] = (8, 9)
 MIN_DRIVER_BRANCH = 600
 SKIP_ENV = "VOXPRINT_SKIP_GPU_GATE"
+NVIDIA_DRIVER_URL = "https://www.nvidia.com/Download/index.aspx"
 
 INSTALLER_LEAD = (
     "Voxprint AI Movie Dubber needs an NVIDIA GeForce RTX 40-series graphics card or newer "
@@ -31,7 +34,7 @@ _NEED = (
 
 _COMPUTE = re.compile(r"^(\d+)\.(\d+)$")
 _BRANCH = re.compile(r"^(\d+)")
-StartupCode = Literal["no_cuda", "low_compute"]
+StartupCode = Literal["no_cuda", "low_compute", "old_driver"]
 
 
 @dataclass(frozen=True)
@@ -54,10 +57,11 @@ class GateResult:
 
 @dataclass(frozen=True)
 class StartupBlock:
-    """Why the window stays closed: no CUDA device, or compute capability below 8.9."""
+    """Why the window stays closed: no CUDA device, compute capability below 8.9, or a driver older than branch 600."""
     code: StartupCode
     name: str = ""
     capability: str = ""
+    driver: str = ""
 
 
 def parse_compute(text: str) -> Optional[Tuple[int, int]]:
@@ -152,7 +156,8 @@ def installer_message(found: str) -> str:
         "This PC does not meet that requirement, so setup stopped and nothing was installed. "
         "A processor-only copy is not offered.\n\n"
         f"What we found: {found}\n\n"
-        "Install a supported graphics card and driver, then run setup again."
+        "Install a supported graphics card and driver, then run setup again.\n\n"
+        f"NVIDIA driver downloads: {NVIDIA_DRIVER_URL}"
     )
 
 
@@ -188,8 +193,47 @@ def startup_detail_key(block: StartupBlock) -> Tuple[str, Dict[str, str]]:
         return "gpu.gate_low_compute", {"name": block.name, "capability": block.capability}
     if code == "no_cuda":
         return "gpu.gate_no_cuda", {}
+    if code == "old_driver":
+        return "gpu.gate_old_driver", {"driver": block.driver or "unknown"}
     unexpected: Never = code
     raise AssertionError(unexpected)
+
+
+def with_driver_link(body: str) -> str:
+    """Append the NVIDIA driver download page when the message does not already name it."""
+    link = f"NVIDIA driver downloads: {NVIDIA_DRIVER_URL}"
+    if NVIDIA_DRIVER_URL in body:
+        return body
+    return body.rstrip() + "\n\n" + link
+
+
+def driver_branch() -> Optional[int]:
+    """Driver branch from ``nvidia-smi``, or None when the tool is missing or the version cannot be read."""
+    smi = shutil.which("nvidia-smi")
+    if not smi:
+        return None
+    try:
+        completed = subprocess.run(
+            [smi, "--query-gpu=driver_version", "--format=csv,noheader"],
+            capture_output=True, text=True, timeout=8, encoding="utf-8", errors="replace",
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
+        return None
+    line = next((item.strip() for item in completed.stdout.splitlines() if item.strip()), "")
+    return parse_driver_branch(line) if line else None
+
+
+def launch_block(available: bool, capability: Optional[Tuple[int, int]], name: str,
+                 driver: Optional[int]) -> Optional[StartupBlock]:
+    """Window and self-test gate. A driver branch below 600 fails even when PyTorch reports a new GPU."""
+    if driver is not None and driver < MIN_DRIVER_BRANCH:
+        label = ""
+        if capability is not None:
+            label = f"{int(capability[0])}.{int(capability[1])}"
+        return StartupBlock("old_driver", name.strip(), label, str(driver))
+    return startup_block(available, capability, name)
 
 
 def gate_skipped(environ: Optional[Mapping[str, str]] = None) -> bool:

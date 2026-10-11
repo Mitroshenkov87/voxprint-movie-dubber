@@ -94,11 +94,13 @@ def detect_language() -> str:
     if code:
         return code
     try:
-        from dubber.infra import suite
+        from voxprint_common.suite_settings import read
 
-        code = suite.ui_language()
-        if code:
-            return code
+        raw = read()
+        if "ui_language" in raw:
+            code = normalize_code(str(raw.get("ui_language") or ""))
+            if code:
+                return code
     except Exception:  # noqa: BLE001 - the shared file must never block the start
         pass
     return saved_language() or system_language() or DEFAULT_LANG
@@ -122,9 +124,12 @@ def set_language(lang: str, save: bool = True) -> None:
                 _saved_file().write_text(lang, encoding="utf-8")
             except OSError:
                 pass
-            from dubber.infra import suite
+            from voxprint_common.suite_settings import set_ui_language
 
-            suite.set_quietly("ui_language", lang)
+            try:
+                set_ui_language(lang)
+            except ValueError:
+                pass
 
 
 def reset() -> None:

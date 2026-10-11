@@ -16,7 +16,7 @@ from dubber import models, settings
 from dubber.appinfo import version_label
 from dubber.diag.runner import DiagnosticRunner, DiagOptions
 from dubber.i18n import tr
-from dubber.infra import shared_paths
+from dubber import paths
 from dubber.ui.icons import suite_icon
 
 
@@ -75,7 +75,7 @@ class SettingsDialog(QDialog):
         self.edt_hf = _secret()
         self.edt_hf.setText(s["hf_token"])
         row = QHBoxLayout()
-        self.edt_models = QLineEdit(str(shared_paths.models_dir()))
+        self.edt_models = QLineEdit(str(paths.models_dir()))
         self.edt_models.setReadOnly(True)
         btn = QPushButton(tr("settings.browse"))
         btn.clicked.connect(self._choose_models)
@@ -87,7 +87,8 @@ class SettingsDialog(QDialog):
         from dubber.infra import resources, vram_tier
 
         vram = resources.snapshot(use_torch=False).vram_total_gb
-        detected = vram_tier.TIERS[vram_tier.detect(vram)].title
+        found = vram_tier.detect(vram)
+        detected = vram_tier.TIERS[found].title if found in vram_tier.TIERS else "unknown"
         self.cmb_tier = _combo([(vram_tier.AUTO, tr("settings.vram_tier_auto").format(tier=detected))]
                                + [(k, t.title) for k, t in vram_tier.TIERS.items()], str(s.get("vram_tier") or vram_tier.AUTO))
         _limit(self.cmb_tier, [vram_tier.AUTO, *vram_tier.choices(vram)])
@@ -145,7 +146,7 @@ class SettingsDialog(QDialog):
             settings.set_device(vals["device"])          # shared with the other Voxprint programs (suite.json "gpu")
         if self._models_choice is not None:
             try:
-                shared_paths.set_models_dir(self._models_choice)
+                paths.set_models_dir(self._models_choice)
             except (OSError, ValueError):
                 pass
         super().accept()

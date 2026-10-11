@@ -4,7 +4,8 @@
   override with ``VOXPRINT_DUBBER_HOME``.  Sub-folders: ``logs``, ``state``, ``reports``, ``projects``.
 * Desktop: the *real* Desktop folder (Windows ``SHGetKnownFolderPath``: follows OneDrive "Known Folder Move"), with
   fallbacks; override with ``VOXPRINT_DESKTOP`` (tests).  If nothing is writable the report goes to ``reports``.
-* Models are NOT here: they live in the folder shared with Voxprint AI Audiobook Builder (:mod:`dubber.infra.shared_paths`).
+* Models and voices live in the suite home from ``voxprint_common.paths`` (``<home>/models`` and ``<home>/voices``).
+  A folder that holds a Voxprint backup is never used as the models folder.
 """
 from __future__ import annotations
 
@@ -12,9 +13,12 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from dubber.appinfo import APP_NAME
+from voxprint_common.paths import home as suite_home
+from voxprint_common.paths import models_dir as suite_models_dir
+from voxprint_common.paths import state_dir as suite_state_dir
 
 IS_WINDOWS = sys.platform == "win32"
 
@@ -39,16 +43,90 @@ def _sub(name: str) -> Path:
     return p
 
 
-def models_dir() -> Path:
-    """The shared Voxprint models folder (see :mod:`dubber.infra.shared_paths`)."""
-    from dubber.infra import shared_paths
+BACKUP_MANIFEST = "voxprint-backup.json"
+BACKUP_DIRNAME = "Voxprint-backup"
+BACKUP_SUBDIRS = ("models", "model", "voices", "tools")
+BACKUP_CONTENT = ("models", "model", "voices")
+_MODELS_DIR_FILE = "models_dir.txt"
 
-    return shared_paths.models_dir()
+
+def default_models_dir() -> Path:
+    """``<suite home>/models``. ``VOXPRINT_MODELS_DIR`` still wins in :func:`models_dir`."""
+    return suite_home() / "models"
+
+
+def voices_dir() -> Path:
+    """The shared voice library ``<suite home>/voices`` (written by the Audiobook Builder; not created here)."""
+    return suite_home() / "voices"
 
 
 def legacy_models_dir() -> Path:
     """``<app home>/models`` used by builds before the shared store (read-only fallback; not created)."""
     return app_home() / "models"
+
+
+def _same(left: Path, right: Path) -> bool:
+    try:
+        return os.path.normcase(str(left.resolve())) == os.path.normcase(str(right.resolve()))
+    except OSError:
+        return False
+
+
+def _looks_like_backup(folder: Path) -> bool:
+    if (folder / BACKUP_MANIFEST).is_file():
+        return True
+    return folder.name.lower() == BACKUP_DIRNAME.lower() and any((folder / name).is_dir() for name in BACKUP_CONTENT)
+
+
+def backup_root_of(folder: Optional[Path]) -> Optional[Path]:
+    """The Voxprint backup behind ``folder`` (the folder, a ``Voxprint-backup`` inside it, or its parent), else None."""
+    if folder is None:
+        return None
+    candidate = Path(folder)
+    try:
+        if _looks_like_backup(candidate):
+            return candidate
+        if _looks_like_backup(candidate / BACKUP_DIRNAME):
+            return candidate / BACKUP_DIRNAME
+        if candidate.name.lower() in BACKUP_SUBDIRS and _looks_like_backup(candidate.parent):
+            return candidate.parent
+    except OSError:
+        return None
+    return None
+
+
+def set_models_dir(folder: Optional[Path]) -> None:
+    """Remember ``folder`` as the models folder. None, or the default, forgets the choice.
+
+    Written to ``suite.json`` and to the older ``state/models_dir.txt`` that earlier builds still read.
+    """
+    from voxprint_common.suite_settings import set_models_dir as store
+
+    note = suite_state_dir() / _MODELS_DIR_FILE
+    if folder is None or _same(Path(folder), default_models_dir()):
+        note.unlink(missing_ok=True)
+        store(None)
+        return
+    note.parent.mkdir(parents=True, exist_ok=True)
+    note.write_text(str(folder) + "\n", encoding="utf-8")
+    store(folder)
+
+
+def models_dir() -> Path:
+    """Where models are stored: the suite choice when it can be created, else :func:`default_models_dir`.
+
+    A backup folder is refused. Creating the directory is this program's job; ``voxprint_common.paths`` does not.
+    """
+    chosen = suite_models_dir()
+    if backup_root_of(chosen) is not None:
+        chosen = default_models_dir()
+    try:
+        chosen.mkdir(parents=True, exist_ok=True)
+        return chosen
+    except OSError:
+        fallback = default_models_dir()
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback
 
 
 def projects_dir() -> Path:

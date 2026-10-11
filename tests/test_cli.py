@@ -30,16 +30,21 @@ def _json(capsys, code: int) -> dict:
     return data
 
 
+def _codename() -> str:
+    return json.loads((Path(__file__).resolve().parents[1] / "BUILD.json").read_text(encoding="utf-8"))["codename"]
+
+
 def test_version_json_and_human_line(capsys):
+    codename = _codename()
     assert main(["version", "--json"]) == EXIT_OK
     data = _json(capsys, EXIT_OK)
     assert data["command"] == "version"
     assert data["dry_run"] is False
-    assert "Bochan" in data["label"]
+    assert codename in data["label"]
     assert "1.0.0 RC" in data["label"]
     assert main(["--version"]) == EXIT_OK
     captured = capsys.readouterr()
-    assert "1.0.0 RC" in captured.out and "Bochan" in captured.out
+    assert "1.0.0 RC" in captured.out and codename in captured.out
     assert captured.out.count("\n") == 1
 
 

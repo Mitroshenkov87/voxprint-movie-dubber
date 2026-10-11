@@ -46,6 +46,7 @@ nav:
   - User guide: USER-GUIDE.md
   - Architecture: ARCHITECTURE.md
   - Models: MODELS.md
+  - Shared resources: SHARED-RESOURCES.md
   - Command line: CLI.md
   - Formats:
       - .vxdub: formats/VXDUB.md

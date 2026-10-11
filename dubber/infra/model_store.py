@@ -1,7 +1,7 @@
 """Shared model store: one plain folder per model, a per-model OS lock while downloading, SHA-256 manifests, a users file.
 
 Spec agreed with Voxprint AI Audiobook Builder (its ``infra/model_downloader.py`` ``ModelLock`` / ``sweep_stale_locks`` are copied
-here); change locations only in :mod:`dubber.infra.shared_paths`.
+here); change locations only in :mod:`dubber.paths`.
 
 * Layout: ``<models>/<owner>--<name>/`` - plain files, not the Hugging Face cache.  A download goes into ``<name>.partial`` (kept
   between runs, so the next run resumes) and is renamed after the check; a half-downloaded model is never used.
@@ -9,14 +9,13 @@ here); change locations only in :mod:`dubber.infra.shared_paths`.
   held for the whole download and removed after it.  :func:`sweep_stale_locks` deletes unheld leftovers.
 * Manifest: ``model_manifest.json`` next to this file: pinned revision + size + SHA-256 per file.  A model without a manifest entry
   is checked structurally (weights, and a config file unless the model is checkpoint-only).
-* Users: ``<models>/.users.json`` ``{"audiobook-builder": true, "movie-dubber": true}`` - the installer adds our key, the uninstaller
-  removes it and deletes models only when no other key remains AND the user agrees.
+* Users: ``<models>/.users.json`` ``{"audiobook-builder": true, "movie-dubber": true}`` - the installer adds our key.
+  Who may delete the folder is ``shared/manifest.json``: the folder goes when no app still references the models resource.
 * Watchdog: while a download runs, the size of the ``.partial`` folder is reported every few seconds; no progress for
   ``STALL_SECONDS`` gives up the attempt (the data stays and the next attempt resumes).
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import os
@@ -29,7 +28,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
-from dubber.infra import shared_paths
+from dubber import paths
+from voxprint_common.hashing import sha256_file as file_digest
 
 log = logging.getLogger("dubber.models")
 
@@ -50,7 +50,7 @@ class ModelUnavailable(RuntimeError):
 
 def models_root() -> Path:
     """Return the shared models folder, creating the configured directory when that is possible."""
-    return shared_paths.models_dir()
+    return paths.models_dir()
 
 
 def folder_name(repo: str) -> str:
@@ -66,7 +66,7 @@ def local_dir_for(repo: str, root: Optional[Path] = None, weights: Sequence[str]
         return Path(root) / name
     target = models_root() / name
     if not verify_structure(target, weights, require_config):
-        default = shared_paths.default_models_dir() / name
+        default = paths.default_models_dir() / name
         if default != target and verify_structure(default, weights, require_config):
             return default
     return target
@@ -99,12 +99,9 @@ def pinned_revision(repo: str) -> Optional[str]:
 
 
 def sha256_file(path: Path, bufsize: int = 1 << 20) -> str:
-    """Return the hex SHA-256 of ``path``, read in ``bufsize``-byte chunks."""
-    h = hashlib.sha256()
-    with open(path, "rb") as fh:
-        for block in iter(lambda: fh.read(bufsize), b""):
-            h.update(block)
-    return h.hexdigest()
+    """Return the hex SHA-256 of ``path``. ``bufsize`` is accepted and ignored; the shared hasher streams the file."""
+    del bufsize
+    return file_digest(path)
 
 
 def _checked(name: str) -> bool:
