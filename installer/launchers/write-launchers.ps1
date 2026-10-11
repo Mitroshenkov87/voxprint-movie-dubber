@@ -1,4 +1,4 @@
-﻿# Compile the Windows GUI and console launchers (voxprint-movie-dubber.exe, voxprint-dubber-cli.exe).
+﻿# Compile the Windows GUI and console launchers (voxprint-movie-dubber.exe, voxprint-movie-dubber-cli.exe).
 # Both start main.py through the shared runtime. The GUI launcher is a Windows subsystem program
 # (pythonw.exe). The CLI launcher is a console program (python.exe) with the same entry point.
 param(
@@ -20,7 +20,7 @@ if (-not (Test-Path -LiteralPath $Icon)) {
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $source = Join-Path $PSScriptRoot "launcher.cs"
 $gui = Join-Path $OutDir "voxprint-movie-dubber.exe"
-$cli = Join-Path $OutDir "voxprint-dubber-cli.exe"
+$cli = Join-Path $OutDir "voxprint-movie-dubber-cli.exe"
 & $csc /nologo /target:winexe "/win32icon:$Icon" "/out:$gui" $source
 if ($LASTEXITCODE -ne 0) { throw "the GUI launcher failed to compile ($LASTEXITCODE)" }
 & $csc /nologo /target:exe /define:CONSOLE "/win32icon:$Icon" "/out:$cli" $source

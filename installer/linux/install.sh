@@ -8,7 +8,7 @@
 #   ./install.sh --skip-gpu-check CI ONLY: do not check the NVIDIA driver and GPU. GitHub runners have no GPU.
 #   ./install.sh --skip-models    CI ONLY: do not download the AI models. A user install always downloads them.
 #
-# A system install symlinks voxprint-movie-dubber and voxprint-dubber-cli into /usr/local/bin.
+# A system install symlinks voxprint-movie-dubber and voxprint-movie-dubber-cli into /usr/local/bin.
 # With --prefix, those names are symlinked into DIR/bin. The menu entry Name is VOXPrint AI Movie Dubber.
 # User data stays in ~/.local/share/voxprint. An older install under ~/.local/share/voxprint-movie-dubber
 # is removed; that user data is kept.
@@ -22,7 +22,7 @@ set -euo pipefail
 
 APP_SLUG="movie-dubber"
 GUI_BIN="voxprint-movie-dubber"
-CLI_BIN="voxprint-dubber-cli"
+CLI_BIN="voxprint-movie-dubber-cli"
 DISPLAY_NAME="VOXPrint AI Movie Dubber"
 DESKTOP_ID="voxprint-movie-dubber"
 REF_APP="movie-dubber"

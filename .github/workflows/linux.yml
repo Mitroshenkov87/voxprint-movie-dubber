@@ -71,7 +71,7 @@ jobs:
           prefix="$VOX_PREFIX"
           app="$prefix/movie-dubber"
           d="$HOME/.local/share"
-          for f in "$prefix/bin/voxprint-movie-dubber" "$prefix/bin/voxprint-dubber-cli" \
+          for f in "$prefix/bin/voxprint-movie-dubber" "$prefix/bin/voxprint-movie-dubber-cli" \
                    "$prefix/share/applications/voxprint-movie-dubber.desktop" \
                    "$prefix/share/mime/packages/voxprint-movie-dubber.xml" \
                    "$prefix/share/icons/hicolor/256x256/apps/voxprint-movie-dubber.png" \
@@ -80,7 +80,7 @@ jobs:
             test -e "$f" || { echo "missing: $f"; exit 1; }
           done
           test -x "$prefix/bin/voxprint-movie-dubber"
-          test -x "$prefix/bin/voxprint-dubber-cli"
+          test -x "$prefix/bin/voxprint-movie-dubber-cli"
           test ! -e "$d/voxprint-movie-dubber"
           test ! -e "$HOME/.local/bin/voxprint-movie-dubber"
           test ! -e "$d/applications/voxprint-movie-dubber.desktop"
@@ -116,7 +116,7 @@ jobs:
         run: |
           set -euo pipefail
           code=0
-          "$VOX_PREFIX/bin/voxprint-dubber-cli" --version
+          "$VOX_PREFIX/bin/voxprint-movie-dubber-cli" --version
           "$VOX_PREFIX/bin/voxprint-movie-dubber" --dry-run --json > dry-run.json 2> dry-run.err || code=$?
           echo "exit code: $code"
           cat dry-run.err
@@ -154,7 +154,7 @@ jobs:
           set -euo pipefail
           /tmp/unpack/VoxprintMovieDubber-Linux-x86_64/install.sh --prefix "$VOX_PREFIX" --uninstall
           test ! -e "$VOX_PREFIX/bin/voxprint-movie-dubber"
-          test ! -e "$VOX_PREFIX/bin/voxprint-dubber-cli"
+          test ! -e "$VOX_PREFIX/bin/voxprint-movie-dubber-cli"
           test ! -e "$VOX_PREFIX/movie-dubber"
           test ! -e "$HOME/.local/bin/voxprint-movie-dubber"
           test ! -e "$HOME/.local/share/voxprint-movie-dubber"

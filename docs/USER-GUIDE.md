@@ -108,7 +108,7 @@ The program pauses briefly between batches only when a long job keeps the card h
 
 | What | Where |
 | --- | --- |
-| Program | `C:\Program Files\VOXPrint AI Suite\Movie Dubber` (`voxprint-movie-dubber.exe`, and `voxprint-dubber-cli.exe` for the command line) |
+| Program | `C:\Program Files\VOXPrint AI Suite\Movie Dubber` (`voxprint-movie-dubber.exe`, and `voxprint-movie-dubber-cli.exe` for the command line) |
 | AI models (shared with the other Voxprint programs) | `%LOCALAPPDATA%\Voxprint\shared\models` (can be changed in Settings) |
 | Python runtime (shared) | `%LOCALAPPDATA%\Voxprint\shared\runtimes\py3.14-torch2.11-cu130` |
 | ffmpeg (shared) | `%LOCALAPPDATA%\Voxprint\shared\ffmpeg\n8.1` |
@@ -117,7 +117,7 @@ The program pauses briefly between batches only when a long job keeps the card h
 | Settings | `%LOCALAPPDATA%\VoxprintMovieDubber\state\settings.json` and the shared `%LOCALAPPDATA%\Voxprint\state\suite.json` |
 | Diagnostic reports | saved to the Desktop, with a copy in `%LOCALAPPDATA%\VoxprintMovieDubber\reports` |
 
-**Diagnostics** (the Start menu shortcut "VOXPrint AI Movie Dubber - diagnostics", or the Diagnostics button) checks the card, memory and ffmpeg, loads every model and saves a report without personal data. See [DIAGNOSTICS.md](DIAGNOSTICS.md).
+**Diagnostics** (the Diagnostics button) checks the card, memory and ffmpeg, loads every model and saves a report without personal data. See [DIAGNOSTICS.md](DIAGNOSTICS.md).
 
 ## 11. Uninstall
 

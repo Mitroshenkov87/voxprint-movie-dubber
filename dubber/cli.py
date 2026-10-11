@@ -67,14 +67,14 @@ TARGET_LANGS = {"en", "ru", "de"}
 def build_parser() -> argparse.ArgumentParser:
     """Headless command line. ``parse_args`` and the generated reference both read this parser."""
     parser = argparse.ArgumentParser(
-        prog="voxprint-dubber-cli",
+        prog="voxprint-movie-dubber-cli",
         add_help=False,
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description=(
             "Headless entry points for other Voxprint programs, scripts and agents. "
-            "The installed command is `voxprint-dubber-cli`. It is the same entry point as "
+            "The installed command is `voxprint-movie-dubber-cli`. It is the same entry point as "
             "`python main.py` and `python -m dubber.cli`. The window is not opened. Nothing waits for a prompt.\n\n"
-            "On an installed copy, `voxprint-dubber-cli` is the console launcher. "
+            "On an installed copy, `voxprint-movie-dubber-cli` is the console launcher. "
             "`voxprint-movie-dubber` opens the window.\n\n"
             "The JSON object always has `ok`, `exit_code`, `command`, `dry_run`, `version`, `label`, `build` and "
             "`codename`. `label` is the same line as About. A failure also has `error`. A failed job also has "

@@ -166,7 +166,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           $app = $env:VMD_APP
           if (-not $app) { throw "VMD_APP is not set" }
-          foreach ($f in "main.py", "voxprint-movie-dubber.exe", "voxprint-dubber-cli.exe", "runtime\Scripts\pythonw.exe", "runtime\Scripts\python.exe", "unins000.exe", "assets\voxprint-dubber.ico", "dubber\appinfo.py") {
+          foreach ($f in "main.py", "voxprint-movie-dubber.exe", "voxprint-movie-dubber-cli.exe", "runtime\Scripts\pythonw.exe", "runtime\Scripts\python.exe", "unins000.exe", "assets\voxprint-dubber.ico", "dubber\appinfo.py") {
             if (-not (Test-Path "$app\$f")) { throw "missing after install: $f" }
           }
           if (Test-Path (Join-Path $env:ProgramFiles "VoxprintMovieDubber")) { throw "the old Program Files\VoxprintMovieDubber folder is still there" }
@@ -178,7 +178,7 @@ jobs:
           $menu = Get-ChildItem $menuDir -Filter "*.lnk" | Where-Object { $_.Name -like "*VOXPrint AI Movie Dubber*" }
           $menu | ForEach-Object { "start menu: " + $_.FullName }
           if (-not ($menu | Where-Object { $_.Name -eq "VOXPrint AI Movie Dubber.lnk" })) { throw "no Start menu shortcut in VOXPrint AI Suite" }
-          if (-not ($menu | Where-Object { $_.Name -eq "VOXPrint AI Movie Dubber - diagnostics.lnk" })) { throw "no diagnostics shortcut" }
+          if ($menu | Where-Object { $_.Name -eq "VOXPrint AI Movie Dubber - diagnostics.lnk" }) { throw "the diagnostics Start menu shortcut must not be installed" }
           # the runtime: a junction to LOCALAPPDATA\Voxprint\shared\runtimes\py3.14-torch2.11-<flavor>
           $link = Get-Item "$app\runtime" -Force
           if (-not ($link.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw "$app\runtime is not a link to the shared runtime" }
@@ -228,7 +228,7 @@ jobs:
           "suite registry: InstallDir=$($suiteReg.InstallDir) Exe=$($suiteReg.Exe) Cli=$($suiteReg.Cli) Version=$($suiteReg.Version) DefaultInstallDir=$($suiteReg.DefaultInstallDir)"
           if ($suiteReg.InstallDir.TrimEnd('\') -ne $app) { throw "InstallDir is $($suiteReg.InstallDir)" }
           if ($suiteReg.Exe -ne "$app\voxprint-movie-dubber.exe") { throw "Exe is $($suiteReg.Exe)" }
-          if ($suiteReg.Cli -ne "$app\voxprint-dubber-cli.exe") { throw "Cli is $($suiteReg.Cli)" }
+          if ($suiteReg.Cli -ne "$app\voxprint-movie-dubber-cli.exe") { throw "Cli is $($suiteReg.Cli)" }
           $ver = (Select-String -Path dubber\appinfo.py -Pattern '^APP_VERSION\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
           if ($suiteReg.Version -ne $ver) { throw "Version is $($suiteReg.Version), expected $ver" }
           if ($suiteReg.DefaultInstallDir.TrimEnd('\') -ne $app) { throw "DefaultInstallDir is $($suiteReg.DefaultInstallDir)" }
@@ -248,7 +248,7 @@ jobs:
           New-Item -ItemType Directory -Force C:\vmd-desktop | Out-Null
           $app = $env:VMD_APP
           $py = "$app\runtime\Scripts\python.exe"
-          & "$app\voxprint-dubber-cli.exe" --version; if ($LASTEXITCODE -ne 0) { throw "CLI launcher --version failed" }
+          & "$app\voxprint-movie-dubber-cli.exe" --version; if ($LASTEXITCODE -ne 0) { throw "CLI launcher --version failed" }
           & $py "$app\main.py" --version; if ($LASTEXITCODE -ne 0) { throw "--version failed" }
           & $py -c "import PySide6, os, glob; d = os.path.dirname(PySide6.__file__); print('Qt FFmpeg:', [os.path.basename(f) for f in glob.glob(os.path.join(d, 'av*.dll'))]); assert glob.glob(os.path.join(d, 'plugins', 'multimedia', 'ffmpegmediaplugin.dll'))"
           if ($LASTEXITCODE -ne 0) { throw "Qt Multimedia FFmpeg backend missing" }

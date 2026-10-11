@@ -392,7 +392,8 @@ def test_installer_suite_integration():
     assert "UsePreviousAppDir=no" in iss
     assert r"DefaultDirName={autopf}\{#SuiteDir}" in iss
     assert "VOXPrint AI Suite\\Movie Dubber" in iss
-    assert "voxprint-movie-dubber.exe" in iss and "voxprint-dubber-cli.exe" in iss
+    assert "voxprint-movie-dubber.exe" in iss and "voxprint-movie-dubber-cli.exe" in iss
+    assert '{group}\\{#AppDisplayName} - diagnostics"' not in iss
     assert r"Software\VOXPrint AI Suite\Apps\movie-dubber" in iss
     assert "DefaultInstallDir" in iss and "InstallDir" in iss
     assert "MigrateOldInstall" in iss and "VoxprintMovieDubber" in iss

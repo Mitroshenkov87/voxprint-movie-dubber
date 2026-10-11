@@ -14,7 +14,7 @@
 ; step into LOCALAPPDATA\Voxprint\models (one copy for every Voxprint program). shared\manifest.json
 ; records which programs use each resource.
 ; Program folder: Program Files\VOXPrint AI Suite\Movie Dubber. Launchers: voxprint-movie-dubber.exe (window)
-; and voxprint-dubber-cli.exe (console, same entry point as the headless CLI).
+; and voxprint-movie-dubber-cli.exe (console, same entry point as the headless CLI).
 ; Start menu: the folder "VOXPrint AI Suite", with a "VOXPrint AI Movie Dubber" shortcut.
 ; The uninstaller never touches another app's folder. A shared resource is deleted only when no program still references it.
 ; An older install in Program Files\VoxprintMovieDubber, and its shortcuts in the Start menu group "Voxprint",
@@ -248,7 +248,7 @@ Source: "{#PayloadDir}\ffmpeg\*"; DestDir: "{tmp}\payload\ffmpeg"; Flags: dontco
 ; the program
 Source: "..\main.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "launchers\voxprint-movie-dubber.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "launchers\voxprint-dubber-cli.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "launchers\voxprint-movie-dubber-cli.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\BUILD.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\requirements.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dubber\*"; DestDir: "{app}\dubber"; Excludes: "__pycache__,*.pyc"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -263,7 +263,6 @@ Source: "..\build_info.json"; DestDir: "{app}"; Flags: ignoreversion skipifsourc
 
 [Icons]
 Name: "{group}\{#AppDisplayName}"; Filename: "{app}\voxprint-movie-dubber.exe"; WorkingDir: "{app}"; IconFilename: "{app}\assets\voxprint-dubber.ico"
-Name: "{group}\{#AppDisplayName} - diagnostics"; Filename: "{app}\voxprint-movie-dubber.exe"; Parameters: "--diagnose"; WorkingDir: "{app}"; IconFilename: "{app}\assets\voxprint-dubber.ico"
 Name: "{group}\{cm:UninstallProgram,{#AppDisplayName}}"; Filename: "{uninstallexe}"
 
 [Run]
@@ -284,7 +283,7 @@ Root: HKLM; Subkey: "Software\Classes\Voxprint.MovieDubber.Project\shell\open\co
 ; InstallDir is the folder setup used. DefaultInstallDir is the usual Program Files location.
 Root: HKLM64; Subkey: "Software\VOXPrint AI Suite\Apps\movie-dubber"; ValueType: string; ValueName: "InstallDir"; ValueData: "{app}"; Flags: uninsdeletekey
 Root: HKLM64; Subkey: "Software\VOXPrint AI Suite\Apps\movie-dubber"; ValueType: string; ValueName: "Exe"; ValueData: "{app}\voxprint-movie-dubber.exe"
-Root: HKLM64; Subkey: "Software\VOXPrint AI Suite\Apps\movie-dubber"; ValueType: string; ValueName: "Cli"; ValueData: "{app}\voxprint-dubber-cli.exe"
+Root: HKLM64; Subkey: "Software\VOXPrint AI Suite\Apps\movie-dubber"; ValueType: string; ValueName: "Cli"; ValueData: "{app}\voxprint-movie-dubber-cli.exe"
 Root: HKLM64; Subkey: "Software\VOXPrint AI Suite\Apps\movie-dubber"; ValueType: string; ValueName: "Version"; ValueData: "{#AppVersion}"
 Root: HKLM64; Subkey: "Software\VOXPrint AI Suite\Apps\movie-dubber"; ValueType: string; ValueName: "DefaultInstallDir"; ValueData: "{autopf}\{#SuiteDir}"
 
@@ -296,6 +295,7 @@ Type: files; Name: "{commonprograms}\Voxprint\Voxprint AI Movie Dubber.lnk"
 Type: files; Name: "{commonprograms}\Voxprint\Voxprint AI Movie Dubber - diagnostics.lnk"
 Type: files; Name: "{commonprograms}\Voxprint\Uninstall Voxprint AI Movie Dubber.lnk"
 Type: files; Name: "{group}\Run diagnostics.lnk"
+Type: files; Name: "{group}\{#AppDisplayName} - diagnostics.lnk"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
