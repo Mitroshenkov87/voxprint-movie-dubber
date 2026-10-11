@@ -31,6 +31,7 @@ HEAVY = {"vad", "separation", "asr", "diarization", "translation", "tts"}       
 GPU = {"separation", "asr", "diarization", "translation", "tts"}                   # hold the shared Voxprint GPU lock
 BLOCK_S = 60.0              # TTS + fitting work through the film in blocks of this length (Watch mode follows the blocks)
 MAX_TTS_RETRIES = 1         # one extra synthesis for a line that is still too long after the length-aware wording
+MAX_REF_REBUILDS = 1        # a reference that fails the ASR check drops one chunk, once, then stops
 #: bumped when a stage's algorithm changes, so projects analysed by an older build redo that stage (and only the later ones)
 ASR_VERSION, SCRIPT_VERSION, MT_VERSION, VOICES_VERSION, TTS_FIT_VERSION = 3, 3, 6, 2, 2
 
@@ -253,7 +254,11 @@ def st_voices(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
 
 def _make_reference(p: Project, cfg: Dict[str, Any], emit: Emit, speaker: Optional[str], src: Path, out: Path,
                     fallback_any: bool = False) -> Tuple[float, str]:
-    """Build one reference clip and, when ASR is available, check it once against a re-transcription."""
+    """Build one reference clip and check it with ASR at most ``MAX_REF_REBUILDS`` extra times.
+
+    A failed check drops the worst chunk and rebuilds. A clip with nothing left to drop is kept
+    and logged as ``check warn``. The loop is capped, so a reference that never matches cannot spin.
+    """
     if not src.is_file():
         return 0.0, ""
     chosen = voices.pick_reference_lines(p.lines, speaker, wav=src)
@@ -262,26 +267,22 @@ def _make_reference(p: Project, cfg: Dict[str, Any], emit: Emit, speaker: Option
     if not chosen:
         return 0.0, ""
     secs, text = voices.build_reference(chosen, src, out, bounds=p.lines)
-    hyp = _reference_hypothesis(out, cfg, emit)
-    if hyp is None:
-        emit("log", text=voices.reference_log(len(chosen), secs, "skipped"))
-        return secs, text
-    ok, drop, ref_text = voices.assess_reference(chosen, text, hyp)
-    if ok:
-        emit("log", text=voices.reference_log(len(chosen), secs, "OK"))
-        return secs, ref_text
-    if drop is not None and len(chosen) > 1:
-        kept = [ln for i, ln in enumerate(chosen) if i != drop]
-        secs, text = voices.build_reference(kept, src, out, bounds=p.lines)
-        hyp2 = _reference_hypothesis(out, cfg, emit)
-        if hyp2 is None:
-            emit("log", text=voices.reference_log(len(kept), secs, "rebuilt"))
+    for attempt in range(MAX_REF_REBUILDS + 1):
+        hyp = _reference_hypothesis(out, cfg, emit)
+        if hyp is None:
+            emit("log", text=voices.reference_log(len(chosen), secs, "skipped" if attempt == 0 else "rebuilt"))
             return secs, text
-        ok2, _, ref_text = voices.assess_reference(kept, text, hyp2)
-        emit("log", text=voices.reference_log(len(kept), secs, "OK" if ok2 else "rebuilt"))
-        return secs, ref_text
+        ok, drop, ref_text = voices.assess_reference(chosen, text, hyp)
+        if ok:
+            emit("log", text=voices.reference_log(len(chosen), secs, "OK"))
+            return secs, ref_text
+        if attempt >= MAX_REF_REBUILDS or drop is None or len(chosen) <= 1:
+            emit("log", text=voices.reference_log(len(chosen), secs, "warn" if attempt == 0 else "rebuilt"))
+            return secs, ref_text
+        chosen = [ln for i, ln in enumerate(chosen) if i != drop]
+        secs, text = voices.build_reference(chosen, src, out, bounds=p.lines)
     emit("log", text=voices.reference_log(len(chosen), secs, "warn"))
-    return secs, ref_text
+    return secs, text
 
 
 def _reference_hypothesis(wav: Path, cfg: Dict[str, Any], emit: Emit) -> Optional[str]:
@@ -337,8 +338,10 @@ def st_separation(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
     else:
         fn = tiger_model(_device(cfg), cfg.get("allow_download", True), lambda m: emit("log", text=m))
     snap = snapshot(use_torch=False)
+    # TIGER's forward indexes tracks. RoFormer has no batched call; the size only groups its copies.
+    batch = 1 if kind != "roformer" else chunk_batch_size(snap.vram_total_gb, snap.vram_budget_gb)
     separate_windows(p.path("audio", "mix44.wav"), windows, p.path("stems", "speech.wav"), p.path("stems", "background.wav"), fn,
-                     lambda m: emit("log", text=m), batch_size=chunk_batch_size(snap.vram_total_gb, snap.vram_budget_gb))
+                     lambda m: emit("log", text=m), batch_size=batch)
     x, sr = audio.read(p.path("stems", "speech.wav"), 16000)
     audio.write(p.path("stems", "speech16.wav"), x, sr)
     return f"{kind}: speech and background stems on {len(windows)} windows"
@@ -398,7 +401,11 @@ def st_diarization(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
             script.assign_speakers(p.lines, turns)
             mapping = {ln.id: ln.speaker for ln in p.lines}
         except Exception as exc:  # noqa: BLE001 - no token / not installed: fall back
-            emit("log", text=f"pyannote not available ({type(exc).__name__}: {str(exc)[:120]}); using voice clustering")
+            note = ""
+            low = str(exc).lower()
+            if any(word in low for word in ("gated", "token", "401", "403", "huggingface")):
+                note = " Multi-voice needs a Hugging Face token (HF_TOKEN); one-voice dubbing does not."
+            emit("log", text=f"pyannote not available ({type(exc).__name__}: {str(exc)[:120]}); using voice clustering.{note}")
             how = "cluster"
     if how == "cluster":
         from dubber.engines.diarization import cluster_lines
@@ -548,7 +555,11 @@ def actor_spec(p: Project, sp, library_only: bool = False):
 
 
 def make_tts(p: Project, cfg: Dict[str, Any], need_adapters: bool, emit: Emit):
-    """Load Qwen3-TTS for the dub language, reusing a resident model when that cache is on, or the mock engine when TTS is mock. Library and actor voices set ``need_adapters`` and cannot use the CUDA Graphs backend."""
+    """Load Qwen3-TTS for the dub language, reusing a resident model when that cache is on, or the mock engine when TTS is mock.
+
+    Library and actor voices set ``need_adapters``. CUDA Graphs is used for them only when the installed
+    package can take a voice-clone prompt; otherwise the standard backend is used and the reason is logged.
+    """
     from dubber.engines import tts as tts_mod
 
     if cfg.get("tts") == "mock":

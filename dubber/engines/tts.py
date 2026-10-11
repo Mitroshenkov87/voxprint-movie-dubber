@@ -1,7 +1,9 @@
 """Qwen3-TTS synthesis (logic taken from Voxprint AI Audiobook Builder ``core/tts_engine.py`` and ``core/narration.py``).
 
-Backend order on an NVIDIA GPU for dialogue (no LoRA adapters): CUDA Graphs via ``faster-qwen3-tts`` (MIT) first, then
-FlashAttention-2 if that package exists, then standard SDPA.  ``auto`` tries Graphs first; the batched standard backend is used when
+Backend order on an NVIDIA GPU: CUDA Graphs via ``faster-qwen3-tts`` (MIT) first, then FlashAttention-2 if that
+package exists, then standard SDPA.  Graphs is also used for a library adapter or an actor blend when the installed
+package accepts a voice-clone prompt; otherwise the standard backend is used and the reason is logged (a missing
+package, not the ``triton not found`` warning).  ``auto`` tries Graphs first; the batched standard backend is used when
 ``tts_backend`` is ``standard/sdpa`` (or ``standard/flash_attention_2``) and stays the fallback when Graphs cannot load.  Clip 3
 (16 short lines) measured graphs/sdpa at 67.5 s against batched standard/sdpa at 208.9 s.  On the CPU: SDPA.  Every step falls back
 to the next one if loading fails.
@@ -18,7 +20,10 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import inspect
 import logging
+import re
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
@@ -37,6 +42,112 @@ LONG_LINE_CHARS = 120
 MIN_LONG_BATCH = 4
 QWEN_LANG = {"ru": "Russian", "en": "English", "de": "German", "fr": "French", "es": "Spanish", "it": "Italian", "pt": "Portuguese",
              "ja": "Japanese", "ko": "Korean", "zh": "Chinese"}
+
+
+def adapter_name(key: str) -> str:
+    """PEFT / torch module name for a voice key.
+
+    Torch module names allow letters, digits, and underscore. A short hash of the original key
+    is appended so two keys that sanitize to the same text do not share one adapter.
+
+    Args:
+        key: Voice key, which may contain ``.``, ``:`` and ``>``.
+
+    Returns:
+        A module name of at most 120 characters.
+    """
+    cleaned = re.sub(r"[^0-9A-Za-z_]", "_", key).strip("_") or "voice"
+    digest = hashlib.sha1(key.encode("utf-8"), usedforsecurity=False).hexdigest()[:8]
+    name = f"{cleaned}_{digest}"
+    if name[0].isdigit():
+        name = "v_" + name
+    return name[:120]
+
+
+def graphs_accepts_prompt() -> bool:
+    """True when the installed CUDA Graphs backend can take a voice-clone prompt.
+
+    Library adapters and actor blends need that prompt. A package that only accepts
+    ``ref_audio`` / ``ref_text`` cannot apply them, so Graphs stays off for those films.
+    The import stays inside this function: ``faster-qwen3-tts`` is optional and missing
+    on a machine that has not installed it.
+
+    Returns:
+        True when ``generate_voice_clone`` accepts ``voice_clone_prompt`` or ``**kwargs``.
+    """
+    if importlib.util.find_spec("faster_qwen3_tts") is None:
+        return False
+    try:
+        from faster_qwen3_tts import FasterQwen3TTS
+    except Exception:  # noqa: BLE001 - missing or broken optional package
+        return False
+    try:
+        params = inspect.signature(FasterQwen3TTS.generate_voice_clone).parameters
+    except (TypeError, ValueError):
+        return False
+    if "voice_clone_prompt" in params:
+        return True
+    return any(item.kind is inspect.Parameter.VAR_KEYWORD for item in params.values())
+
+
+def graphs_skip_reason(use_cuda: bool, need_adapters: bool) -> str:
+    """Why CUDA Graphs is not the dialogue backend, or an empty string when it should be tried.
+
+    ``triton not found`` from torch is unrelated: Graphs does not need Triton, and Windows has
+    no official Triton wheel. A missing ``faster-qwen3-tts`` package, or a build that cannot
+    take a voice-clone prompt while this film uses an adapter or an actor blend, is why the
+    standard backend is selected.
+
+    Args:
+        use_cuda: Whether this process can run on an NVIDIA GPU.
+        need_adapters: True when a line uses a library adapter or an actor blend.
+
+    Returns:
+        A sentence for the log, or ``""`` when Graphs is a candidate.
+    """
+    if not use_cuda:
+        return ""
+    if importlib.util.find_spec("faster_qwen3_tts") is None:
+        return ("faster-qwen3-tts is not installed, so CUDA Graphs stays off "
+                "(the 'triton not found' warning is not the cause)")
+    if need_adapters and not graphs_accepts_prompt():
+        return ("CUDA Graphs stays off: this film uses a library adapter or an actor blend, "
+                "and the installed faster-qwen3-tts cannot take a voice-clone prompt")
+    return ""
+
+
+class SynthesisTimeout(RuntimeError):
+    """One generate call produced no result before its wall-clock limit.
+
+    The call itself may still be running: a CUDA kernel cannot be cancelled from this thread.
+    The queue then uses one line at a time, or stops when a single line does not finish.
+    """
+
+
+def _call_with_timeout(fn: Callable[[], Any], timeout: float) -> Any:
+    """Run ``fn`` and return its value. ``timeout`` 0 waits without a limit.
+
+    On expiry raise :class:`SynthesisTimeout`. The worker is a daemon, so a stuck GPU call
+    does not keep the process alive after the pipeline has given up on it.
+    """
+    if timeout <= 0:
+        return fn()
+    box: Dict[str, Any] = {}
+
+    def target() -> None:
+        try:
+            box["value"] = fn()
+        except Exception as exc:  # noqa: BLE001 - re-raised on the caller thread
+            box["error"] = exc
+
+    thread = threading.Thread(target=target, daemon=True, name="tts-generate")
+    thread.start()
+    thread.join(timeout)
+    if thread.is_alive():
+        raise SynthesisTimeout(f"no result after {timeout:.0f} s")
+    if "error" in box:
+        raise box["error"]
+    return box["value"]
 
 
 def max_tokens_for(text: str) -> int:
@@ -189,6 +300,10 @@ class BaseTTS:
         """Maximum lines in one generate call. This base engine returns 1."""
         return 1
 
+    def synthesis_timeout(self, texts: Sequence[str]) -> float:
+        """Seconds to wait for one generate call. 0 waits without a limit (the mock engine)."""
+        return 0.0
+
     def close(self) -> None:
         """Release model memory. This base engine holds none."""
         pass
@@ -207,8 +322,33 @@ class BaseTTS:
             seconds = getattr(self, "line_seconds", None)
             graphs = bool(getattr(self, "graphs", False))
             group = next_dialogue_group(queue, texts, limit, seconds, graphs)
+            label = str(group[0]) if len(group) == 1 else f"{group[0]}-{group[-1]}"
+            line = f"TTS: line {label} ({len(group)} in this call)"
+            log.info(line)
+            tell = getattr(self, "log", None)
+            if callable(tell):
+                tell(line)
+            texts_now = [texts[i] for i in group]
+            limit_s = float(self.synthesis_timeout(texts_now))
             try:
-                wavs = self.synthesize_batch([texts[i] for i in group], voice)
+                wavs = _call_with_timeout(lambda rows=texts_now: self.synthesize_batch(rows, voice), limit_s)
+            except SynthesisTimeout as exc:
+                if len(group) == 1:
+                    raise RuntimeError(f"TTS made no progress on line {group[0]} after {limit_s:.0f} s") from exc
+                log.warning("batch of %d made no progress (%s); retrying one by one", len(group), exc)
+                limit = 1
+                wavs = []
+                for i in group:
+                    one_s = float(self.synthesis_timeout([texts[i]]))
+                    alone = f"TTS: line {i} (1 in this call)"
+                    log.info(alone)
+                    if callable(tell):
+                        tell(alone)
+                    try:
+                        wavs.append(_call_with_timeout(
+                            lambda i=i: self.synthesize_batch([texts[i]], voice)[0], one_s))
+                    except SynthesisTimeout as stuck:
+                        raise RuntimeError(f"TTS made no progress on line {i} after {one_s:.0f} s") from stuck
             except Exception as exc:  # noqa: BLE001
                 if len(group) == 1:
                     raise
@@ -285,6 +425,8 @@ class QwenTTS(BaseTTS):
         self._adapters: Dict[str, str] = {}
         self._peft = None
         self.model = None
+        self._graphs_prompt = False
+        self._graphs_gave_up = False
         from dubber.infra import resources
 
         self.budget = resources.VramBudget() if self.use_cuda else None      # re-measured before each batch; free memory already includes the model
@@ -297,6 +439,7 @@ class QwenTTS(BaseTTS):
                     apply_qwen_tts_compat()
                     self.model = FasterQwen3TTS.from_pretrained(str(base_dir), device="cuda", dtype=self.dtype, attn_implementation=attn)
                     self.model.warmup()
+                    self._graphs_prompt = graphs_accepts_prompt()
                 else:
                     from qwen_tts import Qwen3TTSModel
 
@@ -312,6 +455,9 @@ class QwenTTS(BaseTTS):
             raise RuntimeError("Qwen3-TTS could not be loaded: " + " | ".join(errors))
         if errors:
             self.log("TTS backends skipped: " + " | ".join(errors))
+        reason = graphs_skip_reason(self.use_cuda, need_adapters)
+        if reason and not str(self.backend).startswith("graphs") and reason not in " | ".join(errors):
+            self.log("TTS backends skipped: " + reason)
         self.log(f"TTS backend: {self.backend}")
         if self.budget is not None:
             self.log(f"TTS memory: {self.budget.describe()}; batch {self.max_batch()}")
@@ -320,16 +466,21 @@ class QwenTTS(BaseTTS):
     def candidates(use_cuda: bool, prefer: str = "auto", need_adapters: bool = False) -> List[Tuple[str, str]]:
         """Backends to try, first choice first.
 
-        ``auto`` on CUDA without LoRA adapters puts ``graphs/sdpa`` first. Clip 3 (16 short lines) took 67.5 s that way and
-        208.9 s on batched ``standard/sdpa``. The batched backend is selected when ``prefer`` is ``standard/sdpa`` (settings
-        and the engine combo still list it) and remains the last fallback when Graphs cannot load. Adapters cannot use Graphs."""
+        ``auto`` on CUDA puts ``graphs/sdpa`` first when ``faster-qwen3-tts`` is installed. A film that needs a
+        library adapter or an actor blend still tries Graphs when :func:`graphs_accepts_prompt` is true; otherwise
+        Graphs is left out and :func:`graphs_skip_reason` says why. Clip 3 (16 short lines) took 67.5 s on Graphs
+        and 208.9 s on batched ``standard/sdpa``. The batched backend is selected when ``prefer`` is ``standard/sdpa``
+        and remains the last fallback when Graphs cannot load."""
         if prefer and prefer != "auto":
             kind, _, attn = prefer.partition("/")
             first = [(kind, attn or "sdpa")]
         else:
             first = []
         out = list(first)
-        if use_cuda and not need_adapters and importlib.util.find_spec("faster_qwen3_tts") is not None:
+        graphs_ok = use_cuda and importlib.util.find_spec("faster_qwen3_tts") is not None
+        if graphs_ok and need_adapters and not graphs_accepts_prompt():
+            graphs_ok = False
+        if graphs_ok:
             out.append(("graphs", "sdpa"))
         if use_cuda and importlib.util.find_spec("flash_attn") is not None:
             out.append(("standard", "flash_attention_2"))
@@ -362,6 +513,15 @@ class QwenTTS(BaseTTS):
         except Exception:  # noqa: BLE001
             return 1
 
+    def synthesis_timeout(self, texts: Sequence[str]) -> float:
+        """Seconds to wait for one generate call before treating it as stuck.
+
+        About twelve times the estimated speech, and at least 60 seconds. A missing
+        end-of-speech token used to run until ``max_tokens_for`` with no log line.
+        """
+        estimate = sum(max(1.0, 3.0 + MAX_SECONDS_PER_CHAR * len(text)) for text in texts) or 1.0
+        return max(60.0, estimate * 12.0)
+
     def _swap_out_other_voices(self, keep: str) -> None:
         """Budget too tight for several voices: drop every adapter except ``keep`` (they are reloaded when needed)."""
         peft = self._peft
@@ -388,24 +548,25 @@ class QwenTTS(BaseTTS):
             return
         from peft import PeftModel
 
+        name = adapter_name(voice.key)
         q = self._inner()
         peft = self._peft
         if peft is None:
-            peft = PeftModel.from_pretrained(q.model.talker, voice.adapter_dir, adapter_name=voice.key)
+            peft = PeftModel.from_pretrained(q.model.talker, voice.adapter_dir, adapter_name=name)
             self._peft = peft
             q.model.talker = peft
-            self._adapters[voice.key] = voice.adapter_dir
-        elif voice.key not in self._adapters:
-            peft.load_adapter(voice.adapter_dir, adapter_name=voice.key)
-            self._adapters[voice.key] = voice.adapter_dir
+            self._adapters[name] = voice.adapter_dir
+        elif name not in self._adapters:
+            peft.load_adapter(voice.adapter_dir, adapter_name=name)
+            self._adapters[name] = voice.adapter_dir
         peft.base_model.enable_adapter_layers()
-        peft.set_adapter(voice.key)
-        set_lora_scale(peft, voice.key, voice.adapter_scale)
+        peft.set_adapter(name)
+        set_lora_scale(peft, name, voice.adapter_scale)
         if self.budget is not None and len(self._adapters) > 1:
             from dubber.infra import resources
 
             if not resources.keep_voices_loaded(self.budget.left()):
-                self._swap_out_other_voices(voice.key)
+                self._swap_out_other_voices(name)
 
     def _prompt(self, voice: VoiceSpec):
         key = voice.tag()
@@ -444,17 +605,31 @@ class QwenTTS(BaseTTS):
         if model is None:
             raise RuntimeError("Qwen3-TTS model is not loaded")
         mnt = max(max_tokens_for(t) for t in texts)
-        if self.graphs:
-            out = []
-            for t in texts:
-                wavs, sr = model.generate_voice_clone(text=t, language=self.language, ref_audio=voice.ref_audio,
-                                                      ref_text=voice.ref_text, max_new_tokens=max_tokens_for(t))
-                out.append(np.asarray(wavs[0], dtype=np.float32).reshape(-1))
-                self.sample_rate = int(sr)
-            return out
+        if self.graphs and not self._graphs_gave_up:
+            try:
+                out = []
+                prompt = self._prompt(voice) if self._graphs_prompt else None
+                for t in texts:
+                    kw: Dict[str, Any] = {"text": t, "language": self.language, "max_new_tokens": max_tokens_for(t)}
+                    if prompt is not None:
+                        kw["voice_clone_prompt"] = prompt
+                    else:
+                        kw["ref_audio"] = voice.ref_audio
+                        kw["ref_text"] = voice.ref_text
+                    wavs, sr = model.generate_voice_clone(**kw)
+                    out.append(np.asarray(wavs[0], dtype=np.float32).reshape(-1))
+                    self.sample_rate = int(sr)
+                return out
+            except Exception as exc:  # noqa: BLE001 - Graphs cannot apply this voice; the inner model can
+                self._graphs_gave_up = True
+                self.log(f"CUDA Graphs cannot apply this voice ({type(exc).__name__}: {exc}); "
+                         "using the standard backend for the rest of the film")
+                if getattr(model, "model", None) is None:
+                    raise
+        target = model.model if self.graphs else model
         with torch.inference_mode():
-            wavs, sr = model.generate_voice_clone(text=list(texts), language=[self.language] * len(texts),
-                                                  voice_clone_prompt=self._prompt(voice), max_new_tokens=mnt)
+            wavs, sr = target.generate_voice_clone(text=list(texts), language=[self.language] * len(texts),
+                                                   voice_clone_prompt=self._prompt(voice), max_new_tokens=mnt)
         self.sample_rate = int(sr)
         return [np.asarray(w, dtype=np.float32).reshape(-1) for w in wavs]
 

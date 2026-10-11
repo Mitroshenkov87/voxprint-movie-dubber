@@ -65,9 +65,41 @@ SPECS: Dict[str, ModelSpec] = {s.key: s for s in (
 )}
 
 
-#: Models fetched by the installer. Gated models (diarization, speaker embedding) need a Hugging Face token and are left out.
-#: Mel-Band RoFormer is optional and is fetched when separation is set to it.
-INSTALL_MODELS = ("tts_1_7b", "asr", "sep", "mt_en_ru", "mt_ru_en", "mt_en_de", "mt_de_en", "mt_ru_de", "mt_de_ru")
+#: Models fetched by the installer and by ``fetch-models`` when no key list is given.
+#: Gated pyannote models are in the list. Without a Hugging Face token they are reported and skipped;
+#: one-voice dubbing does not need them. Both TTS sizes are listed; :func:`dubber.infra.vram_tier.install_models`
+#: keeps the one the card can run.
+INSTALL_MODELS = ("tts_1_7b", "tts_0_6b", "asr", "sep", "roformer", "diar", "embed",
+                  "mt_en_ru", "mt_ru_en", "mt_en_de", "mt_de_en", "mt_ru_de", "mt_de_ru")
+
+
+def hf_token(explicit: Optional[str] = None) -> Optional[str]:
+    """Hugging Face token from the argument, the environment, or the local huggingface_hub login.
+
+    Checks ``HF_TOKEN``, then ``HUGGINGFACE_HUB_TOKEN``, then :func:`huggingface_hub.get_token`.
+    The token is never written to a report.
+
+    Args:
+        explicit: Token already supplied by the caller.
+
+    Returns:
+        The token, or None when the user has not logged in.
+    """
+    if explicit:
+        return explicit
+    token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN") or None
+    if token:
+        return token
+    try:
+        # Optional at import time: a partial install has no huggingface_hub yet.
+        from huggingface_hub import get_token
+    except Exception:  # noqa: BLE001 - the package is not installed
+        return None
+    try:
+        found = get_token()
+    except Exception:  # noqa: BLE001 - huggingface_hub can fail before a login exists
+        found = None
+    return found or None
 
 
 def mt_spec(source: str, target: str) -> Optional[ModelSpec]:
@@ -135,14 +167,7 @@ def ensure(repo: str, allow_download: bool = True, token: Optional[str] = None,
         return found, {"source": "legacy folder" if found.parent == paths.legacy_models_dir() else "present", "download_s": 0.0}
     spec = _spec_for_repo(repo)
     if spec and spec.gated and not token:
-        token = os.environ.get("HF_TOKEN") or None
-        if not token:
-            try:
-                from huggingface_hub import get_token
-
-                token = get_token()
-            except Exception:  # noqa: BLE001
-                token = None
+        token = hf_token()
     info = model_store.ensure_model(repo, allow_download=allow_download, token=token,
                                     patterns=(spec.patterns or None) if spec else None,
                                     weights=spec.weights if spec else model_store.DEFAULT_WEIGHTS, gated=bool(spec and spec.gated),

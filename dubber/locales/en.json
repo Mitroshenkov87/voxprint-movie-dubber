@@ -35,6 +35,7 @@
  "chars.next": "Next: lines →",
  "chars.no_lines": "No lines.",
  "chars.no_sample": "No sample yet: prepare the lines first.",
+ "chars.one_voice": "One voice reads every line. Choose the voice and how close it stays to the actor.",
  "chars.save_actor": "Save to library",
  "chars.seconds": "{s} s of speech, {n} lines",
  "chars.single_voice": "Voice:",
