@@ -442,14 +442,11 @@ def ensure_model(repo: str, *, allow_download: bool = True, token: Optional[str]
             raise ModelUnavailable(f"{repo}: checksum mismatch in {', '.join(bad[:4])}; run again to re-download them")
         if bad is not None:
             write_verified_marker(part, repo)
-        existed = target.exists()
-        owned = model_guard.may_delete_model(target, target.parent) if existed else False
+        # The download above moves to voxprint-mdl. That caller must still publish through this hook.
         try:
-            model_guard.replace_downloaded(part, target, wholesale=not existed or owned)
+            model_guard.publish_download(part, target)
         except OSError as exc:
             raise ModelUnavailable(f"{repo}: could not rename {part.name} ({exc})") from exc
-        if (not existed or owned) and not model_guard.is_models_root(target):
-            model_guard.record_installed(target.parent, target.name)
         done = True
         return EnsureInfo(target, "downloaded", round(time.time() - t0, 1))
     finally:

@@ -172,7 +172,7 @@ def main(argv=None) -> int:
 
     running = QApplication.instance()
     app = running if isinstance(running, QApplication) else QApplication(sys.argv)
-    app.setApplicationName("Voxprint Movie Dubber")
+    app.setApplicationName("VOXPrint AI Movie Dubber")
     icon = resource_dir() / "assets" / "voxprint-dubber.ico"
     if icon.is_file():
         app.setWindowIcon(QIcon(str(icon)))

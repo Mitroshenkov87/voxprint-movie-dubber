@@ -1,7 +1,6 @@
 """Laptop build 1011: optional models must not block startup, downloads retry, foreign models survive."""
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 from urllib.error import URLError
@@ -11,8 +10,10 @@ import pytest
 from dubber import models
 from dubber.cli import EXIT_MODELS
 from dubber.i18n import tr
-from dubber.infra import components, model_store
+from dubber.cli import main as cli_main
+from dubber.infra import components, model_guard, model_store
 from dubber.infra.model_store import ModelUnavailable
+from dubber.infra.resources import Snapshot
 from dubber.infra.shared_deps import Piece, Report, download_resumable, live_pieces, live_selftest
 
 
@@ -94,6 +95,17 @@ def test_register_user_preserves_unknown_keys_and_other_apps(tmp_path):
     assert again["audiobook-builder"] is True
 
 
+def _publish_model(models_dir: Path, repo: str, body: bytes) -> Path:
+    """Publish one finished download through the hook a later downloader must keep calling."""
+    target = models_dir / repo.replace("/", "--")
+    part = target.with_name(target.name + ".partial")
+    part.mkdir()
+    (part / "config.json").write_bytes(b"{}")
+    (part / "model.safetensors").write_bytes(body)
+    model_guard.publish_download(part, target)
+    return target
+
+
 def test_release_fetch_and_repair_keep_other_apps_models(tmp_path, monkeypatch):
     home = tmp_path / "home"
     models_dir = home / "models"
@@ -107,39 +119,19 @@ def test_release_fetch_and_repair_keep_other_apps_models(tmp_path, monkeypatch):
     monkeypatch.delenv("VOXPRINT_MODEL_CACHE", raising=False)
 
     model_store.register_user(root=models_dir)
-    info = model_store.ensure_model(
-        "org/movie-dubber-tts",
-        root=models_dir,
-        downloader=lambda repo, dest, revision, patterns, token: (
-            dest.mkdir(parents=True, exist_ok=True),
-            (dest / "config.json").write_bytes(b"{}"),
-            (dest / "model.safetensors").write_bytes(b"ours"),
-        ),
-    )
-    assert info.path == models_dir / "org--movie-dubber-tts"
-    assert (planted["gemma"] / "weights.bin").is_file()
-
-    good = b"ours"
-    manifest_body = {"org/movie-dubber-tts": {"revision": "c" * 40, "files": {
-        "config.json": {"size": 2, "sha256": hashlib.sha256(b"{}").hexdigest()},
-        "model.safetensors": {"size": len(good), "sha256": hashlib.sha256(good).hexdigest()},
-    }}}
-    monkeypatch.setattr(model_store, "load_manifest", lambda path=None: manifest_body)
-    ours = info.path
+    ours = _publish_model(models_dir, "org/movie-dubber-tts", b"ours")
     (ours / "sidecar.txt").write_text("foreign-extra", encoding="utf-8")
-    (ours / "config.json").unlink()
-    with pytest.raises(ModelUnavailable, match="checksum"):
-        model_store.ensure_model(
-            "org/movie-dubber-tts",
-            root=models_dir,
-            downloader=lambda repo, dest, revision, patterns, token: (
-                dest.mkdir(parents=True, exist_ok=True),
-                (dest / "config.json").write_bytes(b"{}"),
-                (dest / "model.safetensors").write_bytes(b"BAD"),
-            ),
-        )
+    repair = ours.with_name(ours.name + ".partial")
+    repair.mkdir()
+    (repair / "config.json").write_bytes(b"{}")
+    (repair / "model.safetensors").write_bytes(b"patched")
+    model_guard.publish_download(repair, ours)
     assert (ours / "sidecar.txt").read_text(encoding="utf-8") == "foreign-extra"
-    assert (ours / "model.safetensors").read_bytes() == b"ours"
+    assert (planted["gemma"] / "weights.bin").is_file()
+    info = model_store.ensure_model("org/movie-dubber-tts", root=models_dir, allow_download=False)
+    assert info.path == ours and info.source == "present"
+    with pytest.raises(ModelUnavailable):
+        model_store.ensure_model("org/not-installed", root=models_dir, allow_download=False)
 
     components.add_component(home, "models", kind="model", version="store", path=models_dir, app="movie-dubber")
     components.release_app(home, "movie-dubber")
@@ -151,7 +143,8 @@ def test_release_fetch_and_repair_keep_other_apps_models(tmp_path, monkeypatch):
     assert data["components"]["model-gemma"]["refs"] == ["plotweaver"]
     assert data["components"]["model-gemma"]["vendor"] == "plotweaver"
     assert "movie-dubber" not in data["components"].get("models", {}).get("refs", [])
-    assert (models_dir / "org--movie-dubber-tts" / "model.safetensors").is_file()
+    assert (ours / "sidecar.txt").read_text(encoding="utf-8") == "foreign-extra"
+    assert (ours / "model.safetensors").is_file()
 
 
 def test_sole_user_deletes_only_models_this_app_recorded(tmp_path, monkeypatch):
@@ -161,15 +154,9 @@ def test_sole_user_deletes_only_models_this_app_recorded(tmp_path, monkeypatch):
     (models_dir / ".users.json").write_text(json.dumps({"movie-dubber": True, "note": "keep"}), encoding="utf-8")
     monkeypatch.setenv("VOXPRINT_HOME", str(home))
     monkeypatch.delenv("VOXPRINT_MODELS_DIR", raising=False)
-    model_store.ensure_model(
-        "org/ours",
-        root=models_dir,
-        downloader=lambda repo, dest, revision, patterns, token: (
-            dest.mkdir(parents=True, exist_ok=True),
-            (dest / "config.json").write_bytes(b"{}"),
-            (dest / "model.safetensors").write_bytes(b"ours"),
-        ),
-    )
+    model_store.register_user(root=models_dir)
+    ours = _publish_model(models_dir, "org/ours", b"ours")
+    assert model_store.ensure_model("org/ours", root=models_dir, allow_download=False).path == ours
     components.add_component(home, "models", kind="model", version="store", path=models_dir, app="movie-dubber")
     components.release_app(home, "movie-dubber")
     assert not (models_dir / "org--ours").exists()
@@ -325,12 +312,30 @@ def test_download_resumable_retries_with_a_per_read_timeout(tmp_path, monkeypatc
     assert (tmp_path / "ffmpeg.zip").read_bytes() == b"zip-bytes"
 
 
-def test_default_fetch_does_not_fail_when_only_optional_models_fail():
-    from dubber.cli import _blocking_model_failures
+def test_default_fetch_does_not_fail_when_only_optional_models_fail(monkeypatch, tmp_path):
+    present = tmp_path / "present"
+    present.mkdir()
+    optional = {models.SPECS["diar"].repo, models.SPECS["embed"].repo}
+    failed = set(optional)
 
-    assert _blocking_model_failures(["diar", "embed"], explicit=False) == []
-    assert _blocking_model_failures(["asr", "diar"], explicit=False) == ["asr"]
-    assert _blocking_model_failures(["diar"], explicit=True) == ["diar"]
+    def ensure(repo, allow_download=True, token=None, log=lambda message: None):
+        del allow_download, token, log
+        if repo in failed:
+            raise ModelUnavailable(repo)
+        return present, {"source": "present", "download_s": 0.0}
+
+    def locate(repo):
+        if repo in failed:
+            return None
+        return present
+
+    monkeypatch.setattr("dubber.cli.snapshot", lambda use_torch=False: Snapshot(vram_total_gb=24.0))
+    monkeypatch.setattr("dubber.cli.models.ensure", ensure)
+    monkeypatch.setattr("dubber.cli.models.locate", locate)
+    assert cli_main(["fetch-models"]) == 0
+    assert cli_main(["fetch-models", "--models", "diar"]) == EXIT_MODELS
+    failed.add(models.SPECS["asr"].repo)
+    assert cli_main(["fetch-models"]) == EXIT_MODELS
 
 
 def test_installer_scripts_retry_downloads_and_keep_a_fresh_setup_log():

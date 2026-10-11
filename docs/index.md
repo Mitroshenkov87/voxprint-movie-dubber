@@ -1,4 +1,4 @@
-# Voxprint AI Movie Dubber
+# VOXPrint AI Movie Dubber
 
 A Windows desktop application that adds an AI-dubbed audio track to a movie. Speech, translation, and voices run locally on an NVIDIA GPU. The video and the original audio stay as they are.
 

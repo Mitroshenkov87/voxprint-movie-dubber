@@ -1,4 +1,4 @@
-# Voxprint AI Movie Dubber: User guide
+# VOXPrint AI Movie Dubber: User guide
 
 This guide covers release candidate 1.0.0 RC. The window, the splash and About show the build number and the codename from `BUILD.json` (Bochan). For the requirements and the installers, see [Install](https://github.com/Mitroshenkov87/voxprint-movie-dubber/blob/main/README.md#install) in the README.
 
@@ -6,7 +6,7 @@ Screenshots are placeholders for now; they are added after the first test on rea
 
 ## 1. First run
 
-Start **Voxprint AI Movie Dubber** from the Start menu (folder "Voxprint"). The splash screen appears first, then the main window.
+Start **VOXPrint AI Movie Dubber** from the Start menu (folder "VOXPrint AI Suite"). The splash screen appears first, then the main window.
 
 - If the PC has no NVIDIA RTX 40-series card or newer, or the driver is older than the 600 branch, the program says so and closes. There is no processor-only mode.
 - The first dub downloads any AI models that are still missing (about 8 GB in total, one time) into the shared Voxprint models folder. Voxprint AI Audiobook Builder uses the same folder, so nothing is downloaded twice.
@@ -108,7 +108,7 @@ The program pauses briefly between batches only when a long job keeps the card h
 
 | What | Where |
 | --- | --- |
-| Program | `C:\Program Files\VoxprintMovieDubber` |
+| Program | `C:\Program Files\VOXPrint AI Suite\Movie Dubber` (`voxprint-movie-dubber.exe`, and `voxprint-movie-dubber-cli.exe` for the command line) |
 | AI models (shared with the other Voxprint programs) | `%LOCALAPPDATA%\Voxprint\shared\models` (can be changed in Settings) |
 | Python runtime (shared) | `%LOCALAPPDATA%\Voxprint\shared\runtimes\py3.14-torch2.11-cu130` |
 | ffmpeg (shared) | `%LOCALAPPDATA%\Voxprint\shared\ffmpeg\n8.1` |
@@ -117,11 +117,11 @@ The program pauses briefly between batches only when a long job keeps the card h
 | Settings | `%LOCALAPPDATA%\VoxprintMovieDubber\state\settings.json` and the shared `%LOCALAPPDATA%\Voxprint\state\suite.json` |
 | Diagnostic reports | saved to the Desktop, with a copy in `%LOCALAPPDATA%\VoxprintMovieDubber\reports` |
 
-**Diagnostics** (the Start menu shortcut "Voxprint AI Movie Dubber - diagnostics", or the Diagnostics button) checks the card, memory and ffmpeg, loads every model and saves a report without personal data. See [DIAGNOSTICS.md](DIAGNOSTICS.md).
+**Diagnostics** (the Diagnostics button) checks the card, memory and ffmpeg, loads every model and saves a report without personal data. See [DIAGNOSTICS.md](DIAGNOSTICS.md).
 
 ## 11. Uninstall
 
-Use **Settings > Apps > Installed apps > Voxprint AI Movie Dubber > Uninstall**, or the uninstall shortcut in the Start menu folder "Voxprint".
+Use **Settings > Apps > Installed apps > VOXPrint AI Movie Dubber > Uninstall**, or the uninstall shortcut in the Start menu folder "VOXPrint AI Suite". An upgrade from the older `C:\Program Files\VoxprintMovieDubber` folder removes that program folder and the old Start menu group "Voxprint" (only this app's shortcuts). Projects, logs and the shared `%LOCALAPPDATA%\Voxprint` data are kept.
 
 - The uninstaller asks whether to delete your projects, logs and reports (default: keep).
 - The shared Python runtime, ffmpeg and models are removed when no other Voxprint program still uses them.

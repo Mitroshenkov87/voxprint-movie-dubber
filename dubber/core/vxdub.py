@@ -51,7 +51,7 @@ class SchemaTooNew(VxdubError):
         self.found = found
         super().__init__(
             f"This project uses .vxdub format version {found}. "
-            f"This version of Voxprint AI Movie Dubber opens version {SCHEMA}. "
+            f"This version of VOXPrint AI Movie Dubber opens version {SCHEMA}. "
             "Update the program and open the file again."
         )
 

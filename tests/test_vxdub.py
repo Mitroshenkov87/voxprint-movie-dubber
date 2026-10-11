@@ -290,11 +290,11 @@ def test_installer_registers_vxdub_and_removes_it():
     icon = ROOT / "installer" / "vxdub.ico"
     assert icon.is_file() and icon.read_bytes()[:4] == b"\x00\x00\x01\x00"
     assert 'ValueData: "Voxprint.MovieDubber.Project"' in iss
-    assert 'ValueData: "Voxprint dubbing project"' in iss
+    assert 'ValueData: "VOXPrint dubbing project"' in iss
     assert "Software\\Classes\\.vxdub" in iss
     assert "uninsdeletekey" in iss
     assert 'Source: "vxdub.ico"' in iss
-    assert '"{app}\\main.py" "%1"' in iss or '{app}\\main.py' in iss and "%1" in iss
+    assert 'voxprint-movie-dubber.exe" "%1"' in iss or 'voxprint-movie-dubber.exe"" ""%1""' in iss
 
 
 def test_cli_accepts_a_vxdub_as_the_first_argument():

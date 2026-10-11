@@ -389,3 +389,21 @@ def replace_downloaded(part: Path, target: Path, wholesale: bool) -> None:
     if part.is_symlink() or not _inside(part, part.parent):
         raise OSError("refusing to delete outside the models directory")
     shutil.rmtree(part)
+
+
+def publish_download(part: Path, target: Path) -> None:
+    """Install a finished download and remember the folder when this app solely owns it.
+
+    A folder another program still uses is updated file by file. The shared models directory is never replaced.
+    ``voxprint-mdl`` replaces the download itself and must keep calling this.
+
+    Raises:
+        OSError: ``target`` is the models directory, or the finished folder could not be published.
+    """
+    if is_models_root(target):
+        raise OSError("refusing to replace the shared models directory")
+    existed = target.exists()
+    owned = may_delete_model(target, target.parent) if existed else False
+    replace_downloaded(part, target, wholesale=not existed or owned)
+    if (not existed or owned) and not is_models_root(target):
+        record_installed(target.parent, target.name)

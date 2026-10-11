@@ -6,6 +6,7 @@ from typing import Any
 from PySide6.QtWidgets import QApplication, QProgressDialog
 
 from dubber import models as model_registry
+from dubber.appinfo import APP_DISPLAY_NAME
 from dubber.i18n import tr
 from dubber.infra.model_store import ModelUnavailable
 from dubber.infra.shared_deps import Report, live_selftest, missing_optional_models
@@ -60,7 +61,7 @@ def ensure_with_dialog() -> Report:
     """
     app = QApplication.instance()
     dialog = QProgressDialog("Checking shared components...", "", 0, 0)
-    dialog.setWindowTitle("Voxprint AI Movie Dubber")
+    dialog.setWindowTitle(APP_DISPLAY_NAME)
     dialog.setCancelButton(None)
     dialog.setMinimumDuration(0)
     dialog.setAutoClose(False)
