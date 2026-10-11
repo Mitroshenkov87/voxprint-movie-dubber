@@ -408,7 +408,16 @@ try {
         } else {
             Run "[2/5] Installing PyTorch $tv ($flavor build), torchaudio $taBase and torchcodec $tcBase" $uv @("pip", "install", "--python", $py, "--compile-bytecode", "torch==$tv", "torchaudio==$taBase", "torchcodec==$tcBase", "--torch-backend=$flavor")
         }
-        Run "[3/5] Installing the other packages" $uv (@("pip", "install", "--python", $py, "--compile-bytecode", "-r", $Requirements, "-c", $pins) + $offline)
+        # --offline cannot clone the git pin. The payload already holds the wheel built from that tag.
+        $reqFile = $Requirements
+        if ($Payload) {
+            $reqFile = Join-Path $env:TEMP "vmd-requirements-offline.txt"
+            $rewritten = foreach ($line in (Get-Content -LiteralPath $Requirements -Encoding UTF8)) {
+                if ($line -match '^\s*voxprint-common\s*@') { 'voxprint-common==0.1.0' } else { $line }
+            }
+            [IO.File]::WriteAllText($reqFile, (($rewritten -join "`r`n") + "`r`n"), (New-Object Text.UTF8Encoding $false))
+        }
+        Run "[3/5] Installing the other packages" $uv (@("pip", "install", "--python", $py, "--compile-bytecode", "-r", $reqFile, "-c", $pins) + $offline)
         if (-not $Payload) {
             Run "Pinning voxprint-common 0.1.0" $uv @("pip", "install", "--python", $py, "--compile-bytecode", "voxprint-common @ git+https://github.com/Mitroshenkov87/voxprint-common.git@v0.1.0")
         }
