@@ -34,6 +34,9 @@ jobs:
       matrix:
         kind: [online, full]
     env:
+      # Suite rule: clean-install tests run without a Hugging Face token.
+      HF_TOKEN: ""
+      HUGGINGFACE_HUB_TOKEN: ""
       PYTHONUTF8: "1"
       QT_QPA_PLATFORM: offscreen
       VOXPRINT_SKIP_GPU_GATE: "1"

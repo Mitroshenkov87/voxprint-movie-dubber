@@ -10,8 +10,8 @@
 | Silero VAD | voice activity detection | MIT |
 | Opus-MT tc-big (`Helsinki-NLP/opus-mt-tc-big-en-zle`, `-zle-en`, `-zle-de`, `-de-zle`) | translation (en↔ru, ru↔de) | CC-BY-4.0. University of Helsinki (Helsinki-NLP), https://huggingface.co/Helsinki-NLP, https://creativecommons.org/licenses/by/4.0/ |
 | Opus-MT tc-bible-big (`Helsinki-NLP/opus-mt-tc-bible-big-deu_eng_fra_por_spa-gmw`, `Helsinki-NLP/opus-mt-tc-bible-big-gmw-deu_eng_fra_por_spa`) | translation (en→de with `>>deu<<`, de→en with `>>eng<<`) | Apache-2.0. University of Helsinki (Helsinki-NLP), https://huggingface.co/Helsinki-NLP, https://www.apache.org/licenses/LICENSE-2.0 |
-| pyannote speaker-diarization community-1 | speaker diarization (gated, optional) | CC-BY-4.0; https://huggingface.co/pyannote/speaker-diarization-community-1, https://creativecommons.org/licenses/by/4.0/; needs a Hugging Face token and accepted terms |
-| pyannote/embedding | speaker embeddings (gated, optional) | MIT |
+| pyannote speaker-diarization community-1 | speaker diarization | CC-BY-4.0. Hervé Bredin and the pyannote.audio authors. Original https://huggingface.co/pyannote/speaker-diarization-community-1 . Mirror https://huggingface.co/Mitroshenkov87/voxprint-pyannote-speaker-diarization-community-1 at 9c851af727f1085a361777d13e32734f7f5ebb30. https://creativecommons.org/licenses/by/4.0/ . No changes besides removing the access gate. |
+| pyannote/embedding | speaker embeddings | MIT. Copyright (c) 2022 CNRS. Original https://huggingface.co/pyannote/embedding . Mirror https://huggingface.co/Mitroshenkov87/voxprint-pyannote-embedding at 4655ca656e1d7b1d8fe8100b39b4fdbf3015c7b8. No changes besides removing the access gate. |
 | Mel-Band RoFormer (`KimberleyJSN/melbandroformer` @ `ac9b0614ab3cd7f77219e18ba494dfd93956c348`, 2026-04-22) | optional vocal separation | MIT (model card relicensed MIT on that commit) |
 | PySide6 / Qt | user interface | LGPL-3.0 |
 | FFmpeg libraries inside PySide6 (Qt Multimedia FFmpeg backend, shared DLLs) | built-in video player for the preview and Watch mode | LGPL-2.1-or-later (dynamically linked, replaceable) |

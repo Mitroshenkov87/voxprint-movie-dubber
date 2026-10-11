@@ -304,9 +304,8 @@ class Runner:
         dur = float(self.p.settings.get("duration") or 600)
         cfg = cfg if cfg is not None else self.cfg
         timeout = max(600.0, TIMEOUT_PER_FILM_S.get(key, 1.0) * dur * (4 if cfg.get("device") == "cpu" else 1))
-        env = {"HF_TOKEN": cfg["hf_token"]} if cfg.get("hf_token") else {}
         out = run_worker("stage", {"project": str(self.p.folder), "stage": key, "cfg": {k: v for k, v in cfg.items() if k != "hf_token"}},
-                         timeout=timeout, env=env, on_log=on_log, cancel=self.cancel, sample_gpu=False)
+                         timeout=timeout, on_log=on_log, cancel=self.cancel, sample_gpu=False)
         if out.cancelled:
             raise Cancelled()
         r = out.result or {}

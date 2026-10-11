@@ -6,7 +6,7 @@ stage           real engine                                  stand-in (CPU, no m
 VAD             Silero VAD                                   frame-energy detector
 separation      TIGER-DnR / Mel-Band RoFormer                "none": no stems, the original is ducked
 ASR             faster-whisper large-v3-turbo                "none" (subtitles only) / "mock"
-diarization     pyannote community-1 (HF token)              MFCC clustering of the lines
+diarization     pyannote community-1 (ungated mirror)        MFCC clustering of the lines
 translation     Opus-MT (Marian)                             "mock": marks the text
 TTS             Qwen3-TTS (FA2 -> CUDA Graphs -> SDPA)       "mock": speech-like tone of the right length
 ==============  ===========================================  ==========================================

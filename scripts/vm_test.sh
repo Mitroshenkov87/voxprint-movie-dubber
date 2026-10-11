@@ -4,8 +4,7 @@
 #   ./scripts/vm_test.sh [--smoke|--full] [--json] [clips-dir]
 #
 # --smoke  dry-run JSON, selftest, a fetch-models check, and one short clip dub.
-# --full   every clip in the folder, plus one actor-blend dub, and a multi-voice
-#          dub when HF_TOKEN is set.
+# --full   every clip in the folder, plus one actor-blend dub and one multi-voice dub.
 # --json   print one JSON object on stdout. Progress stays on stderr.
 #
 # Exit 0 pass, 1 a case failed, 2 the machine is not set up, 3 no NVIDIA GPU.
@@ -198,12 +197,8 @@ else
   done
   actor="$(make_project actor "$SHORT" actor)"
   dub_video "actor-blend" "$actor"
-  if [ -n "${HF_TOKEN:-}" ]; then
-    multi="$(make_project multi "$SHORT" multi)"
-    dub_video "multi-voice" "$multi"
-  else
-    record "multi-voice" 0 0 "skipped: HF_TOKEN is not set"
-  fi
+  multi="$(make_project multi "$SHORT" multi)"
+  dub_video "multi-voice" "$multi"
 fi
 
 "$PY" - "$RESULTS" "$LOG" "$PEAK_FILE" "$MODE" "$CLIPS" "$JSON" <<'PY'

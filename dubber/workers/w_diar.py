@@ -1,17 +1,18 @@
-"""Worker ``diar``: speaker diarization with pyannote ``speaker-diarization-community-1`` (gated: needs a Hugging Face token).
+"""Worker ``diar``: speaker diarization with the ungated pyannote community-1 mirror.
 
 Input (args): ``wav16``, ``expected_speakers`` (int, optional), ``out_json``, ``allow_download``, ``device``.
-Without a token (or without pyannote.audio installed) the result is SKIP with the exact reason - not a failure of the app.
+Without pyannote.audio installed the result is SKIP with the exact reason - not a failure of the app.
 The audio is passed to pyannote as an in-memory waveform, so torchcodec/ffmpeg shared libraries (a frequent Windows problem) are not needed.
 """
 from __future__ import annotations
 
 import json
-import os
 import time
+from pathlib import Path
 from typing import Any, Dict, List
 
 from dubber import models
+from dubber.engines.diarization import load_diar_pipeline
 from dubber.workers.common import WorkerContext, cuda_sync, free_gpu, peak_vram_gb, read_wav_mono, reset_peak, torch_device
 
 
@@ -33,19 +34,15 @@ def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
         return {"status": "SKIP", "summary": str(exc)[:200], "details": [str(exc)]}
     t = time.time()
     import torch
-    from pyannote.audio import Pipeline
 
     import_s = time.time() - t
     device = torch_device(args.get("device", "auto"))
     reset_peak()
     t = time.time()
-    token = os.environ.get("HF_TOKEN") or None
     try:
-        pipe = Pipeline.from_pretrained(str(folder))
-    except Exception:  # noqa: BLE001 - some versions want the repo id + token instead of a folder
-        pipe = Pipeline.from_pretrained(repo, token=token)
-    if pipe is None:
-        return {"status": "FAIL", "summary": "Pipeline.from_pretrained returned None (access to the gated repo was not granted?)"}
+        pipe = load_diar_pipeline(Path(folder))
+    except Exception as exc:  # noqa: BLE001 - the local mirror could not be opened
+        return {"status": "FAIL", "summary": f"could not load the diarization pipeline: {type(exc).__name__}: {str(exc)[:160]}"}
     if hasattr(pipe, "embedding_batch_size"):
         try:
             pipe.embedding_batch_size = 4          # pyannote 4.0.3 defaults to a huge batch (~10 GB VRAM); research note 02

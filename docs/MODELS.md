@@ -5,8 +5,8 @@ actually fetches. The licence in `dubber/models.py` and the licence in `dubber/i
 licence on that model's Hugging Face card. A download is pinned to the revision below, and every file it fetches
 is checked (size, then SHA-256) before the folder is used.
 
-`pyannote/speaker-diarization-community-1` is gated and is not file-pinned here. Its licence is recorded on the
-`diar` entry in the registry: CC-BY-4.0.
+The pyannote diarization pipeline and the speaker embedding are ungated mirrors. File hashes are the `SHA256SUMS`
+published with those revisions. The pipeline config loads embedding, segmentation and PLDA from the mirror folder.
 
 ## Registry
 
@@ -16,8 +16,8 @@ is checked (size, then SHA-256) before the folder is used.
 | `tts_0_6b` | `Qwen/Qwen3-TTS-12Hz-0.6B-Base` | `5d83992436eae1d760afd27aff78a71d676296fc` | Apache-2.0 | pinned, verified on download |
 | `asr` | `deepdml/faster-whisper-large-v3-turbo-ct2` | `4df90f75321148c3a29a9e2351b7ddf8f5b115a8` | MIT | pinned, verified on download |
 | `sep` | `JusperLee/TIGER-DnR` | `b7a59560bbca10febbcd46fb01600f868e587f57` | Apache-2.0 (weights), MIT (code) | pinned, verified on download |
-| `diar` | `pyannote/speaker-diarization-community-1` | not file-pinned | CC-BY-4.0, gated | structural check only |
-| `embed` | `pyannote/embedding` | `4db4899737a38b2d618bbd74350915aa10293cb2` | MIT, gated | pinned, verified on download |
+| `diar` | `Mitroshenkov87/voxprint-pyannote-speaker-diarization-community-1` | `9c851af727f1085a361777d13e32734f7f5ebb30` | CC-BY-4.0 | pinned, verified on download |
+| `embed` | `Mitroshenkov87/voxprint-pyannote-embedding` | `4655ca656e1d7b1d8fe8100b39b4fdbf3015c7b8` | MIT | pinned, verified on download |
 | `roformer` | `KimberleyJSN/melbandroformer` | `ac9b0614ab3cd7f77219e18ba494dfd93956c348` | MIT | pinned, verified on download |
 | `mt_en_ru` | `Helsinki-NLP/opus-mt-tc-big-en-zle` | `708be1d372fe4c358a352f404e6dc9ca0126ba48` | CC-BY-4.0 | pinned, verified on download |
 | `mt_ru_en` | `Helsinki-NLP/opus-mt-tc-big-zle-en` | `09a40f722d6d8b76aaad6fe51a06c914622a13d1` | CC-BY-4.0 | pinned, verified on download |
@@ -56,12 +56,26 @@ en→de and de→en use the tc-bible-big models. The model cards list `>>deu<<` 
 
 ## CC BY 4.0 attributions
 
-These components are used unmodified under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+The Opus-MT tc-big models below are used unmodified under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
 **Opus-MT tc-big** (en→ru, ru→en, ru→de, de→ru). Language Technology Research Group at the University of Helsinki (Helsinki-NLP).
 Source: [https://huggingface.co/Helsinki-NLP](https://huggingface.co/Helsinki-NLP).
 Licence: [https://creativecommons.org/licenses/by/4.0/](https://creativecommons.org/licenses/by/4.0/).
 Tiedemann, Aulamo, Bakshandaeva, Boggia, Grönroos, Nieminen, Raganato, Scherrer, Vázquez, Virpioja: "Democratizing neural machine translation with OPUS-MT", Language Resources and Evaluation 58 (2024).
+
+**pyannote speaker-diarization-community-1**. Hervé Bredin and the pyannote.audio authors.
+Original: [https://huggingface.co/pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1).
+Mirror: [https://huggingface.co/Mitroshenkov87/voxprint-pyannote-speaker-diarization-community-1](https://huggingface.co/Mitroshenkov87/voxprint-pyannote-speaker-diarization-community-1) at `9c851af727f1085a361777d13e32734f7f5ebb30`.
+Licence: [https://creativecommons.org/licenses/by/4.0/](https://creativecommons.org/licenses/by/4.0/).
+No changes besides removing the access gate. Segmentation, the WeSpeaker embedding and PLDA are the subfolders of that mirror.
+
+## MIT attribution
+
+**pyannote/embedding**. Copyright (c) 2022 CNRS. pyannote.audio.
+Original: [https://huggingface.co/pyannote/embedding](https://huggingface.co/pyannote/embedding).
+Mirror: [https://huggingface.co/Mitroshenkov87/voxprint-pyannote-embedding](https://huggingface.co/Mitroshenkov87/voxprint-pyannote-embedding) at `4655ca656e1d7b1d8fe8100b39b4fdbf3015c7b8`.
+Licence: MIT.
+No changes besides removing the access gate.
 
 ## Apache-2.0 attributions
 
@@ -69,8 +83,3 @@ Tiedemann, Aulamo, Bakshandaeva, Boggia, Grönroos, Nieminen, Raganato, Scherrer
 Source: [https://huggingface.co/Helsinki-NLP/opus-mt-tc-bible-big-deu_eng_fra_por_spa-gmw](https://huggingface.co/Helsinki-NLP/opus-mt-tc-bible-big-deu_eng_fra_por_spa-gmw) and [https://huggingface.co/Helsinki-NLP/opus-mt-tc-bible-big-gmw-deu_eng_fra_por_spa](https://huggingface.co/Helsinki-NLP/opus-mt-tc-bible-big-gmw-deu_eng_fra_por_spa).
 Licence: [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0).
 Both model cards list the licence as Apache-2.0. en→de requires the sentence-initial token `>>deu<<`. de→en requires `>>eng<<`.
-
-**pyannote speaker-diarization-community-1**. pyannote.
-Source: [https://huggingface.co/pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1).
-Licence: [https://creativecommons.org/licenses/by/4.0/](https://creativecommons.org/licenses/by/4.0/).
-Gated: the user accepts the model-card terms and supplies a Hugging Face token. `pyannote/embedding` is MIT, not CC BY.

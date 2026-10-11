@@ -13,7 +13,6 @@ import argparse
 import importlib.metadata
 import json
 import logging
-import os
 import platform
 import signal
 import sys
@@ -147,7 +146,8 @@ def build_parser() -> argparse.ArgumentParser:
         description="Downloads the models the installer would fetch, or the keys passed to --models. "
                     "An unknown key is exit 2. A download that does not finish is exit 4. "
                     "--dry-run reports which of those keys are already on disk and does not download. "
-                    "The real download does not refuse to start because of the GPU.",
+                    "The real download does not refuse to start because of the GPU. "
+                    "The download is anonymous and does not use a Hugging Face token.",
     )
     run = commands.add_parser(
         "run-project",
@@ -608,9 +608,7 @@ def _write_report(req: Request, text: str) -> None:
 def _fetch_for_real(req: Request, keys: list[str], chosen: list[dict[str, Any]]) -> int:
     _setup_logging()
     failed: list[str] = []
-    gated: list[str] = []
     notes: list[str] = []
-    token = models.hf_token()
 
     def emit(text: str) -> None:
         notes.append(text)
@@ -620,13 +618,8 @@ def _fetch_for_real(req: Request, keys: list[str], chosen: list[dict[str, Any]])
     for key in keys:
         spec = models.SPECS[key]
         emit(f"- {spec.title} [{spec.repo}] ...")
-        if spec.gated and not token:
-            gated.append(key)
-            emit("  GATED: no Hugging Face token. One-voice dubbing works without this model; "
-                 "multi-voice needs HF_TOKEN (or huggingface-cli login).")
-            continue
         try:
-            models.ensure(spec.repo, True, token=token, log=lambda message: emit("    " + str(message)))
+            models.ensure(spec.repo, True, log=lambda message: emit("    " + str(message)))
             if models.locate(spec.repo) is None:
                 failed.append(key)
                 emit("  FAILED: the folder is still incomplete after the download")
@@ -635,26 +628,13 @@ def _fetch_for_real(req: Request, keys: list[str], chosen: list[dict[str, Any]])
         except Exception as exc:  # noqa: BLE001 - report and continue with the next model
             failed.append(key)
             emit(f"  FAILED: {' '.join(str(exc).split())[:300]}")
-    if gated:
-        emit("GATED: " + ", ".join(gated))
-        emit("One-voice dubbing works without pyannote. Multi-voice needs a Hugging Face token (HF_TOKEN) "
-             "for the diarization and embedding models.")
     if failed:
         emit("FAILED: " + ", ".join(failed))
     _write_report(req, "\n".join(notes) + "\n")
     if failed:
-        message = f"Not downloaded: {', '.join(failed)}."
-        if gated:
-            message += (" Skipped without a Hugging Face token: " + ", ".join(gated)
-                        + ". One-voice dubbing works without them; multi-voice needs HF_TOKEN.")
-        else:
-            message += "  Run this step again or start the diagnostics later."
-        return _finish(req, EXIT_MODELS, {"models": chosen, "failed": failed, "gated": gated, "log": notes}, error=message)
-    human = "All models are ready."
-    if gated:
-        human = ("One-voice dubbing works without pyannote. Multi-voice needs a Hugging Face token (HF_TOKEN) for: "
-                 + ", ".join(gated) + ".")
-    return _finish(req, EXIT_OK, {"models": chosen, "failed": [], "gated": gated, "log": notes}, human=human)
+        message = f"Not downloaded: {', '.join(failed)}.  Run this step again or start the diagnostics later."
+        return _finish(req, EXIT_MODELS, {"models": chosen, "failed": failed, "gated": [], "log": notes}, error=message)
+    return _finish(req, EXIT_OK, {"models": chosen, "failed": [], "gated": [], "log": notes}, human="All models are ready.")
 
 
 def _classify_path(path: Path) -> str:
@@ -852,7 +832,7 @@ def _diag_options(req: Request) -> DiagOptions:
         if target not in TARGET_LANGS:
             raise UsageError(f"unknown target language {target}")
         options.target_lang = target
-    options.hf_token = os.environ.get("HF_TOKEN", "")
+    options.hf_token = ""
     options.skip = tuple(part for part in req.values.get("--skip", "").split(",") if part)
     if "--tts-model" in req.values:
         options.tts_model = req.values["--tts-model"]
