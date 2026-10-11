@@ -70,6 +70,9 @@ SPECS: Dict[str, ModelSpec] = {s.key: s for s in (
 #: Both TTS sizes are listed; :func:`dubber.infra.vram_tier.install_models` keeps the one the card can run.
 INSTALL_MODELS = ("tts_1_7b", "tts_0_6b", "asr", "sep", "roformer", "diar", "embed",
                   "mt_en_ru", "mt_ru_en", "mt_en_de", "mt_de_en", "mt_ru_de", "mt_de_ru")
+#: Speaker models. One-voice dubbing runs without them, so a missing download does not stop startup.
+OPTIONAL_MODELS = ("diar", "embed")
+REQUIRED_MODELS = tuple(key for key in INSTALL_MODELS if key not in OPTIONAL_MODELS)
 
 
 def mt_spec(source: str, target: str) -> Optional[ModelSpec]:

@@ -70,8 +70,24 @@ def test_model_component_lives_under_the_models_root_and_the_last_ref_deletes_it
     data = json.loads((home / "shared" / "manifest.json").read_text(encoding="utf-8"))
     assert data["components"]["models"]["kind"] == "model"
     finished = components.release_app(home, "movie-dubber")
-    assert str((home / "models").resolve()) in finished.deleted
-    assert not (home / "models").exists()
+    assert str((home / "models").resolve()) not in finished.deleted
+    assert (models / "weights.bin").read_text(encoding="utf-8") == "weights"
+    assert (home / "models").is_dir()
+    assert not (home / "shared" / "manifest.json").exists()
+
+
+def test_last_ref_removes_an_empty_models_root_this_app_alone_owns(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    models = home / "models"
+    models.mkdir(parents=True)
+    (models / ".users.json").write_text('{"movie-dubber": true}\n', encoding="utf-8")
+    monkeypatch.setenv("VOXPRINT_HOME", str(home))
+    monkeypatch.delenv("VOXPRINT_MODELS_DIR", raising=False)
+    monkeypatch.delenv("VOXPRINT_MODEL_CACHE", raising=False)
+    components.add_component(home, "models", kind="model", version="store", path=models, app="movie-dubber")
+    finished = components.release_app(home, "movie-dubber")
+    assert str(models.resolve()) in finished.deleted
+    assert not models.exists()
     assert not (home / "shared" / "manifest.json").exists()
 
 

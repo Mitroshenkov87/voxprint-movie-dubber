@@ -42,6 +42,35 @@ UNINSTALL=0
 say() { printf '==> %s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
+remove_tree() {
+  target="$1"
+  models="${VX_HOME}/models"
+  case "$target" in
+    "$models"|"$models"/*)
+      say "refusing to delete shared models path"
+      return 0
+      ;;
+  esac
+  rm -rf "$target"
+}
+
+retry() {
+  what="$1"
+  shift
+  n=1
+  while [ "$n" -le 5 ]; do
+    say "$what: attempt $n of 5"
+    if "$@"; then
+      return 0
+    fi
+    if [ "$n" -eq 5 ]; then
+      return 1
+    fi
+    sleep $((2 ** (n - 1)))
+    n=$((n + 1))
+  done
+}
+
 usage() { sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 while [ $# -gt 0 ]; do
@@ -78,7 +107,8 @@ download_resumable() {
   else
     say "Downloading $(basename "$dest")"
   fi
-  curl -fL --retry 5 --retry-all-errors -C - -o "$partial" "$url"
+  say "Download attempt 1 of 5: $(basename "$dest")"
+  curl -fL --retry 5 --retry-all-errors --retry-delay 1 -C - --connect-timeout 30 --speed-limit 1 --speed-time 30 -o "$partial" "$url"
   mv -f "$partial" "$dest"
 }
 
@@ -129,7 +159,7 @@ if [ "$UNINSTALL" = 1 ]; then
     while [ -n "$rest" ]; do
       path="${rest%%, *}"
       case "$path" in
-        "$SHARED"/*) rm -rf "$path" ;;
+        "$SHARED"/*) remove_tree "$path" ;;
       esac
       if [ "$path" = "$rest" ]; then
         break
@@ -173,7 +203,8 @@ UV="$(command -v uv || true)"
 if [ -z "$UV" ]; then
   say "[1/5] Downloading uv (package manager)"
   mkdir -p "$PREFIX/uv"
-  curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="$PREFIX/uv" UV_NO_MODIFY_PATH=1 sh >/dev/null
+  download_resumable "https://astral.sh/uv/install.sh" "$PREFIX/uv/install.sh"
+  env UV_INSTALL_DIR="$PREFIX/uv" UV_NO_MODIFY_PATH=1 sh "$PREFIX/uv/install.sh" >/dev/null
   UV="$PREFIX/uv/uv"
 fi
 [ -x "$UV" ] || die "uv is not available"
@@ -193,7 +224,7 @@ mv "$PREFIX/app.new" "$PREFIX/app"
 if [ -d "$PREFIX/env" ] && [ ! -x "$PY" ]; then
   say "[2/5] Moving the previous environment into $RT"
   mkdir -p "$(dirname "$RT")"
-  rm -rf "$RT"
+  remove_tree "$RT"
   mkdir -p "$RT"
   mv "$PREFIX/env" "$ENV_DIR"
 fi
@@ -211,12 +242,12 @@ for old in "$VX_HOME"/runtime-*; do
       if [ "$moved_runtime" = 0 ] && [ ! -f "$RT/runtime-key.json" ] && [ -f "$old/runtime-key.json" ] \
          && grep -q '"flavor"[[:space:]]*:[[:space:]]*"cu130"' "$old/runtime-key.json"; then
         mkdir -p "$(dirname "$RT")"
-        rm -rf "$RT"
+        remove_tree "$RT"
         mv "$old" "$RT"
         moved_runtime=1
         say "Moved the old runtime folder $base into $RT"
       else
-        rm -rf "$old"
+        remove_tree "$old"
         say "Removed the old runtime folder $base"
       fi
       ;;
@@ -226,7 +257,7 @@ export UV_PYTHON_INSTALL_DIR="$RT/python"
 export UV_PYTHON_PREFERENCE=only-managed
 export PYTHONUTF8=1
 say "[2/5] Creating the Python 3.14 environment"
-"$UV" venv "$ENV_DIR" --python 3.14 --allow-existing --quiet
+retry "Creating the Python 3.14 environment" "$UV" venv "$ENV_DIR" --python 3.14 --allow-existing --quiet
 read -r TV TA TC < <("$PY" - "$PREFIX/app/dubber/infra/runtime_lock.json" <<'PYEOF'
 import json, sys
 lock = json.load(open(sys.argv[1], encoding="utf-8"))
@@ -240,7 +271,7 @@ PYEOF
 )
 [ -n "${TC:-}" ] || die "cannot read the PyTorch versions from runtime_lock.json"
 say "[2/5] Installing PyTorch $TV (CUDA 13.0 build), torchaudio $TA and torchcodec $TC"
-"$UV" pip install --python "$PY" --quiet "torch==$TV" "torchaudio==$TA" "torchcodec==$TC" --torch-backend=cu130
+retry "Installing PyTorch" "$UV" pip install --python "$PY" --quiet "torch==$TV" "torchaudio==$TA" "torchcodec==$TC" --torch-backend=cu130
 PINS="$(mktemp)"
 trap 'rm -f "$PINS"' EXIT
 { printf 'torch==%s+cu130\ntorchaudio==%s+cu130\ntorchcodec==%s+cu130\n' "$TV" "$TA" "$TC"; cat "$PREFIX/app/runtime-constraints.txt"; } > "$PINS"
@@ -248,16 +279,16 @@ say "[3/5] Installing the other packages and the CUDA 12 libraries"
 # voxprint-common==0.1.* is not on PyPI. Download the v0.1.1 wheel, check its sha256,
 # and let --find-links resolve the pin to that file.
 WHEEL_DIR="$(mktemp -d)"
-"$PY" "$HERE/fetch_common_wheel.py" --dest "$WHEEL_DIR"
-"$UV" pip install --python "$PY" --quiet --find-links "$WHEEL_DIR" -r "$PREFIX/app/requirements.txt" -c "$PINS"
-rm -rf "$WHEEL_DIR"
-"$UV" pip install --python "$PY" --quiet "nvidia-cublas-cu12==12.9.2.10" "nvidia-cudnn-cu12==9.27.0.42"
+retry "Downloading voxprint-common" "$PY" "$HERE/fetch_common_wheel.py" --dest "$WHEEL_DIR"
+retry "Installing the other packages" "$UV" pip install --python "$PY" --quiet --find-links "$WHEEL_DIR" -r "$PREFIX/app/requirements.txt" -c "$PINS"
+remove_tree "$WHEEL_DIR"
+retry "Installing CUDA libraries" "$UV" pip install --python "$PY" --quiet "nvidia-cublas-cu12==12.9.2.10" "nvidia-cudnn-cu12==9.27.0.42"
 # faster-whisper depends on the CPU distribution named onnxruntime. That name shadows onnxruntime-gpu.
 # Same version as dubber/infra/runtime_lock.json. The CPU distribution must not remain installed.
 if "$PY" -c "from voxprint_common.runtime_manifest import cpu_onnxruntime_conflicts; raise SystemExit(0 if cpu_onnxruntime_conflicts() else 1)"; then
   say "Replacing the CPU onnxruntime package with onnxruntime-gpu 1.30.0"
   "$UV" pip uninstall --python "$PY" --quiet onnxruntime
-  "$UV" pip install --python "$PY" --quiet "onnxruntime-gpu==1.30.0"
+  retry "Installing onnxruntime-gpu" "$UV" pip install --python "$PY" --quiet "onnxruntime-gpu==1.30.0"
 fi
 "$PY" -c "import voxprint_common; from voxprint_common.runtime_manifest import cpu_onnxruntime_conflicts; assert voxprint_common.__version__ == '0.1.1', voxprint_common.__version__; raise SystemExit('The CPU package onnxruntime is installed. The shared runtime must not contain it.' if cpu_onnxruntime_conflicts() else 0)"
 "$PY" -c "import torch, transformers, PySide6, faster_whisper, ctranslate2; print('torch', torch.__version__, '- CUDA available:', torch.cuda.is_available())"

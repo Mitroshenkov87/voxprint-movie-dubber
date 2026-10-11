@@ -144,7 +144,14 @@ jobs:
           "install exit code: $($p.ExitCode)"
           if ($p.ExitCode -ne 0) {
             if (Test-Path C:\vmd-install.log) { Get-Content C:\vmd-install.log -Tail 80 }
-            if (Test-Path "$env:TEMP\VoxprintMovieDubber-setup.log") { Get-Content "$env:TEMP\VoxprintMovieDubber-setup.log" -Tail 120 }
+            $setupLog = $null
+            $latest = Join-Path $env:TEMP "VoxprintMovieDubber-setup-latest.txt"
+            if (Test-Path $latest) { $setupLog = (Get-Content $latest -Raw).Trim() }
+            if (-not $setupLog -or -not (Test-Path $setupLog)) {
+              $found = Get-ChildItem $env:TEMP -Filter "VoxprintMovieDubber-setup-*.log" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+              if ($found) { $setupLog = $found.FullName }
+            }
+            if ($setupLog -and (Test-Path $setupLog)) { Get-Content $setupLog -Tail 120 }
             throw "install failed"
           }
 
@@ -190,7 +197,15 @@ jobs:
           if ("${{ matrix.kind }}" -eq "full") {
             & C:\vmd\runtime\Scripts\python.exe -c "import torch; print('torch', torch.__version__); assert torch.__version__.endswith('+cu130')"
             if ($LASTEXITCODE -ne 0) { throw "the full installer did not install the cu130 build" }
-            if (Select-String -Path "$env:TEMP\VoxprintMovieDubber-setup.log" -Pattern "Downloading uv|Downloading ffmpeg" -Quiet) { throw "the full installer downloaded components" }
+            $setupLog = $null
+            $latest = Join-Path $env:TEMP "VoxprintMovieDubber-setup-latest.txt"
+            if (Test-Path $latest) { $setupLog = (Get-Content $latest -Raw).Trim() }
+            if (-not $setupLog -or -not (Test-Path $setupLog)) {
+              $found = Get-ChildItem $env:TEMP -Filter "VoxprintMovieDubber-setup-*.log" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+              if ($found) { $setupLog = $found.FullName }
+            }
+            if (-not $setupLog) { throw "the setup log was not written" }
+            if (Select-String -Path $setupLog -Pattern "Downloading uv|Downloading ffmpeg" -Quiet) { throw "the full installer downloaded components" }
           }
           $suite = "$env:LOCALAPPDATA\Voxprint\state\suite.json"
           if (-not (Test-Path $suite)) { throw "suite.json was not written" }
@@ -281,11 +296,18 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          foreach ($l in "C:\vmd-install.log", "$env:TEMP\VoxprintMovieDubber-setup.log", "C:\vmd-uninstall.log") {
+          $logs = @("C:\vmd-install.log", "C:\vmd-uninstall.log")
+          $latest = Join-Path $env:TEMP "VoxprintMovieDubber-setup-latest.txt"
+          if (Test-Path $latest) {
+            $setupLog = (Get-Content $latest -Raw).Trim()
+            if ($setupLog) { $logs += $setupLog }
+          }
+          $logs += @(Get-ChildItem $env:TEMP -Filter "VoxprintMovieDubber-setup-*.log" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
+          foreach ($l in $logs) {
             if (Test-Path $l) { "== $l"; Get-Content $l -Tail 60 }
           }
           New-Item -ItemType Directory -Force ci-logs | Out-Null
-          foreach ($l in "C:\vmd-install.log", "$env:TEMP\VoxprintMovieDubber-setup.log", "C:\vmd-uninstall.log") { if (Test-Path $l) { Copy-Item $l ci-logs } }
+          foreach ($l in $logs) { if (Test-Path $l) { Copy-Item $l ci-logs } }
 
       - name: Upload the installer
         uses: actions/upload-artifact@v4

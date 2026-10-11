@@ -10,7 +10,9 @@ here); change locations only in :mod:`dubber.paths`.
 * Manifest: ``model_manifest.json`` next to this file: pinned revision + size + SHA-256 per file.  A model without a manifest entry
   is checked structurally (weights, and a config file unless the model is checkpoint-only).
 * Users: ``<models>/.users.json`` ``{"audiobook-builder": true, "movie-dubber": true}`` - the installer adds our key.
-  Who may delete the folder is ``shared/manifest.json``: the folder goes when no app still references the models resource.
+  Unknown keys and other programs' entries are kept. Who may delete a model folder is the install ledger plus that
+  file: a folder goes only when this app recorded it and no other program still uses the store. The models directory
+  itself stays while another program's weights are inside it.
 * Watchdog: while a download runs, the size of the ``.partial`` folder is reported every few seconds; no progress for
   ``STALL_SECONDS`` gives up the attempt (the data stays and the next attempt resumes).
 """
@@ -19,16 +21,15 @@ from __future__ import annotations
 import json
 import logging
 import os
-import shutil
 import sys
 import threading
 import time
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
 from dubber import paths
+from dubber.infra import model_guard
 from voxprint_common.hashing import sha256_file as file_digest
 
 log = logging.getLogger("dubber.models")
@@ -278,40 +279,33 @@ def _users_path(root: Optional[Path] = None) -> Path:
 def read_users(root: Optional[Path] = None) -> Dict[str, bool]:
     """Read ``.users.json`` as a map of program name to in-use flag, or return an empty dict."""
     try:
-        data = json.loads(_users_path(root).read_text(encoding="utf-8-sig"))
-        return {str(k): bool(v) for k, v in data.items()} if isinstance(data, dict) else {}
-    except (OSError, ValueError):
+        return model_guard.user_flags(model_guard.load_users_document(_users_path(root)))
+    except OSError:
         return {}
 
 
-def _write_users(users: Dict[str, bool], root: Optional[Path] = None) -> None:
-    path = _users_path(root)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.{uuid.uuid4().hex[:8]}.tmp")
-    tmp.write_text(json.dumps(users, indent=1, sort_keys=True), encoding="utf-8")
-    for i in range(10):
-        try:
-            os.replace(tmp, path)
-            return
-        except PermissionError:               # Windows: the other program is reading it right now
-            time.sleep(0.1 * (i + 1))
-    tmp.unlink(missing_ok=True)
-
-
 def register_user(key: str = USER_KEY, root: Optional[Path] = None) -> Dict[str, bool]:
-    """Mark ``key`` as using the models folder, write ``.users.json``, and return the updated map."""
-    users = read_users(root)
-    users[key] = True
-    _write_users(users, root)
-    return users
+    """Mark ``key`` as using the models folder and return the updated program map.
+
+    The write keeps unknown keys and other programs. A file that cannot be parsed is left unchanged.
+
+    Raises:
+        OSError: ``.users.json`` exists and is not valid JSON.
+    """
+    base = Path(root) if root is not None else models_root()
+    document = model_guard.update_users(base, lambda current: model_guard.with_user(current, key))
+    return model_guard.user_flags(document)
 
 
 def unregister_user(key: str = USER_KEY, root: Optional[Path] = None) -> List[str]:
-    """Remove ``key``; returns the other programs still using the models folder (empty = models may be deleted, if the user agrees)."""
-    users = read_users(root)
-    users.pop(key, None)
-    _write_users(users, root)
-    return sorted(k for k, v in users.items() if v)
+    """Remove ``key`` and return the other programs still using the models folder.
+
+    Raises:
+        OSError: ``.users.json`` exists and is not valid JSON.
+    """
+    base = Path(root) if root is not None else models_root()
+    document = model_guard.update_users(base, lambda current: model_guard.without_user(current, key))
+    return [name for name in model_guard.active_users(document) if name != key]
 
 
 # ---------------------------------------------------------------------------------------------- download
@@ -448,16 +442,14 @@ def ensure_model(repo: str, *, allow_download: bool = True, token: Optional[str]
             raise ModelUnavailable(f"{repo}: checksum mismatch in {', '.join(bad[:4])}; run again to re-download them")
         if bad is not None:
             write_verified_marker(part, repo)
-        if target.exists():
-            shutil.rmtree(target, ignore_errors=True)
-        for i in range(10):
-            try:
-                os.replace(part, target)
-                break
-            except PermissionError:
-                time.sleep(0.5 * (i + 1))
-        else:
-            raise ModelUnavailable(f"{repo}: could not rename {part.name} (a file is open in another program)")
+        existed = target.exists()
+        owned = model_guard.may_delete_model(target, target.parent) if existed else False
+        try:
+            model_guard.replace_downloaded(part, target, wholesale=not existed or owned)
+        except OSError as exc:
+            raise ModelUnavailable(f"{repo}: could not rename {part.name} ({exc})") from exc
+        if (not existed or owned) and not model_guard.is_models_root(target):
+            model_guard.record_installed(target.parent, target.name)
         done = True
         return EnsureInfo(target, "downloaded", round(time.time() - t0, 1))
     finally:

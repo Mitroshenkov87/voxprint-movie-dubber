@@ -4,7 +4,8 @@ The file format, the lock (``manifest.lock``, 30 seconds), the atomic publish
 and the Canvas / Enlarge migration live in ``voxprint_common.runtime_manifest``.
 This module only chooses component ids, turns this app's older list-shaped
 manifest into the object that library reads, and deletes a directory when no
-component still points at it. The app id stored in ``refs`` is ``movie-dubber``.
+component still points at it. The shared models directory is not removed while
+another program's weights are inside it. The app id stored in ``refs`` is ``movie-dubber``.
 
 A path must stay inside ``<home>/shared``, except a ``model`` component, which
 may be an absolute path under ``voxprint_common.paths.models_dir``
@@ -20,6 +21,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from dubber.infra import model_guard
 from voxprint_common.atomic import LockTimeout, exclusive_lock, write_json
 from voxprint_common.hashing import sha256_bytes, sha256_file
 from voxprint_common.paths import models_dir
@@ -352,7 +354,14 @@ def _delete_unused(home: Path, removed: list[str]) -> ReleaseResult:
             continue
         seen.add(rel)
         folder = _deletable(rel, shared)
-        if folder is None or _covers_kept(folder, kept, shared):
+        if folder is None:
+            continue
+        if model_guard.is_models_root(folder):
+            deleted.extend(model_guard.delete_owned_models(folder))
+            continue
+        if _covers_kept(folder, kept, shared):
+            continue
+        if model_guard.is_under_models(folder) and not model_guard.may_delete_model(folder):
             continue
         if running_from(folder):
             pending.append(str(folder))
@@ -363,6 +372,8 @@ def _delete_unused(home: Path, removed: list[str]) -> ReleaseResult:
             pending.append(str(folder))
         else:
             deleted.append(str(folder))
+            if model_guard.is_under_models(folder):
+                model_guard.forget_installed(folder.parent, folder.name)
     if not still.components and target.is_file():
         target.unlink()
     return ReleaseResult(tuple(deleted), tuple(pending))

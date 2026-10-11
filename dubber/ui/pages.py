@@ -116,6 +116,7 @@ class FilmPage(QWidget):
 
     def __init__(self) -> None:
         super().__init__()
+        self._multi_available = True
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         self._scroll = QScrollArea()
@@ -422,9 +423,16 @@ class FilmPage(QWidget):
         """Return the subtitle source: auto, none, or a file path."""
         return self.cmb_subs.currentData() or "auto"
 
+    def set_multi_voice_available(self, available: bool) -> None:
+        """Enable or disable a different voice per character. Turning it off clears the checkbox."""
+        self._multi_available = bool(available)
+        self.chk_multi.setEnabled(self._multi_available)
+        if not self._multi_available and self.chk_multi.isChecked():
+            self.chk_multi.setChecked(False)
+
     def multi(self) -> bool:
         """Return whether each character gets its own voice."""
-        return self.chk_multi.isChecked()
+        return self.chk_multi.isChecked() and self._multi_available
 
     def _widgets(self):
         return (self.cmb_target, self.cmb_audio, self.cmb_subs, self.cmb_profanity, self.chk_multi, self.cmb_voice,
@@ -444,7 +452,8 @@ class FilmPage(QWidget):
             self.set_subs_file(ch)
         else:
             self.cmb_subs.setCurrentIndex(0 if ch == "auto" else 1)
-        self.chk_multi.setChecked(bool(p.settings.get("multi_voice")))
+        self.chk_multi.setChecked(bool(p.settings.get("multi_voice")) and self._multi_available)
+        self.chk_multi.setEnabled(self._multi_available)
         sv = p.settings.get("single_voice") or {}
         fill_voice_combo(self.cmb_voice, Voice.from_dict(sv))
         raw = sv.get("actor_weight")
