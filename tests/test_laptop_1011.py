@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 from urllib.error import URLError
 
@@ -336,6 +339,53 @@ def test_default_fetch_does_not_fail_when_only_optional_models_fail(monkeypatch,
     assert cli_main(["fetch-models", "--models", "diar"]) == EXIT_MODELS
     failed.add(models.SPECS["asr"].repo)
     assert cli_main(["fetch-models"]) == EXIT_MODELS
+
+
+def test_components_script_records_a_ref_from_the_install_tree_and_from_a_lone_copy(tmp_path):
+    script = Path(__file__).resolve().parents[1] / "dubber" / "infra" / "components.py"
+
+    def add(program: Path, home: Path, component_id: str, kind: str, path: Path) -> subprocess.CompletedProcess[str]:
+        path.mkdir(parents=True, exist_ok=True)
+        return subprocess.run(
+            [
+                sys.executable,
+                str(program),
+                "add",
+                "--home",
+                str(home),
+                "--id",
+                component_id,
+                "--kind",
+                kind,
+                "--version",
+                "store",
+                "--path",
+                str(path),
+                "--app",
+                "movie-dubber",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "VOXPRINT_HOME": str(home)},
+        )
+
+    home = tmp_path / "home"
+    installed = add(script, home, "python-3.14", "runtime", home / "shared" / "runtimes" / "py3.14")
+    assert installed.returncode == 0, installed.stderr
+    models = add(script, home, "models", "model", home / "models")
+    assert models.returncode == 0, models.stderr
+    recorded = json.loads((home / "shared" / "manifest.json").read_text(encoding="utf-8"))
+    assert "movie-dubber" in recorded["components"]["python-3.14"]["refs"]
+    assert recorded["components"]["models"]["path"].endswith("/models")
+
+    lone = tmp_path / "components.py"
+    lone.write_text(script.read_text(encoding="utf-8"), encoding="utf-8")
+    lone_home = tmp_path / "lone-home"
+    copied = add(lone, lone_home, "python-3.14", "runtime", lone_home / "shared" / "runtimes" / "py3.14")
+    assert copied.returncode == 0, copied.stderr
+    lone_manifest = json.loads((lone_home / "shared" / "manifest.json").read_text(encoding="utf-8"))
+    assert "movie-dubber" in lone_manifest["components"]["python-3.14"]["refs"]
 
 
 def test_installer_scripts_retry_downloads_and_keep_a_fresh_setup_log():

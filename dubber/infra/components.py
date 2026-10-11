@@ -20,8 +20,26 @@ import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from types import ModuleType
 
-from dubber.infra import model_guard
+# Linux runs ``python <app>/dubber/infra/components.py``. The app root has to be
+# importable before ``dubber`` loads. The Windows setup copies this file alone
+# into a temp directory and only calls ``add``; ``release`` goes through main.py.
+_script = Path(__file__).resolve()
+if len(_script.parents) >= 3:
+    _candidate = _script.parents[2]
+    if (_candidate / "dubber" / "__init__.py").is_file():
+        _root_text = str(_candidate)
+        if _root_text not in sys.path:
+            sys.path.insert(0, _root_text)
+
+try:
+    from dubber.infra import model_guard as _model_guard
+except ImportError:
+    model_guard: ModuleType | None = None
+else:
+    model_guard = _model_guard
+
 from voxprint_common.atomic import LockTimeout, exclusive_lock, write_json
 from voxprint_common.hashing import sha256_bytes, sha256_file
 from voxprint_common.paths import models_dir
@@ -356,12 +374,17 @@ def _delete_unused(home: Path, removed: list[str]) -> ReleaseResult:
         folder = _deletable(rel, shared)
         if folder is None:
             continue
-        if model_guard.is_models_root(folder):
-            deleted.extend(model_guard.delete_owned_models(folder))
+        guard = model_guard
+        if guard is not None and guard.is_models_root(folder):
+            deleted.extend(guard.delete_owned_models(folder))
             continue
         if _covers_kept(folder, kept, shared):
             continue
-        if model_guard.is_under_models(folder) and not model_guard.may_delete_model(folder):
+        under_models = any(_inside(folder, root) for root in _model_roots())
+        if guard is None:
+            if under_models:
+                continue
+        elif guard.is_under_models(folder) and not guard.may_delete_model(folder):
             continue
         if running_from(folder):
             pending.append(str(folder))
@@ -372,8 +395,8 @@ def _delete_unused(home: Path, removed: list[str]) -> ReleaseResult:
             pending.append(str(folder))
         else:
             deleted.append(str(folder))
-            if model_guard.is_under_models(folder):
-                model_guard.forget_installed(folder.parent, folder.name)
+            if guard is not None and guard.is_under_models(folder):
+                guard.forget_installed(folder.parent, folder.name)
     if not still.components and target.is_file():
         target.unlink()
     return ReleaseResult(tuple(deleted), tuple(pending))
