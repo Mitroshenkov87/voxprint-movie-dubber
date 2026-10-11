@@ -394,8 +394,13 @@ def test_installer_suite_integration():
     assert "VOXPrint AI Suite\\Movie Dubber" in iss
     assert "voxprint-movie-dubber.exe" in iss and "voxprint-movie-dubber-cli.exe" in iss
     assert '{group}\\{#AppDisplayName} - diagnostics"' not in iss
-    assert r"Software\VOXPrint AI Suite\Apps\movie-dubber" in iss
-    assert "DefaultInstallDir" in iss and "InstallDir" in iss
+    assert r"Software\VOXPrint\MovieDubber" in iss
+    assert 'ValueName: "InstallPath"' in iss and 'ValueName: "CliExe"' in iss
+    assert 'ValueName: "IpcName"' in iss and 'ValueName: "ProtocolVersion"' in iss and 'ValueType: dword' in iss
+    assert r"App Paths\voxprint-movie-dubber.exe" in iss and r"App Paths\voxprint-movie-dubber-cli.exe" in iss
+    assert "RemoveOldSuiteKey" in iss and "RemoveEmptyVoxprintParent" in iss
+    assert "suite.registry" in iss
+    assert 'ValueName: "InstallDir"' not in iss and 'ValueName: "DefaultInstallDir"' not in iss
     assert "MigrateOldInstall" in iss and "VoxprintMovieDubber" in iss
     assert "{B3D84C11-52A7-4E5B-8F0D-6A9E2C41D7B5}" in iss
     assert "{6F1D2B7A-3C54-4E0B-9A41-7B5E0C9D2F18}_is1" in iss and "audiobook-builder" in iss    # sibling detection

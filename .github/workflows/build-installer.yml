@@ -152,6 +152,9 @@ jobs:
           $keep = Join-Path $env:LOCALAPPDATA "Voxprint\state"
           New-Item -ItemType Directory -Force $keep | Out-Null
           Set-Content -Path (Join-Path $keep "keep.txt") -Value "keep-user-data"
+          # A dev build wrote this key. Setup must delete it.
+          New-Item -Path "HKLM:\SOFTWARE\VOXPrint AI Suite\Apps\movie-dubber" -Force | Out-Null
+          New-ItemProperty -Path "HKLM:\SOFTWARE\VOXPrint AI Suite\Apps\movie-dubber" -Name "InstallDir" -Value "C:\old" -PropertyType String -Force | Out-Null
           $p = Start-Process $setup -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART",$ci,"/SKIPMODELS=1","/LOG=C:\vmd-install.log" -Wait -PassThru
           "install exit code: $($p.ExitCode)"
           if ($p.ExitCode -ne 0) {
@@ -223,15 +226,32 @@ jobs:
           $reg = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*","HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like "VOXPrint AI Movie Dubber*" }
           if (-not $reg) { throw "no Apps and features entry" }
           "apps and features: $($reg.DisplayName) $($reg.DisplayVersion)"
-          $suiteKey = "HKLM:\SOFTWARE\VOXPrint AI Suite\Apps\movie-dubber"
+          if (Test-Path "HKLM:\SOFTWARE\VOXPrint AI Suite\Apps\movie-dubber") { throw "the old suite key was not removed" }
+          $suiteKey = "HKLM:\SOFTWARE\VOXPrint\MovieDubber"
           $suiteReg = Get-ItemProperty $suiteKey
-          "suite registry: InstallDir=$($suiteReg.InstallDir) Exe=$($suiteReg.Exe) Cli=$($suiteReg.Cli) Version=$($suiteReg.Version) DefaultInstallDir=$($suiteReg.DefaultInstallDir)"
-          if ($suiteReg.InstallDir.TrimEnd('\') -ne $app) { throw "InstallDir is $($suiteReg.InstallDir)" }
+          "suite registry: InstallPath=$($suiteReg.InstallPath) Exe=$($suiteReg.Exe) CliExe=$($suiteReg.CliExe) Version=$($suiteReg.Version) Build=$($suiteReg.Build) IpcName=[$($suiteReg.IpcName)] ProtocolVersion=$($suiteReg.ProtocolVersion)"
+          if ($suiteReg.InstallPath.TrimEnd('\') -ne $app) { throw "InstallPath is $($suiteReg.InstallPath)" }
           if ($suiteReg.Exe -ne "$app\voxprint-movie-dubber.exe") { throw "Exe is $($suiteReg.Exe)" }
-          if ($suiteReg.Cli -ne "$app\voxprint-movie-dubber-cli.exe") { throw "Cli is $($suiteReg.Cli)" }
+          if ($suiteReg.CliExe -ne "$app\voxprint-movie-dubber-cli.exe") { throw "CliExe is $($suiteReg.CliExe)" }
           $ver = (Select-String -Path dubber\appinfo.py -Pattern '^APP_VERSION\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
           if ($suiteReg.Version -ne $ver) { throw "Version is $($suiteReg.Version), expected $ver" }
-          if ($suiteReg.DefaultInstallDir.TrimEnd('\') -ne $app) { throw "DefaultInstallDir is $($suiteReg.DefaultInstallDir)" }
+          $stamp = Get-Content "$app\build_info.json" -Raw | ConvertFrom-Json
+          if ([string]$suiteReg.Build -ne [string]$stamp.build) { throw "Build is $($suiteReg.Build), expected $($stamp.build)" }
+          if (-not ($suiteReg.PSObject.Properties.Name -contains "IpcName")) { throw "IpcName is missing" }
+          if ($suiteReg.IpcName -ne "") { throw "IpcName is [$($suiteReg.IpcName)]" }
+          if ([int]$suiteReg.ProtocolVersion -ne 0) { throw "ProtocolVersion is $($suiteReg.ProtocolVersion)" }
+          foreach ($pair in @(
+            @{ Name = "voxprint-movie-dubber.exe"; File = "$app\voxprint-movie-dubber.exe" },
+            @{ Name = "voxprint-movie-dubber-cli.exe"; File = "$app\voxprint-movie-dubber-cli.exe" }
+          )) {
+            $pathKey = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\$($pair.Name)"
+            $item = Get-Item -LiteralPath $pathKey
+            $target = $item.GetValue("")
+            $dir = $item.GetValue("Path")
+            "app path $($pair.Name): $target Path=$dir"
+            if ($target -ne $pair.File) { throw "App Paths default for $($pair.Name) is $target" }
+            if ($dir.TrimEnd('\') -ne $app) { throw "App Paths Path for $($pair.Name) is $dir" }
+          }
           if (-not (Test-Path "$app\build_info.json")) { throw "build_info.json was not installed" }
           $users = "$env:LOCALAPPDATA\Voxprint\models\.users.json"
           if (-not (Test-Path $users)) { throw "the shared models users file was not created: $users" }
@@ -290,7 +310,15 @@ jobs:
           if ($menu) { throw "Start menu shortcuts are still there" }
           $reg = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*","HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like "VOXPrint AI Movie Dubber*" }
           if ($reg) { throw "the Apps and features entry is still there" }
-          if (Test-Path "HKLM:\SOFTWARE\VOXPrint AI Suite\Apps\movie-dubber") { throw "the suite registry key is still there" }
+          if (Test-Path "HKLM:\SOFTWARE\VOXPrint AI Suite\Apps\movie-dubber") { throw "the old suite registry key is still there" }
+          if (Test-Path "HKLM:\SOFTWARE\VOXPrint\MovieDubber") { throw "the MovieDubber registry key is still there" }
+          foreach ($name in @("voxprint-movie-dubber.exe", "voxprint-movie-dubber-cli.exe")) {
+            if (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\$name") { throw "App Paths\$name is still there" }
+          }
+          if (Test-Path "HKLM:\SOFTWARE\VOXPrint") {
+            $left = @(Get-ChildItem "HKLM:\SOFTWARE\VOXPrint" -ErrorAction SilentlyContinue)
+            if ($left.Count -eq 0) { throw "Software\VOXPrint is empty and should have been removed" }
+          }
           # movie-dubber is the only app on this runner, so every component goes when its reference count hits zero.
           $flavor = if ("${{ matrix.kind }}" -eq "full") { "cu130" } else { "cpu" }
           $shared = "$env:LOCALAPPDATA\Voxprint\shared"

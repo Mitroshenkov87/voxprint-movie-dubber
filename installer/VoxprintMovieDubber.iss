@@ -20,8 +20,9 @@
 ; An older install in Program Files\VoxprintMovieDubber, and its shortcuts in the Start menu group "Voxprint",
 ; are removed on upgrade. User data under the Voxprint profile folder is kept. The AppId is unchanged, so Windows
 ; treats the new setup as an upgrade.
-; voxprint-common 0.1.2 has no discovery helper. Setup writes HKLM\Software\VOXPrint AI Suite\Apps\movie-dubber
-; (InstallDir, Exe, Cli, Version, and DefaultInstallDir) so other programs can find this one.
+; Suite discovery (per-machine), until voxprint-common 0.3.0 suite.registry owns it: HKLM\Software\VOXPrint\MovieDubber
+; (InstallPath, Exe, CliExe, Version, Build, IpcName, ProtocolVersion) and the two App Paths keys.
+; A dev build's HKLM\Software\VOXPrint AI Suite\Apps\movie-dubber key is deleted on upgrade.
 ; NOTE: never write Inno constants (curly-brace names) in comments - ISCC expands some of them and the build breaks.
 ; Per-machine install (Program Files), Start menu entries, an entry in Apps & features and a full uninstaller.
 ;
@@ -279,13 +280,22 @@ Root: HKLM; Subkey: "Software\Classes\.vxdub"; ValueType: string; ValueName: "Co
 Root: HKLM; Subkey: "Software\Classes\Voxprint.MovieDubber.Project"; ValueType: string; ValueName: ""; ValueData: "VOXPrint dubbing project"; Flags: uninsdeletekey
 Root: HKLM; Subkey: "Software\Classes\Voxprint.MovieDubber.Project\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\assets\vxdub.ico"
 Root: HKLM; Subkey: "Software\Classes\Voxprint.MovieDubber.Project\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\voxprint-movie-dubber.exe"" ""%1"""
-; Suite discovery for other programs. voxprint-common has no helper for this key (checked through 0.1.2).
-; InstallDir is the folder setup used. DefaultInstallDir is the usual Program Files location.
-Root: HKLM64; Subkey: "Software\VOXPrint AI Suite\Apps\movie-dubber"; ValueType: string; ValueName: "InstallDir"; ValueData: "{app}"; Flags: uninsdeletekey
-Root: HKLM64; Subkey: "Software\VOXPrint AI Suite\Apps\movie-dubber"; ValueType: string; ValueName: "Exe"; ValueData: "{app}\voxprint-movie-dubber.exe"
-Root: HKLM64; Subkey: "Software\VOXPrint AI Suite\Apps\movie-dubber"; ValueType: string; ValueName: "Cli"; ValueData: "{app}\voxprint-movie-dubber-cli.exe"
-Root: HKLM64; Subkey: "Software\VOXPrint AI Suite\Apps\movie-dubber"; ValueType: string; ValueName: "Version"; ValueData: "{#AppVersion}"
-Root: HKLM64; Subkey: "Software\VOXPrint AI Suite\Apps\movie-dubber"; ValueType: string; ValueName: "DefaultInstallDir"; ValueData: "{autopf}\{#SuiteDir}"
+; TODO: voxprint-common 0.3.0 suite.registry will own this key. Setup writes it until that helper exists.
+; Per-machine discovery. Exe and CliExe are full paths. IpcName is empty and ProtocolVersion is 0 (no IPC server yet).
+; Build is the number from BUILD.json, or the CI stamp when one was present at compile time.
+; uninsdeletekey removes MovieDubber. The parent Software\VOXPrint key is removed afterwards only when it is empty.
+Root: HKLM64; Subkey: "Software\VOXPrint\MovieDubber"; ValueType: string; ValueName: "InstallPath"; ValueData: "{app}"; Flags: uninsdeletekey
+Root: HKLM64; Subkey: "Software\VOXPrint\MovieDubber"; ValueType: string; ValueName: "Exe"; ValueData: "{app}\voxprint-movie-dubber.exe"
+Root: HKLM64; Subkey: "Software\VOXPrint\MovieDubber"; ValueType: string; ValueName: "CliExe"; ValueData: "{app}\voxprint-movie-dubber-cli.exe"
+Root: HKLM64; Subkey: "Software\VOXPrint\MovieDubber"; ValueType: string; ValueName: "Version"; ValueData: "{#AppVersion}"
+Root: HKLM64; Subkey: "Software\VOXPrint\MovieDubber"; ValueType: string; ValueName: "Build"; ValueData: "{#AppBuild}"
+Root: HKLM64; Subkey: "Software\VOXPrint\MovieDubber"; ValueType: string; ValueName: "IpcName"; ValueData: ""
+Root: HKLM64; Subkey: "Software\VOXPrint\MovieDubber"; ValueType: dword; ValueName: "ProtocolVersion"; ValueData: "0"
+; App Paths: the default value is the full path, Path is the install directory. uninsdeletekey removes each key.
+Root: HKLM64; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\voxprint-movie-dubber.exe"; ValueType: string; ValueName: ""; ValueData: "{app}\voxprint-movie-dubber.exe"; Flags: uninsdeletekey
+Root: HKLM64; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\voxprint-movie-dubber.exe"; ValueType: string; ValueName: "Path"; ValueData: "{app}"
+Root: HKLM64; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\voxprint-movie-dubber-cli.exe"; ValueType: string; ValueName: ""; ValueData: "{app}\voxprint-movie-dubber-cli.exe"; Flags: uninsdeletekey
+Root: HKLM64; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\voxprint-movie-dubber-cli.exe"; ValueType: string; ValueName: "Path"; ValueData: "{app}"
 
 [InstallDelete]
 ; Start menu folder used before 0.1.0-pre.3, and this app's shortcuts in the old "Voxprint" group.
@@ -462,6 +472,47 @@ begin
     Log('removed the previous program folder ' + Dir);
 end;
 
+procedure DeleteRegistryKey(const Root: Integer; const Key: String);
+begin
+  if RegKeyExists(Root, Key) then
+    RegDeleteKeyIncludingSubkeys(Root, Key);
+end;
+
+function KeyIsEmpty(const Root: Integer; const Key: String): Boolean;
+var
+  Subkeys, Values: TArrayOfString;
+begin
+  Result := False;
+  if not RegGetSubkeyNames(Root, Key, Subkeys) then Exit;
+  if GetArrayLength(Subkeys) > 0 then Exit;
+  if not RegGetValueNames(Root, Key, Values) then Exit;
+  Result := GetArrayLength(Values) = 0;
+end;
+
+procedure DeleteKeyIfEmpty(const Root: Integer; const Key: String);
+begin
+  if RegKeyExists(Root, Key) and KeyIsEmpty(Root, Key) then
+    RegDeleteKeyIncludingSubkeys(Root, Key);
+end;
+
+{ Dev builds wrote Software\VOXPrint AI Suite\Apps\movie-dubber. Drop that key, then empty parents. }
+procedure RemoveOldSuiteKey;
+begin
+  DeleteRegistryKey(HKLM64, 'Software\VOXPrint AI Suite\Apps\movie-dubber');
+  DeleteRegistryKey(HKLM, 'Software\VOXPrint AI Suite\Apps\movie-dubber');
+  DeleteKeyIfEmpty(HKLM64, 'Software\VOXPrint AI Suite\Apps');
+  DeleteKeyIfEmpty(HKLM, 'Software\VOXPrint AI Suite\Apps');
+  DeleteKeyIfEmpty(HKLM64, 'Software\VOXPrint AI Suite');
+  DeleteKeyIfEmpty(HKLM, 'Software\VOXPrint AI Suite');
+end;
+
+{ Leave Software\VOXPrint when another app still has a subkey or a value. }
+procedure RemoveEmptyVoxprintParent;
+begin
+  DeleteKeyIfEmpty(HKLM64, 'Software\VOXPrint');
+  DeleteKeyIfEmpty(HKLM, 'Software\VOXPrint');
+end;
+
 procedure MigrateOldInstall;
 var
   OldDir, Previous, NewDir, Group, Key: String;
@@ -481,6 +532,7 @@ begin
   DeleteFile(Group + '\Voxprint AI Movie Dubber - diagnostics.lnk');
   DeleteFile(Group + '\Uninstall Voxprint AI Movie Dubber.lnk');
   RemoveDir(Group);
+  RemoveOldSuiteKey;
   Log('User data in the Voxprint profile folder is kept');
 end;
 
@@ -498,6 +550,8 @@ begin
   end;
   if CurStep <> ssPostInstall then
     Exit;
+  { The [Registry] entry also writes IpcName. Repeat it here so an empty string is stored. }
+  RegWriteStringValue(HKLM64, 'Software\VOXPrint\MovieDubber', 'IpcName', '');
   if not ShouldFetchModels then
     Exit;
   Report := ExpandConstant('{%TEMP}\VoxprintMovieDubber-models.txt');
@@ -533,6 +587,8 @@ begin
     ReleaseShared;
   if CurUninstallStep = usPostUninstall then
   begin
+    RemoveOldSuiteKey;
+    RemoveEmptyVoxprintParent;
     DataDir := ExpandConstant('{localappdata}\{#AppName}');
     if DirExists(DataDir) then
       if SuppressibleMsgBox(FmtMessage(CustomMessage('UninstallDataQuestion'), [DataDir]),
