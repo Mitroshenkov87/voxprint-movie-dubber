@@ -245,8 +245,12 @@ PINS="$(mktemp)"
 trap 'rm -f "$PINS"' EXIT
 { printf 'torch==%s+cu130\ntorchaudio==%s+cu130\ntorchcodec==%s+cu130\n' "$TV" "$TA" "$TC"; cat "$PREFIX/app/runtime-constraints.txt"; } > "$PINS"
 say "[3/5] Installing the other packages and the CUDA 12 libraries"
-"$UV" pip install --python "$PY" --quiet -r "$PREFIX/app/requirements.txt" -c "$PINS"
-"$UV" pip install --python "$PY" --quiet "voxprint-common @ git+https://github.com/Mitroshenkov87/voxprint-common.git@v0.1.0"
+# voxprint-common==0.1.* is not on PyPI. Download the v0.1.1 wheel, check its sha256,
+# and let --find-links resolve the pin to that file.
+WHEEL_DIR="$(mktemp -d)"
+"$PY" "$HERE/fetch_common_wheel.py" --dest "$WHEEL_DIR"
+"$UV" pip install --python "$PY" --quiet --find-links "$WHEEL_DIR" -r "$PREFIX/app/requirements.txt" -c "$PINS"
+rm -rf "$WHEEL_DIR"
 "$UV" pip install --python "$PY" --quiet "nvidia-cublas-cu12==12.9.2.10" "nvidia-cudnn-cu12==9.27.0.42"
 # faster-whisper depends on the CPU distribution named onnxruntime. That name shadows onnxruntime-gpu.
 # Same version as dubber/infra/runtime_lock.json. The CPU distribution must not remain installed.
@@ -255,7 +259,7 @@ if "$PY" -c "from voxprint_common.runtime_manifest import cpu_onnxruntime_confli
   "$UV" pip uninstall --python "$PY" --quiet onnxruntime
   "$UV" pip install --python "$PY" --quiet "onnxruntime-gpu==1.30.0"
 fi
-"$PY" -c "import voxprint_common; from voxprint_common.runtime_manifest import cpu_onnxruntime_conflicts; assert voxprint_common.__version__ == '0.1.0', voxprint_common.__version__; raise SystemExit('The CPU package onnxruntime is installed. The shared runtime must not contain it.' if cpu_onnxruntime_conflicts() else 0)"
+"$PY" -c "import voxprint_common; from voxprint_common.runtime_manifest import cpu_onnxruntime_conflicts; assert voxprint_common.__version__ == '0.1.1', voxprint_common.__version__; raise SystemExit('The CPU package onnxruntime is installed. The shared runtime must not contain it.' if cpu_onnxruntime_conflicts() else 0)"
 "$PY" -c "import torch, transformers, PySide6, faster_whisper, ctranslate2; print('torch', torch.__version__, '- CUDA available:', torch.cuda.is_available())"
 date -u +%Y-%m-%dT%H:%M:%SZ > "$RT/.install-complete"
 "$PY" - "$RT/runtime-key.json" "$TV" <<'PYEOF'
@@ -281,6 +285,7 @@ add_ref --id python-3.14 --kind runtime --version "$RUNTIME_VERSION" --path "$RT
 add_ref --id torch-2.11.0-cu130 --kind wheels --version "${TV}+cu130" --path "$RT"
 add_ref --id ctranslate2-cu12 --kind wheels --version cu12 --path "$RT"
 add_ref --id ffmpeg-8 --kind tool --version "$FFMPEG_VERSION" --path "$FF_DIR" --sha256 "$ff_sha"
+add_ref --id models --kind model --version store --path "$VX_HOME/models"
 
 # 6. launcher, menu entry, icons and the .vxdub file type
 say "Adding the launcher $BIN_DIR/$APP_ID"

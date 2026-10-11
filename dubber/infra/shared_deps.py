@@ -1,7 +1,8 @@
 """Shared suite dependencies: layout, migration, check and repair.
 
 The installer puts the Python 3.14 runtime, the torch 2.11.0 / torchaudio / torchcodec cu130 wheels, the
-CTranslate2 CUDA 12 libraries, ffmpeg and the default-pipeline models into ``<Voxprint home>/shared`` before
+CTranslate2 CUDA 12 libraries and ffmpeg into ``<Voxprint home>/shared``, and the
+default-pipeline models into ``<Voxprint home>/models``, before
 the first launch. Every launch and ``--selftest`` call :func:`live_selftest`, which checks those pieces and
 repairs a missing or broken one. An old per-app runtime or ffmpeg directory is moved once by :func:`migrate`
 and is not consulted again.
@@ -584,7 +585,7 @@ def _migrate_models(home: Path) -> List[str]:
 
 
 def _register(home: Path, piece: Piece) -> None:
-    if not piece.ok or piece.id == "models":
+    if not piece.ok:
         return
     component_id, kind = component_id_for(piece.id, piece.version)
     try:

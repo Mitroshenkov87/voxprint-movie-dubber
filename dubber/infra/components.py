@@ -6,14 +6,15 @@ This module only chooses component ids, turns this app's older list-shaped
 manifest into the object that library reads, and deletes a directory when no
 component still points at it. The app id stored in ``refs`` is ``movie-dubber``.
 
-A path must stay inside ``<home>/shared``. Model weights follow
-``voxprint_common.paths.models_dir`` (``<home>/models`` by default), which is
-outside that directory, so they are not a manifest component.
+A path must stay inside ``<home>/shared``, except a ``model`` component, which
+may be an absolute path under ``voxprint_common.paths.models_dir``
+(``<home>/models`` by default) or ``VOXPRINT_MODEL_CACHE``.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import sys
 from dataclasses import dataclass
@@ -21,6 +22,7 @@ from pathlib import Path
 
 from voxprint_common.atomic import LockTimeout, exclusive_lock, write_json
 from voxprint_common.hashing import sha256_bytes, sha256_file
+from voxprint_common.paths import models_dir
 from voxprint_common.runtime_manifest import (
     ManifestError,
     add_ref,
@@ -46,7 +48,11 @@ _LEGACY_KIND = {
 
 
 class OutsideShared(ValueError):
-    """The directory is not inside ``<home>/shared``, so it cannot be a component path."""
+    """The directory is not an allowed component path.
+
+    Runtime, wheel and tool paths stay inside ``<home>/shared``. A model path
+    stays under the shared models directory or ``VOXPRINT_MODEL_CACHE``.
+    """
 
 
 @dataclass(frozen=True)
@@ -120,6 +126,56 @@ def relative_path(home: Path, path: Path) -> str:
     return rel.as_posix()
 
 
+def _model_roots() -> tuple[Path, ...]:
+    """Directories a model component may live in."""
+    roots = [models_dir()]
+    cache = os.environ.get("VOXPRINT_MODEL_CACHE", "").strip()
+    if cache:
+        roots.append(Path(os.path.expandvars(os.path.expanduser(cache))))
+    return tuple(roots)
+
+
+def _inside(folder: Path, root: Path) -> bool:
+    try:
+        base = root.resolve()
+        target = folder.resolve()
+    except OSError:
+        return False
+    return target == base or base in target.parents
+
+
+def _absolute_model_path(path: Path) -> str:
+    """Return an absolute model path that stays under a models root.
+
+    Raises:
+        OutsideShared: ``path`` is not absolute, or it is outside every models root.
+    """
+    target = Path(path)
+    if not target.is_absolute():
+        raise OutsideShared(f"{path} is outside the shared models directory")
+    try:
+        folder = target.resolve()
+    except OSError as exc:
+        raise OutsideShared(f"{path} is outside the shared models directory") from exc
+    if not any(_inside(folder, root) for root in _model_roots()):
+        raise OutsideShared(f"{path} is outside the shared models directory")
+    return folder.as_posix()
+
+
+def component_path(home: Path, path: Path, kind: str) -> str:
+    """Return the path stored for one component.
+
+    A model is an absolute path under the shared models directory. Every other
+    kind is relative to ``<home>/shared``.
+
+    Raises:
+        OutsideShared: ``path`` is not in the directory that kind allows.
+    """
+    if kind == "model":
+        return _absolute_model_path(path)
+    return relative_path(home, path)
+
+
 def running_from(path: Path) -> bool:
     """True when this process's prefix is ``path`` or a directory inside it."""
     try:
@@ -168,7 +224,7 @@ def prepare(home: Path) -> None:
             version = str(row.get("version") or "")
             component_id, kind = component_id_for(raw_id, version)
             try:
-                rel = relative_path(home, Path(str(row.get("path") or "")))
+                rel = component_path(home, Path(str(row.get("path") or "")), str(row.get("kind") or kind))
             except OutsideShared:
                 continue
             digest = str(row.get("sha256") or "").strip().lower()
@@ -207,11 +263,12 @@ def add_component(
     """Add ``app`` to one component. The same id, version and digest is reused.
 
     Raises:
-        OutsideShared: ``path`` is not inside ``<home>/shared``.
+        OutsideShared: ``path`` is outside ``<home>/shared``, or a model path is
+            outside the shared models directory.
         ManifestError: The id, kind, or digest is not valid.
     """
     prepare(home)
-    rel = relative_path(home, path)
+    rel = component_path(home, path, kind)
     digest = sha256.strip().lower()
     if len(digest) != 64:
         digest = digest_for(Path(path), f"{component_id}\n{version}\n")
@@ -294,10 +351,8 @@ def _delete_unused(home: Path, removed: list[str]) -> ReleaseResult:
         if rel in kept or not rel or rel in seen:
             continue
         seen.add(rel)
-        folder = (shared / rel).resolve()
-        try:
-            folder.relative_to(shared)
-        except ValueError:
+        folder = _deletable(rel, shared)
+        if folder is None or _covers_kept(folder, kept, shared):
             continue
         if running_from(folder):
             pending.append(str(folder))
@@ -311,6 +366,39 @@ def _delete_unused(home: Path, removed: list[str]) -> ReleaseResult:
     if not still.components and target.is_file():
         target.unlink()
     return ReleaseResult(tuple(deleted), tuple(pending))
+
+
+def _covers_kept(folder: Path, kept: set[str], shared: Path) -> bool:
+    """True when a remaining component path is this directory or something inside it."""
+    for rel in kept:
+        raw = Path(rel)
+        try:
+            other = raw.resolve() if raw.is_absolute() else (shared / rel).resolve()
+        except OSError:
+            continue
+        if other == folder or folder in other.parents:
+            return True
+    return False
+
+
+def _deletable(rel: str, shared: Path) -> Path | None:
+    """Return a directory this app may remove, or None when the path is not one of ours.
+
+    Relative paths stay inside ``shared``. Absolute model paths stay under a
+    models root. The shared directory itself is never removed.
+    """
+    raw = Path(rel)
+    try:
+        folder = raw.resolve() if raw.is_absolute() else (shared / rel).resolve()
+    except OSError:
+        return None
+    if folder == shared:
+        return None
+    if shared in folder.parents:
+        return folder
+    if raw.is_absolute() and any(_inside(folder, root) for root in _model_roots()):
+        return folder
+    return None
 
 
 def _build_parser() -> argparse.ArgumentParser:

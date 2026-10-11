@@ -8,8 +8,8 @@
 # Runners have no GPU: /TORCH=cpu (online) and /SKIPGPUGATE=1 (full, keeps its cu130 build) are CI-only switches.
 # VOXPRINT_SKIP_GPU_GATE lets the window self-test open on that same runner.
 # /SKIPMODELS=1 and VOXPRINT_SKIP_MODEL_FETCH skip the multi-gigabyte model download on that runner.
-# A user install downloads the models into <home>\models. The shared runtime and ffmpeg are removed on uninstall
-# only when movie-dubber was the last reference. The models folder is not a manifest component and stays.
+# A user install downloads the models into <home>\models and records that folder as a model component.
+# The shared runtime, ffmpeg and that models folder are removed on uninstall only when movie-dubber was the last reference.
 # The audit job runs first. The installer is not built when ruff, mypy, bandit (high), gitleaks, or an
 # un-allowlisted pip-audit high/critical finding fails that job. Vulture and radon do not fail it.
 name: Build installers
@@ -59,7 +59,7 @@ jobs:
       - name: Write the build stamp (build_info.json)
         shell: pwsh
         run: |
-          # Same formula as dubber.appinfo.resolve_build: GITHUB_RUN_NUMBER + BUILD.json offset.
+          # Same formula as voxprint_common.buildinfo: GITHUB_RUN_NUMBER + BUILD.json offset.
           $spec = Get-Content -Raw -Encoding utf8 BUILD.json | ConvertFrom-Json
           $offset = [int]$spec.offset
           $codename = [string]$spec.codename
@@ -172,7 +172,7 @@ jobs:
           if ($manifest.schema -ne 1) { throw "manifest schema is $($manifest.schema)" }
           $pyId = if ($flavor -eq "cpu") { "python-3.14-cpu" } else { "python-3.14" }
           $torchId = if ($flavor -eq "cpu") { "torch-2.11.0-cpu" } else { "torch-2.11.0-cu130" }
-          foreach ($id in @($pyId, $torchId, "ctranslate2-cu12", "ffmpeg-8")) {
+          foreach ($id in @($pyId, $torchId, "ctranslate2-cu12", "ffmpeg-8", "models")) {
             $row = $manifest.components.$id
             if (-not $row) { throw "manifest has no $id" }
             foreach ($field in @("kind", "version", "path", "sha256", "installed_at", "refs")) {
@@ -180,6 +180,7 @@ jobs:
             }
             if (@($row.refs) -notcontains "movie-dubber") { throw "$id is not referenced by movie-dubber" }
           }
+          if ($manifest.components.models.kind -ne "model") { throw "models component kind is $($manifest.components.models.kind)" }
           "manifest components: " + (($manifest.components.PSObject.Properties.Name) -join ", ")
           & C:\vmd\runtime\Scripts\python.exe -c "import torch; print('torch', torch.__version__); assert torch.__version__.startswith('2.11.0')"
           if ($LASTEXITCODE -ne 0) { throw "the runtime does not have the pinned PyTorch 2.11.0" }
@@ -253,18 +254,19 @@ jobs:
           if ($menu) { throw "Start menu shortcuts are still there" }
           $reg = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*","HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like "Voxprint AI Movie Dubber*" }
           if ($reg) { throw "the Apps and features entry is still there" }
-          # movie-dubber is the only app on this runner, so every shared component goes when its reference count hits zero.
-          # Model weights live at <home>\models and are not a manifest component, so that folder is not deleted.
+          # movie-dubber is the only app on this runner, so every component goes when its reference count hits zero.
           $flavor = if ("${{ matrix.kind }}" -eq "full") { "cu130" } else { "cpu" }
           $shared = "$env:LOCALAPPDATA\Voxprint\shared"
           $rt = "$shared\runtimes\py3.14-torch2.11-$flavor"
+          $models = "$env:LOCALAPPDATA\Voxprint\models"
           for ($i = 0; $i -lt 120; $i++) {
             $runtimeLeft = Test-Path $rt
             $ffmpegLeft = Test-Path "$shared\ffmpeg\n8.1"
-            if (-not $runtimeLeft -and -not $ffmpegLeft) { break }
+            $modelsLeft = Test-Path $models
+            if (-not $runtimeLeft -and -not $ffmpegLeft -and -not $modelsLeft) { break }
             Start-Sleep 2
           }
-          if ((Test-Path $rt) -or (Test-Path "$shared\ffmpeg\n8.1") -or (Test-Path "$shared\models")) {
+          if ((Test-Path $rt) -or (Test-Path "$shared\ffmpeg\n8.1") -or (Test-Path "$shared\models") -or (Test-Path $models)) {
             if (Test-Path C:\vmd-uninstall.log) { Get-Content C:\vmd-uninstall.log | Select-String "shared" }
             Get-ChildItem $shared -Recurse -ErrorAction SilentlyContinue | Select-Object -First 40 FullName
             throw "a shared resource was not removed after the last reference was dropped"

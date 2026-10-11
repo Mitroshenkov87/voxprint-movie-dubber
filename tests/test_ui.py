@@ -25,6 +25,7 @@ def test_wcag_aa_contrast(fg, bg):
 def test_style_sheet_formats_cleanly():
     css = theme.build_style(True)
     assert "{{" not in css and "QPushButton" in css
+    assert "QPushButton#gear" in css and "QPushButton#disclosure" in css
     assert theme.PRIMARY in css and theme.PRIMARY_HOVER in css and theme.TEXT_ON_PRIMARY in css
     assert theme.MENU_BG in css and theme.MENU_SELECTION in css
     from dubber.ui.splash_hook import IDENTITY
