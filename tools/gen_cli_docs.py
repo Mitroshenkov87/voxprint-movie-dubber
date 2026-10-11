@@ -90,6 +90,7 @@ def render() -> str:
         "python main.py fetch-models [--models KEY,KEY]",
         "python main.py run-project PATH [--languages SRC,TGT] [--stages NAME,NAME]",
         "python main.py info PATH",
+        "python main.py selftest",
         "python main.py --dry-run --json",
         "```",
         "",
@@ -119,8 +120,9 @@ def render() -> str:
     if window.description:
         lines.extend([window.description.strip(), ""])
     lines.extend([
-        "The desktop window returns 1 when the graphics card is below the minimum. "
-        "That code is not one of the headless codes above.",
+        "The desktop window returns 3 (gpu) when the graphics card is not an RTX 40-series or newer, "
+        "or the NVIDIA driver is older than branch 600. "
+        "`--selftest` uses the same codes. A repaired component is exit 0 with outcome `repair`.",
         "",
     ])
     for _title, rows in _option_rows(window):

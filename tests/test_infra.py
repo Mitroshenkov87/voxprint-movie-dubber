@@ -16,7 +16,7 @@ from dubber.ui.pages import TARGET_LANGS
 
 def test_models_dir_env_file_and_fallback(tmp_path, monkeypatch):
     home = Path(os.environ["VOXPRINT_HOME"])
-    assert shared_paths.models_dir() == home / "models"
+    assert shared_paths.models_dir() == home / "shared" / "models"
     chosen = tmp_path / "big-disk" / "models"
     shared_paths.set_models_dir(chosen)
     assert (home / "state" / "models_dir.txt").read_text(encoding="utf-8").strip() == str(chosen)
@@ -24,10 +24,10 @@ def test_models_dir_env_file_and_fallback(tmp_path, monkeypatch):
     monkeypatch.setenv("VOXPRINT_MODELS_DIR", str(tmp_path / "env-models"))
     assert shared_paths.models_dir() == tmp_path / "env-models"
     monkeypatch.setenv("VOXPRINT_MODELS_DIR", "relative/path")                    # only absolute paths count (same as the Audiobook Builder)
-    assert shared_paths.models_dir() == home / "models"
+    assert shared_paths.models_dir() == home / "shared" / "models"
     monkeypatch.delenv("VOXPRINT_MODELS_DIR")
     shared_paths.set_models_dir(None)
-    assert shared_paths.models_dir() == home / "models"
+    assert shared_paths.models_dir() == home / "shared" / "models"
 
 
 def test_unusable_configured_folder_falls_back(tmp_path, monkeypatch):

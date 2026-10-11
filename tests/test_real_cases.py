@@ -288,24 +288,27 @@ def test_runtime_key_is_exact_and_matches_the_installer_script():
     assert runtime.runtime_key("cpu", req, con) != k and runtime.runtime_key("cu130", req + "\nnumpy<3", con) != k
     ps = (Path(__file__).resolve().parent.parent / "installer" / "install-runtime.ps1").read_text(encoding="utf-8")
     assert 'python=$($lockObj.python);platform=$($lockObj.platform);torch=$($lockObj.torch_version)+$flavor;' in ps
-    assert "runtime-$key" in ps and ".users.json" in ps and "New-Item -ItemType Junction" in ps
+    assert r"shared\runtimes\py3.14-torch2.11-" in ps and "shared_manifest.py" in ps and "New-Item -ItemType Junction" in ps
     assert "never upgraded" in ps
 
 
 def test_runtime_users_and_cli(tmp_path, monkeypatch):
     import main as app_main
-    from dubber.infra import runtime, shared_paths
-    rt = shared_paths.voxprint_home() / "runtime-0123456789ab"
+    from dubber.infra import runtime, shared_manifest, shared_paths
+    home = shared_paths.voxprint_home()
+    rt = home / "shared" / "runtimes" / "py3.14-torch2.11-cu130"
     (rt / "env").mkdir(parents=True)
-    (rt / "runtime-key.json").write_text("{}", encoding="utf-8")
-    (rt / ".users.json").write_text('{"movie-dubber": true, "future-app": true}', encoding="utf-8")
+    (rt / "runtime-key.json").write_text('{"flavor": "cu130"}', encoding="utf-8")
+    shared_manifest.add_ref(home, resource_id="runtime", version=rt.name, path=rt, app="movie-dubber")
+    shared_manifest.add_ref(home, resource_id="runtime", version=rt.name, path=rt, app="future-app")
     monkeypatch.setattr(runtime, "current_runtime_dir", lambda: rt)
     out = tmp_path / "o.txt"
     assert app_main.main(["--unregister-runtime-user", "--out", str(out)]) == 0
     assert out.read_text(encoding="utf-8").splitlines() == ["1", str(rt)]
-    assert json.loads((rt / ".users.json").read_text()) == {"future-app": True}
-    assert runtime.is_runtime_dir(rt) and not runtime.is_runtime_dir(shared_paths.voxprint_home() / "runtime")
-    assert app_main.main(["--register-runtime-user"]) == 0 and json.loads((rt / ".users.json").read_text())["movie-dubber"]
+    assert shared_manifest.resource_apps(home, "runtime", rt.name) == ["future-app"]
+    assert runtime.is_runtime_dir(rt) and not runtime.is_runtime_dir(home / "runtime")
+    assert app_main.main(["--register-runtime-user"]) == 0
+    assert "movie-dubber" in shared_manifest.resource_apps(home, "runtime", rt.name)
 
 
 def test_cuda_dll_dirs_are_found_without_importing_torch():
@@ -375,9 +378,9 @@ def test_sync_suite_settings_cli(tmp_path):
 def test_installer_suite_integration():
     iss = (Path(__file__).resolve().parent.parent / "installer" / "VoxprintMovieDubber.iss").read_text(encoding="utf-8")
     assert "DefaultGroupName=Voxprint" in iss and "UsePreviousGroup=no" in iss
-    assert "{6F1D2B7A-3C54-4E0B-9A41-7B5E0C9D2F18}_is1" in iss and '"audiobook-builder": true' in iss    # sibling detection
-    assert "--unregister-runtime-user" in iss and "--unregister-models-user" in iss and "--sync-suite-settings" in iss
-    assert "MB_DEFBUTTON2, IDNO) = IDYES" in iss                       # models deleted only on an explicit Yes (default No)
+    assert "{6F1D2B7A-3C54-4E0B-9A41-7B5E0C9D2F18}_is1" in iss and "audiobook-builder" in iss    # sibling detection
+    assert "--release-shared" in iss and "--sync-suite-settings" in iss
+    assert "MB_DEFBUTTON2, IDNO) = IDYES" in iss                       # projects deleted only on an explicit Yes (default No)
     assert "LicenseFile=..\\LICENSE" in iss
     lic = (Path(__file__).resolve().parent.parent / "LICENSE").read_text(encoding="utf-8")
     assert "Apache License" in lic and "Version 2.0" in lic
@@ -458,7 +461,7 @@ def test_cyrillic_acronym_only_when_the_source_says_ai():
 def test_uninstaller_finds_the_runtime_from_the_installer_note(tmp_path, monkeypatch):
     from dubber.infra import runtime
 
-    rt = tmp_path / "Voxprint" / "runtime-0123456789ab"
+    rt = tmp_path / "Voxprint" / "shared" / "runtimes" / "py3.14-torch2.11-cu130"
     (rt / "env").mkdir(parents=True)
     (rt / runtime.KEY_FILE).write_text("{}", encoding="utf-8")
     app = tmp_path / "app"

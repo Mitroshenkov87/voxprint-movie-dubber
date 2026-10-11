@@ -1,6 +1,6 @@
 """Model registry of the dubber on top of the shared Voxprint model store (:mod:`dubber.infra.model_store`).
 
-The models live in the folder shared with Voxprint AI Audiobook Builder (``%LOCALAPPDATA%\\Voxprint\\models`` by default), one plain
+The models live in the suite model store (``%LOCALAPPDATA%\\Voxprint\\shared\\models`` by default, or ``VOXPRINT_MODELS_DIR``), one plain
 folder per model, so the 4.5 GB TTS base model is downloaded once for both programs.  The HF token (gated pyannote) comes from
 the ``HF_TOKEN`` environment variable of the worker process - never from the command line and never written to the report.
 """
@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple, TypedDict
 
-from dubber import paths
 from dubber.infra import model_store
 from dubber.infra.model_store import ModelUnavailable  # noqa: F401  (re-exported)
 
@@ -110,14 +109,11 @@ def _spec_for_repo(repo: str) -> Optional[ModelSpec]:
 
 
 def locate(repo: str) -> Optional[Path]:
-    """Complete copy in the shared models folder (or, read-only, in the dubber's own folder of builds before the shared store)."""
+    """Complete copy in the shared models folder."""
     spec = _spec_for_repo(repo)
     p = local_dir(repo)
     if verify_dir(p, spec):
         return p
-    legacy = paths.legacy_models_dir() / model_store.folder_name(repo)
-    if verify_dir(legacy, spec):
-        return legacy
     return None
 
 
@@ -129,10 +125,10 @@ class EnsureInfo(TypedDict):
 
 def ensure(repo: str, allow_download: bool = True, token: Optional[str] = None,
            log: Callable[[str], None] = lambda m: None) -> Tuple[Path, EnsureInfo]:
-    """Return ``(folder, info)``; ``info`` = ``{"source": "present|downloaded|legacy", "download_s": float}``.  Raises ModelUnavailable."""
+    """Return ``(folder, info)``; ``info`` = ``{"source": "present|downloaded", "download_s": float}``.  Raises ModelUnavailable."""
     found = locate(repo)
     if found:
-        return found, {"source": "legacy folder" if found.parent == paths.legacy_models_dir() else "present", "download_s": 0.0}
+        return found, {"source": "present", "download_s": 0.0}
     spec = _spec_for_repo(repo)
     if spec and spec.gated and not token:
         token = os.environ.get("HF_TOKEN") or None

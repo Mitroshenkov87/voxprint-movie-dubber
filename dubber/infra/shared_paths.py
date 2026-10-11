@@ -4,7 +4,7 @@
   ``~/.local/share/voxprint``).
 * Models: ``$VOXPRINT_MODELS_DIR``, else ``models_dir`` of the shared ``<home>/state/suite.json`` (:mod:`dubber.infra.suite`;
   null = the default), else - when suite.json has no ``models_dir`` - the older ``<home>/state/models_dir.txt`` (one absolute
-  path, UTF-8 with or without BOM), else ``<home>/models``.  A configured folder that cannot be created (unplugged drive) falls back to the default.
+  path, UTF-8 with or without BOM), else ``<home>/shared/models``.  A configured folder that cannot be created (unplugged drive) falls back to the default.
   A folder that holds a Voxprint backup is never used as the models folder.
 * Voices: ``<home>/voices/<id>/`` - the Audiobook Builder voice library; this program only reads it.
 
@@ -52,9 +52,18 @@ def shared_state_dir() -> Path:
     return _sub("state")
 
 
+def shared_root() -> Path:
+    """``<home>/shared``: versioned runtimes, ffmpeg and the default model store (``%LOCALAPPDATA%\\Voxprint\\shared``)."""
+    p = voxprint_home() / "shared"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
 def default_models_dir() -> Path:
-    """``<home>/models`` (``%LOCALAPPDATA%\\Voxprint\\models`` on Windows)."""
-    return _sub("models")
+    """``<home>/shared/models``. ``VOXPRINT_MODELS_DIR`` still wins in :func:`models_dir`."""
+    p = shared_root() / "models"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
 
 
 def legacy_models_dir_choice() -> Optional[Path]:
@@ -90,7 +99,7 @@ def set_models_dir(folder: Optional[Path]) -> None:
     from dubber.infra import suite
 
     f = shared_state_dir() / MODELS_DIR_FILE
-    if folder is None or _same(Path(folder), voxprint_home() / "models"):
+    if folder is None or _same(Path(folder), default_models_dir()):
         f.unlink(missing_ok=True)
         suite.set_value("models_dir", None)
         return

@@ -29,7 +29,7 @@ def test_desktop_env_override_and_fallbacks(tmp_path, monkeypatch):
 
 
 def test_data_folders_follow_override(tmp_path):
-    assert paths.models_dir().parent == Path(os.environ["VOXPRINT_HOME"])          # shared with the Audiobook Builder
+    assert paths.models_dir().parent == Path(os.environ["VOXPRINT_HOME"]) / "shared"
     assert paths.logs_dir().parent == Path(os.environ["VOXPRINT_DUBBER_HOME"])
     assert paths.reports_dir().is_dir()
 

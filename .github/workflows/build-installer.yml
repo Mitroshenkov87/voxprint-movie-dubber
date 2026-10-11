@@ -7,6 +7,9 @@
 # An RC tag must be v<APP_VERSION>.<build>, the build being this run's number + the BUILD.json offset.
 # Runners have no GPU: /TORCH=cpu (online) and /SKIPGPUGATE=1 (full, keeps its cu130 build) are CI-only switches.
 # VOXPRINT_SKIP_GPU_GATE lets the window self-test open on that same runner.
+# /SKIPMODELS=1 and VOXPRINT_SKIP_MODEL_FETCH skip the multi-gigabyte model download on that runner.
+# A user install downloads the models. The shared runtime, ffmpeg and models folder are removed on uninstall
+# only when movie-dubber was the last reference.
 # The audit job runs first. The installer is not built when ruff, mypy, bandit (high), gitleaks, or an
 # un-allowlisted pip-audit high/critical finding fails that job. Vulture and radon do not fail it.
 name: Build installers
@@ -34,6 +37,7 @@ jobs:
       PYTHONUTF8: "1"
       QT_QPA_PLATFORM: offscreen
       VOXPRINT_SKIP_GPU_GATE: "1"
+      VOXPRINT_SKIP_MODEL_FETCH: "1"
     steps:
       - uses: actions/checkout@v7
 
@@ -133,7 +137,7 @@ jobs:
             $setup = (Resolve-Path installer\Output\VoxprintMovieDubber-Setup.exe).Path
             $ci = "/TORCH=cpu"
           }
-          $p = Start-Process $setup -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/DIR=C:\vmd",$ci,'/TASKS=""',"/LOG=C:\vmd-install.log" -Wait -PassThru
+          $p = Start-Process $setup -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/DIR=C:\vmd",$ci,"/SKIPMODELS=1","/LOG=C:\vmd-install.log" -Wait -PassThru
           "install exit code: $($p.ExitCode)"
           if ($p.ExitCode -ne 0) {
             if (Test-Path C:\vmd-install.log) { Get-Content C:\vmd-install.log -Tail 80 }
@@ -152,13 +156,24 @@ jobs:
           $menu | ForEach-Object { "start menu: " + $_.FullName }
           if (-not ($menu | Where-Object { $_.Name -eq "Voxprint AI Movie Dubber.lnk" })) { throw "no Start menu shortcut in the shared Voxprint folder" }
           if (-not ($menu | Where-Object { $_.Name -eq "Voxprint AI Movie Dubber - diagnostics.lnk" })) { throw "no diagnostics shortcut" }
-          # the runtime: a junction to the shared, version-keyed LOCALAPPDATA\Voxprint\runtime-<key>, with our key in its users file
+          # the runtime: a junction to LOCALAPPDATA\Voxprint\shared\runtimes\py3.14-torch2.11-<flavor>
           $link = Get-Item C:\vmd\runtime -Force
           if (-not ($link.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw "C:\vmd\runtime is not a link to the shared runtime" }
-          $rt = Get-ChildItem "$env:LOCALAPPDATA\Voxprint" -Directory -Filter "runtime-*" | Where-Object { Test-Path "$($_.FullName)\runtime-key.json" } | Select-Object -First 1
-          if (-not $rt) { throw "no shared runtime-<key> folder" }
+          $flavor = if ("${{ matrix.kind }}" -eq "full") { "cu130" } else { "cpu" }
+          $shared = "$env:LOCALAPPDATA\Voxprint\shared"
+          $rt = Get-Item "$shared\runtimes\py3.14-torch2.11-$flavor"
+          if (-not (Test-Path "$($rt.FullName)\runtime-key.json")) { throw "no shared runtime folder" }
           "runtime: " + $rt.FullName + " " + (Get-Content "$($rt.FullName)\runtime-key.json" -Raw)
-          if (-not ((Get-Content "$($rt.FullName)\.users.json" -Raw | ConvertFrom-Json).'movie-dubber')) { throw "movie-dubber is not registered in the runtime users file" }
+          if (-not (Test-Path "$shared\ffmpeg\n8.1\ffmpeg.exe")) { throw "shared ffmpeg is missing" }
+          if (-not (Test-Path "$shared\models")) { throw "shared models folder is missing" }
+          $manifest = Get-Content "$shared\manifest.json" -Raw | ConvertFrom-Json
+          if ($manifest.schema -ne 1) { throw "manifest schema is $($manifest.schema)" }
+          foreach ($id in @("runtime", "torch", "ctranslate2", "ffmpeg", "models")) {
+            $row = @($manifest.resources | Where-Object { $_.id -eq $id }) | Select-Object -First 1
+            if (-not $row) { throw "manifest has no $id" }
+            if (@($row.apps) -notcontains "movie-dubber") { throw "$id is not referenced by movie-dubber" }
+          }
+          "manifest resources: " + ((@($manifest.resources) | ForEach-Object { $_.id }) -join ", ")
           & C:\vmd\runtime\Scripts\python.exe -c "import torch; print('torch', torch.__version__); assert torch.__version__.startswith('2.11.0')"
           if ($LASTEXITCODE -ne 0) { throw "the runtime does not have the pinned PyTorch 2.11.0" }
           if ("${{ matrix.kind }}" -eq "full") {
@@ -177,7 +192,7 @@ jobs:
           if (-not $reg) { throw "no Apps and features entry" }
           "apps and features: $($reg.DisplayName) $($reg.DisplayVersion)"
           if (-not (Test-Path C:\vmd\build_info.json)) { throw "build_info.json was not installed" }
-          $users = "$env:LOCALAPPDATA\Voxprint\models\.users.json"
+          $users = "$env:LOCALAPPDATA\Voxprint\shared\models\.users.json"
           if (-not (Test-Path $users)) { throw "the shared models users file was not created: $users" }
           "models users: " + (Get-Content $users -Raw)
           if (-not ((Get-Content $users -Raw | ConvertFrom-Json).'movie-dubber')) { throw "movie-dubber is not registered in $users" }
@@ -231,21 +246,23 @@ jobs:
           if ($menu) { throw "Start menu shortcuts are still there" }
           $reg = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*","HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like "Voxprint AI Movie Dubber*" }
           if ($reg) { throw "the Apps and features entry is still there" }
-          $users = "$env:LOCALAPPDATA\Voxprint\models\.users.json"
-          if ((Test-Path $users) -and ((Get-Content $users -Raw | ConvertFrom-Json).'movie-dubber')) { throw "movie-dubber is still registered in $users" }
-          if (-not (Test-Path "$env:LOCALAPPDATA\Voxprint\models")) { throw "the shared models were deleted without asking" }
-          # the uninstaller deletes the shared runtime (several GB) in its last step, after the program folder is gone: wait for it
+          # movie-dubber is the only app on this runner, so every shared resource goes when its reference count hits zero
+          $flavor = if ("${{ matrix.kind }}" -eq "full") { "cu130" } else { "cpu" }
+          $shared = "$env:LOCALAPPDATA\Voxprint\shared"
+          $rt = "$shared\runtimes\py3.14-torch2.11-$flavor"
           for ($i = 0; $i -lt 120; $i++) {
-            $left = Get-ChildItem "$env:LOCALAPPDATA\Voxprint" -Directory -Filter "runtime-*" -ErrorAction SilentlyContinue
-            if (-not $left) { break }
+            $runtimeLeft = Test-Path $rt
+            $ffmpegLeft = Test-Path "$shared\ffmpeg\n8.1"
+            $modelsLeft = Test-Path "$shared\models"
+            if (-not $runtimeLeft -and -not $ffmpegLeft -and -not $modelsLeft) { break }
             Start-Sleep 2
           }
-          if ($left) {
-            if (Test-Path C:\vmd-uninstall.log) { Get-Content C:\vmd-uninstall.log | Select-String "runtime" }
-            foreach ($d in $left) { $d.FullName; Get-ChildItem $d.FullName | Format-Table Name; if (Test-Path "$($d.FullName)\.users.json") { Get-Content "$($d.FullName)\.users.json" } }
-            throw "the unused shared runtime was not removed"
+          if ((Test-Path $rt) -or (Test-Path "$shared\ffmpeg\n8.1") -or (Test-Path "$shared\models")) {
+            if (Test-Path C:\vmd-uninstall.log) { Get-Content C:\vmd-uninstall.log | Select-String "shared" }
+            Get-ChildItem $shared -Recurse -ErrorAction SilentlyContinue | Select-Object -First 40 FullName
+            throw "a shared resource was not removed after the last reference was dropped"
           }
-          "models kept: " + ((Get-ChildItem "$env:LOCALAPPDATA\Voxprint\models" -Directory | ForEach-Object Name) -join ", ")
+          if (Test-Path "$shared\manifest.json") { throw "shared\manifest.json is still there after the last app was removed" }
           "uninstall OK"
 
       - name: Setup logs

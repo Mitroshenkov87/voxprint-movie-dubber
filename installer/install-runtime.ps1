@@ -1,7 +1,7 @@
 ﻿<#
   Voxprint AI Movie Dubber - runtime part of the installer (online and full).
   Installs (or reuses) the shared Python runtime and links it into the program folder.  Nothing is installed system-wide.
-    -AppDir        installation folder (gets the junction <AppDir>\runtime -> <runtime>\env, the uv tool and the LGPL ffmpeg)
+    -AppDir        installation folder (gets the junction <AppDir>\runtime -> <runtime>\env and the uv tool)
     -Requirements  requirements.txt (everything except torch)
     -Constraints   installer\runtime-constraints.txt (pins that follow from the torch version)
     -Lock          dubber\infra\runtime_lock.json (same schema as the Audiobook Builder lock: Python 3.14, torch 2.11.0, flavor cu130)
@@ -12,11 +12,17 @@
     -Payload       full (offline) installer only: folder with uv\uv.exe, python\ (the Python build + release.txt), wheels\ and
                    ffmpeg\ (installer\make-full-payload.ps1 builds it).  Nothing is downloaded when it is given.
     -SkipGpuGate   CI only: lets the full installer's cu130 runtime be installed on a GPU-less test runner.  Not offered to users.
-  Rules agreed with Voxprint AI Audiobook Builder (dubber/infra/runtime.py has the same key logic):
-    key = SHA-256 of Python + platform + torch version/flavor + requirements + constraints (12 hex digits)
-    %LOCALAPPDATA%\Voxprint\runtime-<key> is reused only on an exact key match, otherwise a new folder is installed side by side;
-    a shared runtime is never upgraded in place; runtime-<key>\.users.json counts the programs using it.
+    -ManifestScript dubber\infra\shared_manifest.py (stdlib). Records this program's reference in shared\manifest.json.
+    -SkipModels    CI only: create the shared models folder and its reference, but do not treat a missing download as a failure.
+                   The setup's own last step downloads the weights unless /SKIPMODELS=1 is passed.
+  Rules (docs/SHARED-RESOURCES.md; dubber/infra/runtime.py has the same key logic):
+    key = SHA-256 of Python + platform + torch version/flavor + requirements + constraints (12 hex digits), stored in runtime-key.json
+    %LOCALAPPDATA%\Voxprint\shared\runtimes\py3.14-torch2.11-<flavor> is reused when that version is already installed;
+    a shared runtime is never upgraded in place to a different Python or torch line (that line has its own directory).
+    shared\manifest.json (schema 1) counts the programs using each resource. An older runtime-<12 hex digits> folder is moved once.
+    <Voxprint home>\runtime belongs to the Audiobook Builder and is never moved.
   The package manager "uv" (a single exe from the Astral GitHub release, SHA-256 checked) downloads the Python build and the wheels.
+  Downloads of uv and ffmpeg resume from a .partial file when a previous run was interrupted.
 #>
 param(
     [Parameter(Mandatory = $true)][string]$AppDir,
@@ -29,7 +35,9 @@ param(
     [string]$OutFile = "",
     [string]$Payload = "",
     [switch]$SkipGpuGate,
-    [switch]$KeyOnly
+    [switch]$KeyOnly,
+    [string]$ManifestScript = "",
+    [switch]$SkipModels
 )
 if ($env:SystemRoot) { $env:PSModulePath = "$env:ProgramFiles\WindowsPowerShell\Modules;$env:SystemRoot\system32\WindowsPowerShell\v1.0\Modules" }   # a parent PowerShell 7 session can leave a path that hides the built-in modules
 $ErrorActionPreference = "Stop"
@@ -171,6 +179,8 @@ This PC does not meet that requirement, so setup stopped and nothing was install
 What we found: $found
 
 Install a supported graphics card and driver, then run setup again.
+
+NVIDIA driver downloads: https://www.nvidia.com/Download/index.aspx
 "@.Trim()
 }
 
@@ -198,22 +208,49 @@ function Stop-ForHardware([string]$message) {
     exit 2
 }
 
-function ReadUsers([string]$file) {
-    $h = [ordered]@{}
-    if (Test-Path -LiteralPath $file) {
-        try {
-            $o = Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json
-            foreach ($p in $o.PSObject.Properties) { $h[$p.Name] = [bool]$p.Value }
-        } catch { }
+function Resume-Download([string]$Url, [string]$Dest) {
+    # Continue a dest.partial file with an HTTP Range request. A full 200 response replaces it.
+    $partial = "$Dest.partial"
+    $have = [int64]0
+    if (Test-Path -LiteralPath $partial) { $have = (Get-Item -LiteralPath $partial).Length }
+    $req = [System.Net.HttpWebRequest]::Create($Url)
+    $req.UserAgent = "VoxprintMovieDubber"
+    $req.Timeout = 120000
+    $req.ReadWriteTimeout = 120000
+    if ($have -gt 0) {
+        $req.AddRange($have)
+        Say "Resuming download ($have bytes already saved)"
     }
-    return $h
+    try {
+        $resp = $req.GetResponse()
+    } catch {
+        if ($have -gt 0 -and ("$($_.Exception.Message)" -match '416')) {
+            Move-Item -LiteralPath $partial -Destination $Dest -Force
+            return
+        }
+        throw
+    }
+    $status = [int]$resp.StatusCode
+    $mode = if ($have -gt 0 -and $status -eq 206) { [IO.FileMode]::Append } else { [IO.FileMode]::Create }
+    $fs = New-Object IO.FileStream $partial, $mode, ([IO.FileAccess]::Write)
+    try {
+        $src = $resp.GetResponseStream()
+        $src.CopyTo($fs)
+    } finally {
+        $fs.Dispose()
+        $resp.Dispose()
+    }
+    Move-Item -LiteralPath $partial -Destination $Dest -Force
 }
 
-function WriteUsers([string]$file, $h) {
-    $tmp = "$file.$([guid]::NewGuid().ToString('N').Substring(0, 8)).tmp"
-    $json = if ($h.Count) { ($h | ConvertTo-Json) } else { "{}" }
-    [IO.File]::WriteAllText($tmp, $json, (New-Object Text.UTF8Encoding $false))
-    Move-Item -LiteralPath $tmp -Destination $file -Force
+function Add-SharedRef([string]$Id, [string]$Version, [string]$ResourcePath, [string]$Sha, [string]$Size) {
+    if (-not $script:ManifestScript) { throw "-ManifestScript is required (dubber\infra\shared_manifest.py)" }
+    if (-not (Test-Path -LiteralPath $script:py)) { throw "the shared Python is not available, so the manifest cannot be updated" }
+    $arguments = @($script:ManifestScript, "add", "--home", $script:vxHome, "--id", $Id, "--version", $Version, "--path", $ResourcePath, "--app", $script:UserKey)
+    if ($Sha) { $arguments += @("--sha256", $Sha) }
+    if ($Size -ne "") { $arguments += @("--size", $Size) }
+    & $script:py @arguments
+    if ($LASTEXITCODE -ne 0) { throw "could not record $Id $Version in shared\manifest.json" }
 }
 
 function RemoveLinkOrDir([string]$path) {
@@ -280,11 +317,29 @@ try {
     }
     $key = RuntimeKey $lockObj $flavor
     $vxHome = if ($env:VOXPRINT_HOME) { $env:VOXPRINT_HOME } else { Join-Path $env:LOCALAPPDATA "Voxprint" }
-    $rt = Join-Path $vxHome "runtime-$key"
+    $shared = Join-Path $vxHome "shared"
+    $rtName = "py3.14-torch2.11-$flavor"
+    $rt = Join-Path $shared "runtimes\$rtName"
     $envDir = Join-Path $rt "env"
     $py = Join-Path $envDir "Scripts\python.exe"
     $check = @("-c", "import torch, transformers, PySide6, faster_qwen3_tts, faster_whisper; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())")
-    Say "Voxprint AI Movie Dubber: runtime key $key (Python $($lockObj.python), torch $tv+$flavor) -> $rt"
+    Say "[1/5] Voxprint AI Movie Dubber: runtime $rtName (Python $($lockObj.python), torch $tv+$flavor) -> $rt"
+    # An older runtime-<12 hex digits> folder moves into this versioned directory once. <home>\runtime is the Audiobook Builder's and is not touched.
+    if (-not (Test-Path (Join-Path $rt "runtime-key.json"))) {
+        foreach ($old in (Get-ChildItem -LiteralPath $vxHome -Directory -Filter "runtime-*" -ErrorAction SilentlyContinue)) {
+            if ($old.Name -notmatch '^runtime-[0-9a-f]{12}$' -or -not (Test-Path (Join-Path $old.FullName "runtime-key.json"))) { continue }
+            try { $oldInfo = Get-Content -LiteralPath (Join-Path $old.FullName "runtime-key.json") -Raw -Encoding UTF8 | ConvertFrom-Json } catch { continue }
+            $oldFlavor = [string]$oldInfo.flavor
+            if (-not $oldFlavor -and ([string]$oldInfo.torch).EndsWith("+cpu")) { $oldFlavor = "cpu" }
+            if (-not $oldFlavor) { $oldFlavor = "cu130" }
+            if ($oldFlavor -ne $flavor) { continue }
+            Say "Moving $($old.FullName) into $rt"
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $rt) | Out-Null
+            if (Test-Path -LiteralPath $rt) { Remove-Item -LiteralPath $rt -Recurse -Force -ErrorAction SilentlyContinue }
+            Move-Item -LiteralPath $old.FullName -Destination $rt
+            break
+        }
+    }
 
     # 1. uv (kept in the program folder)
     $uvDir = Join-Path $AppDir "tools\uv"
@@ -297,8 +352,8 @@ try {
         New-Item -ItemType Directory -Force -Path $uvDir | Out-Null
         $zip = Join-Path $uvDir "uv.zip"
         $url = "https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip"
-        Say "Downloading uv (package manager)"
-        Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $zip
+        Say "[1/5] Downloading uv (package manager)"
+        Resume-Download $url $zip
         $sumText = (Invoke-WebRequest -UseBasicParsing -Uri "$url.sha256").Content
         if ($sumText -is [byte[]]) { $sumText = [Text.Encoding]::ASCII.GetString($sumText) }
         $want = ($sumText.Trim() -split '\s+')[0].ToLower()
@@ -339,7 +394,7 @@ try {
             $offline = @("--offline", "--no-index", "--find-links", (Join-Path $Payload "wheels"))
             Say "Full installer: Python, PyTorch and the other packages come from the installer itself (no download)"
         }
-        Run "Creating the Python $($lockObj.python) environment" $uv @("venv", $envDir, "--python", $lockObj.python, "--allow-existing")
+        Run "[2/5] Creating the Python $($lockObj.python) environment" $uv @("venv", $envDir, "--python", $lockObj.python, "--allow-existing")
         $taVer = LockWheelVersion $lockObj "torchaudio" $flavor
         $tcVer = LockWheelVersion $lockObj "torchcodec" $flavor
         if (-not $taVer -or -not $tcVer) { throw "runtime lock has no torchaudio/torchcodec wheel for flavor $flavor" }
@@ -350,11 +405,11 @@ try {
         $pinText = "torch==$tv+$flavor`r`ntorchaudio==$taVer`r`ntorchcodec==$tcVer`r`n" + ((Get-Content -LiteralPath $Constraints -Encoding UTF8) -join "`r`n")
         [IO.File]::WriteAllText($pins, $pinText, (New-Object Text.UTF8Encoding $false))
         if ($Payload) {
-            Run "Installing PyTorch $tv ($flavor build), torchaudio $taBase and torchcodec $tcBase" $uv (@("pip", "install", "--python", $py, "--compile-bytecode", "torch==$tv+$flavor", "torchaudio==$taVer", "torchcodec==$tcVer") + $offline)
+            Run "[2/5] Installing PyTorch $tv ($flavor build), torchaudio $taBase and torchcodec $tcBase" $uv (@("pip", "install", "--python", $py, "--compile-bytecode", "torch==$tv+$flavor", "torchaudio==$taVer", "torchcodec==$tcVer") + $offline)
         } else {
-            Run "Installing PyTorch $tv ($flavor build), torchaudio $taBase and torchcodec $tcBase" $uv @("pip", "install", "--python", $py, "--compile-bytecode", "torch==$tv", "torchaudio==$taBase", "torchcodec==$tcBase", "--torch-backend=$flavor")
+            Run "[2/5] Installing PyTorch $tv ($flavor build), torchaudio $taBase and torchcodec $tcBase" $uv @("pip", "install", "--python", $py, "--compile-bytecode", "torch==$tv", "torchaudio==$taBase", "torchcodec==$tcBase", "--torch-backend=$flavor")
         }
-        Run "Installing the other packages" $uv (@("pip", "install", "--python", $py, "--compile-bytecode", "-r", $Requirements, "-c", $pins) + $offline)
+        Run "[3/5] Installing the other packages" $uv (@("pip", "install", "--python", $py, "--compile-bytecode", "-r", $Requirements, "-c", $pins) + $offline)
         # no --torch-backend on this step: it would re-resolve every requirement against the PyTorch index
         Run "Checking the installation" $py $check
         $info = [ordered]@{ key = $key; python = $lockObj.python; platform = $lockObj.platform; torch = "$tv+$flavor"; flavor = $flavor
@@ -366,78 +421,101 @@ try {
         if ($Payload) { Remove-Item -LiteralPath (Join-Path $env:TEMP "vmd-python-mirror") -Recurse -Force -ErrorAction SilentlyContinue }
     }
 
-    # 3. register this program as a user of the runtime; link it into the program folder
-    $usersFile = Join-Path $rt ".users.json"
-    $u = ReadUsers $usersFile
-    $u[$UserKey] = $true
-    WriteUsers $usersFile $u
+    # 3. link the runtime into the program folder and drop leftover runtime-<12 hex digits> directories
     $link = Join-Path $AppDir "runtime"
     RemoveLinkOrDir $link                                     # older builds had a private environment here
     RemoveLinkOrDir (Join-Path $AppDir "python")              # ... and its base Python
     New-Item -ItemType Junction -Path $link -Target $envDir | Out-Null
     if (-not (Test-Path (Join-Path $link "Scripts\python.exe"))) { throw "the runtime link $link does not work" }
-    Say "Linked $link -> $envDir"
+    Say "[3/5] Linked $link -> $envDir"
     [IO.File]::WriteAllText((Join-Path $AppDir "runtime-dir.txt"), $rt, (New-Object Text.UTF8Encoding $false))   # the uninstaller reads it
-
-    # 4. runtimes this program used before (other keys): drop our key; delete the folder when nobody else uses it
     foreach ($old in (Get-ChildItem -LiteralPath $vxHome -Directory -Filter "runtime-*" -ErrorAction SilentlyContinue)) {
-        if ($old.FullName -eq $rt -or $old.Name -notmatch '^runtime-[0-9a-f]{12}$' -or -not (Test-Path (Join-Path $old.FullName "runtime-key.json"))) { continue }
-        $f = Join-Path $old.FullName ".users.json"
-        $ou = ReadUsers $f
-        if (-not $ou.Contains($UserKey)) { continue }
-        $ou.Remove($UserKey)
-        WriteUsers $f $ou
-        if (@($ou.Keys | Where-Object { $ou[$_] }).Count -eq 0) {
-            Say "Removing the old runtime $($old.FullName) (no program uses it any more)"
-            Remove-Item -LiteralPath $old.FullName -Recurse -Force -ErrorAction SilentlyContinue
-        } else {
-            Say "Old runtime $($old.FullName) kept: still used by $(@($ou.Keys) -join ', ')"
-        }
+        if ($old.Name -notmatch '^runtime-[0-9a-f]{12}$') { continue }
+        Say "Removing the old runtime $($old.FullName)"
+        Remove-Item -LiteralPath $old.FullName -Recurse -Force -ErrorAction SilentlyContinue
     }
     if ($OutFile) { Set-Content -LiteralPath $OutFile -Value $rt -Encoding UTF8 }
 
-    # 5. LGPL ffmpeg + ffprobe (BtbN FFmpeg-Builds, release 8.1 line, SHA-256 checked against the release's checksums.sha256)
-    #    into <AppDir>\bin, where dubber.ffmpeg looks first.  Not fatal: without it the GPL imageio-ffmpeg fallback still works.
-    $binDir = Join-Path $AppDir "bin"
-    if (-not (Test-Path (Join-Path $binDir "ffprobe.exe"))) {
-        try {
-            $base = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest"
-            $name = "ffmpeg-n8.1-latest-win64-lgpl-8.1.zip"
-            $tmpZip = Join-Path $env:TEMP $name
-            if ($Payload) {
-                Say "Installing ffmpeg (LGPL build) from the installer"
-                Copy-Item -LiteralPath (Join-Path $Payload "ffmpeg\$name") -Destination $tmpZip -Force
-                $sums = Get-Content -LiteralPath (Join-Path $Payload "ffmpeg\checksums.sha256") -Raw -Encoding ASCII
-            } else {
-                Say "Downloading ffmpeg (LGPL build, about 170 MB)"
-                Invoke-WebRequest -UseBasicParsing -Uri "$base/$name" -OutFile $tmpZip
-                $sums = (Invoke-WebRequest -UseBasicParsing -Uri "$base/checksums.sha256").Content
-            }
-            if ($sums -is [byte[]]) { $sums = [Text.Encoding]::ASCII.GetString($sums) }
-            $line = ($sums -split "`n") | Where-Object { $_ -match [regex]::Escape($name) } | Select-Object -First 1
-            if (-not $line) { throw "no checksum for $name" }
-            $want = ($line.Trim() -split '\s+')[0].ToLower()
-            $have = (Get-FileHash -LiteralPath $tmpZip -Algorithm SHA256).Hash.ToLower()
-            if ($want -ne $have) { throw "ffmpeg download is corrupt (SHA-256 mismatch)" }
-            Add-Type -AssemblyName System.IO.Compression.FileSystem
-            New-Item -ItemType Directory -Force -Path $binDir | Out-Null
-            $zipObj = [IO.Compression.ZipFile]::OpenRead($tmpZip)
-            try {
-                foreach ($e in $zipObj.Entries) {
-                    if ($e.FullName -match '/bin/(ffmpeg|ffprobe)\.exe$') {
-                        [IO.Compression.ZipFileExtensions]::ExtractToFile($e, (Join-Path $binDir $e.Name), $true)
-                    }
-                    if ($e.FullName -match '/LICENSE\.txt$') {
-                        [IO.Compression.ZipFileExtensions]::ExtractToFile($e, (Join-Path $binDir "FFMPEG-LICENSE.txt"), $true)
-                    }
-                }
-            } finally { $zipObj.Dispose() }
-            Remove-Item -LiteralPath $tmpZip -Force -ErrorAction SilentlyContinue
-            Say "ffmpeg (LGPL) installed into $binDir"
-        } catch {
-            Say ("WARNING: LGPL ffmpeg not installed (" + $_.Exception.Message + "); the bundled fallback build will be used")
+    # 4. LGPL ffmpeg + ffprobe (BtbN FFmpeg-Builds, release 8.1) into shared\ffmpeg\n8.1. A failure stops the setup.
+    $ffDir = Join-Path $shared "ffmpeg\n8.1"
+    $oldBin = Join-Path $AppDir "bin"
+    if ((Test-Path (Join-Path $oldBin "ffmpeg.exe")) -and -not (Test-Path (Join-Path $ffDir "ffmpeg.exe"))) {
+        New-Item -ItemType Directory -Force -Path $ffDir | Out-Null
+        foreach ($n in @("ffmpeg.exe", "ffprobe.exe", "FFMPEG-LICENSE.txt")) {
+            $src = Join-Path $oldBin $n
+            if (Test-Path -LiteralPath $src) { Move-Item -LiteralPath $src -Destination (Join-Path $ffDir $n) -Force }
         }
     }
+    $ffExe = Join-Path $ffDir "ffmpeg.exe"
+    $ffOk = $false
+    if (Test-Path -LiteralPath $ffExe) {
+        $ErrorActionPreference = "Continue"
+        & $ffExe -version 2>&1 | Out-Null
+        $ffOk = ($LASTEXITCODE -eq 0)
+        $ErrorActionPreference = "Stop"
+    }
+    if (-not $ffOk) {
+        $base = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest"
+        $name = "ffmpeg-n8.1-latest-win64-lgpl-8.1.zip"
+        $tmpZip = Join-Path $env:TEMP $name
+        if ($Payload) {
+            Say "[4/5] Installing ffmpeg (LGPL build) from the installer"
+            Copy-Item -LiteralPath (Join-Path $Payload "ffmpeg\$name") -Destination $tmpZip -Force
+            $sums = Get-Content -LiteralPath (Join-Path $Payload "ffmpeg\checksums.sha256") -Raw -Encoding ASCII
+        } else {
+            Say "[4/5] Downloading ffmpeg (LGPL build, about 170 MB)"
+            Resume-Download "$base/$name" $tmpZip
+            $sums = (Invoke-WebRequest -UseBasicParsing -Uri "$base/checksums.sha256").Content
+        }
+        if ($sums -is [byte[]]) { $sums = [Text.Encoding]::ASCII.GetString($sums) }
+        $line = ($sums -split "`n") | Where-Object { $_ -match [regex]::Escape($name) } | Select-Object -First 1
+        if (-not $line) { throw "no checksum for $name" }
+        $want = ($line.Trim() -split '\s+')[0].ToLower()
+        $have = (Get-FileHash -LiteralPath $tmpZip -Algorithm SHA256).Hash.ToLower()
+        if ($want -ne $have) {
+            Remove-Item -LiteralPath $tmpZip -Force -ErrorAction SilentlyContinue
+            throw "ffmpeg download is corrupt (SHA-256 mismatch)"
+        }
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        New-Item -ItemType Directory -Force -Path $ffDir | Out-Null
+        $zipObj = [IO.Compression.ZipFile]::OpenRead($tmpZip)
+        try {
+            foreach ($e in $zipObj.Entries) {
+                if ($e.FullName -match '/bin/(ffmpeg|ffprobe)\.exe$') {
+                    [IO.Compression.ZipFileExtensions]::ExtractToFile($e, (Join-Path $ffDir $e.Name), $true)
+                }
+                if ($e.FullName -match '/LICENSE\.txt$') {
+                    [IO.Compression.ZipFileExtensions]::ExtractToFile($e, (Join-Path $ffDir "FFMPEG-LICENSE.txt"), $true)
+                }
+            }
+        } finally { $zipObj.Dispose() }
+        Remove-Item -LiteralPath $tmpZip -Force -ErrorAction SilentlyContinue
+    }
+    foreach ($n in @("ffmpeg.exe", "ffprobe.exe", "FFMPEG-LICENSE.txt")) {
+        $src = Join-Path $oldBin $n
+        if (Test-Path -LiteralPath $src) { Remove-Item -LiteralPath $src -Force -ErrorAction SilentlyContinue }
+    }
+    if (-not (Test-Path -LiteralPath $ffExe)) { throw "ffmpeg was not installed into $ffDir" }
+    $ErrorActionPreference = "Continue"
+    & $ffExe -version 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { $ErrorActionPreference = "Stop"; throw "ffmpeg was extracted but does not run" }
+    $ErrorActionPreference = "Stop"
+    Say "[4/5] ffmpeg (LGPL) installed into $ffDir"
+
+    # 5. shared models folder and the manifest references. The setup downloads the weights unless -SkipModels.
+    $models = Join-Path $shared "models"
+    New-Item -ItemType Directory -Force -Path $models | Out-Null
+    if ($SkipModels) {
+        Say "[5/5] CI switch -SkipModels: the shared models folder is ready and the weights are not downloaded here"
+    } else {
+        Say "[5/5] Shared models folder $models (the setup downloads the default-pipeline models next)"
+    }
+    Add-SharedRef "runtime" $rtName $rt "" ""
+    Add-SharedRef "torch" "$tv+$flavor" $rt "" ""
+    Add-SharedRef "ctranslate2" "cu12" $rt "" ""
+    $ffItem = Get-Item -LiteralPath $ffExe
+    Add-SharedRef "ffmpeg" "n8.1" $ffDir ((Get-FileHash -LiteralPath $ffExe -Algorithm SHA256).Hash.ToLower()) $ffItem.Length.ToString()
+    Add-SharedRef "models" "store" $models "" ""
 
     Say "Python environment is ready."
     exit 0

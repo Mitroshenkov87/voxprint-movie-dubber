@@ -22,10 +22,12 @@ runtime: Python 3.14 and PyTorch 2.11.0+cu130 pinned by `dubber/infra/runtime_lo
 the sibling main lock is still 3.11/cu128 and is not copied). There is no torchaudio wheel for torch 2.14.1 on the cu130
 index, so the pin follows the newest official pair: torch 2.11.0+cu130 and torchaudio 2.11.0+cu130. torchcodec is 0.17.0+cu130.
 `nvidia-cublas-cu12` and `nvidia-cudnn-cu12` supply the CUDA 12 libraries CTranslate2 needs. The dependencies come from
-`requirements.txt` and the pins in `installer/runtime-constraints.txt`. The runtime lives in `%LOCALAPPDATA%\Voxprint\runtime-<key>` (key = hash of all pins, see
-`dubber/infra/runtime.py`): an existing folder with the same key is reused, a different set of versions gets its own folder side by
-side, and a shared runtime is never upgraded in place. `<install folder>\runtime` is a junction to it. `runtime-<key>\.users.json`
-counts the programs using it. An optional final step downloads the AI models (`main.py --fetch-models`).
+`requirements.txt` and the pins in `installer/runtime-constraints.txt`. The runtime lives in
+`%LOCALAPPDATA%\Voxprint\shared\runtimes\py3.14-torch2.11-cu130` (see [SHARED-RESOURCES.md](SHARED-RESOURCES.md)). A folder
+for that version is reused. A different Python or torch line gets its own directory, and a shared runtime is never upgraded
+in place. `<install folder>\runtime` is a junction to its `env`. `shared\manifest.json` counts the programs using each
+resource. The last setup step downloads the AI models (`main.py --fetch-models`) into `shared\models`. `/SKIPMODELS=1`
+skips that download and is only for CI.
 
 ## Full (offline) installer
 The full installer carries everything the online one downloads, so setup needs no internet (only the optional AI model download does):
@@ -39,14 +41,15 @@ every wheel of the runtime (`pip wheel` with the same pins as the online setup, 
 torchcodec) and the LGPL ffmpeg archive. The result is `VoxprintMovieDubber-Full-Setup.exe` plus `VoxprintMovieDubber-Full-Setup-N.bin`
 parts, each below 2 GB (the GitHub release asset limit); keep all of them in one folder. During setup `install-runtime.ps1 -Payload`
 installs the same runtime key as the online setup from those files, so both installers share one runtime folder.
-The AI models are not bundled; they are downloaded by the optional setup task or on first use.
+The AI models are not bundled; setup downloads them into the shared models folder. `/SKIPMODELS=1` skips that download and is only for CI.
 
-Setup switches: `/TORCH=auto|cu130` (PyTorch flavor). `/TORCH=cpu` installs the CPU build and is only for the CI smoke run on a GPU-less runner; a user install stops instead of offering that build. `/SKIPGPUGATE=1` (full installer only) installs its cu130 runtime without the GPU check and is likewise only for CI. `/TASKS=""` skips the model download. `/VERYSILENT /SUPPRESSMSGBOXES /DIR=<folder>`. cu130 needs NVIDIA driver branch 580 or newer; the hardware gate already requires branch 600.
+Setup switches: `/TORCH=auto|cu130` (PyTorch flavor). `/TORCH=cpu` installs the CPU build and is only for the CI smoke run on a GPU-less runner; a user install stops instead of offering that build. `/SKIPGPUGATE=1` (full installer only) installs its cu130 runtime without the GPU check and is likewise only for CI. `/SKIPMODELS=1` skips the model download and is only for CI. `/VERYSILENT /SUPPRESSMSGBOXES /DIR=<folder>`. cu130 needs NVIDIA driver branch 580 or newer; the hardware gate already requires branch 600.
 
 The setup stops, and installs nothing, when no NVIDIA GPU has compute capability 8.9 or higher (GeForce RTX 40 / Ada or newer) or the driver branch is below 600. The window does the same check with PyTorch before it opens (`VOXPRINT_SKIP_GPU_GATE=1` skips that check for tests and CI).
 The setup puts its shortcuts into the Start menu folder "Voxprint" (shared with the Audiobook Builder), adds an Apps & features entry
-and a full uninstaller. The uninstaller never touches the Audiobook Builder; it removes the shared runtime only when no other program
-uses it, and the shared models only when no other program uses them and you answer Yes (default: keep).
+and a full uninstaller. The uninstaller never touches the Audiobook Builder. It drops this program's references in
+`shared\manifest.json` and deletes a shared runtime, ffmpeg build, or models folder only when no program still references it.
+Projects, logs and reports are removed only when you answer Yes (default: keep).
 
 Shared settings: `%LOCALAPPDATA%\Voxprint\state\suite.json` (schema 1: `ui_language`, `theme`, `models_dir`, `gpu`), read and written by
 both programs (`dubber/infra/suite.py`).

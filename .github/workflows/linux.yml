@@ -51,7 +51,7 @@ jobs:
           df -h "$HOME" | tail -1
           mkdir -p /tmp/unpack
           tar -C /tmp/unpack -xzf dist/VoxprintMovieDubber-Linux-x86_64.tar.gz
-          /tmp/unpack/VoxprintMovieDubber-Linux-x86_64/install.sh --skip-gpu-check
+          /tmp/unpack/VoxprintMovieDubber-Linux-x86_64/install.sh --skip-gpu-check --skip-models
           df -h "$HOME" | tail -1
 
       - name: Check the installation (launcher, menu entry, .vxdub type)
@@ -68,6 +68,22 @@ jobs:
           grep -q 'MimeType=application/vnd.voxprint.dub+zip;' "$d/applications/voxprint-movie-dubber.desktop"
           grep -q 'glob pattern="\*.vxdub"' "$d/mime/packages/voxprint-movie-dubber.xml"
           if command -v desktop-file-validate >/dev/null; then desktop-file-validate "$d/applications/voxprint-movie-dubber.desktop"; fi
+          shared="$d/voxprint/shared"
+          test -f "$shared/manifest.json"
+          test -d "$shared/runtimes/py3.14-torch2.11-cu130"
+          test -x "$shared/runtimes/py3.14-torch2.11-cu130/env/bin/python"
+          test -x "$shared/ffmpeg/n8.1/ffmpeg"
+          test -d "$shared/models"
+          python3 - "$shared/manifest.json" <<'PY'
+          import json, sys
+          data = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert data.get("schema") == 1, data
+          rows = {row["id"]: row for row in data["resources"]}
+          for key in ("runtime", "torch", "ctranslate2", "ffmpeg", "models"):
+              apps = rows[key]["apps"]
+              assert "movie-dubber" in apps, (key, apps)
+          print("shared layout OK", sorted(rows))
+          PY
           echo "installation OK"
 
       - name: voxprint-movie-dubber --dry-run --json
@@ -113,6 +129,11 @@ jobs:
           test ! -e "$HOME/.local/bin/voxprint-movie-dubber"
           test ! -e "$HOME/.local/share/voxprint-movie-dubber"
           test ! -e "$HOME/.local/share/applications/voxprint-movie-dubber.desktop"
+          shared="$HOME/.local/share/voxprint/shared"
+          test ! -d "$shared/runtimes/py3.14-torch2.11-cu130"
+          test ! -d "$shared/ffmpeg/n8.1"
+          test ! -d "$shared/models"
+          test ! -f "$shared/manifest.json"
           echo "uninstall OK"
 
       - name: Upload the tarball

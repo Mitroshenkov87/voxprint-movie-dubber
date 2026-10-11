@@ -3,16 +3,18 @@
 ;   ISCC /DFull installer\VoxprintMovieDubber.iss          ->   installer\Output\VoxprintMovieDubber-Full-Setup.exe + -N.bin parts
 ;   The full (offline) build carries the payload made by installer\make-full-payload.ps1 (default folder build\payload, or
 ;   /DPayloadDir=<folder>): uv, the Python 3.14 build, every wheel incl. PyTorch 2.11.0+cu130, and the LGPL ffmpeg.  The setup
-;   then downloads nothing except the optional AI models.  It is split into parts below 2 GB (GitHub release asset limit);
+;   then downloads nothing except the AI models.  It is split into parts below 2 GB (GitHub release asset limit);
 ;   keep all parts in one folder and start the .exe.
 ;
 ; The installer is small: it contains only the program's own files (Python sources, icon, licences) and a download script.
-; While it installs, install-runtime.ps1 installs (or reuses, on an exact match of the pinned versions) the shared runtime
-; LOCALAPPDATA\Voxprint\runtime-<key> (Python 3.14, PyTorch 2.11.0+cu130, the other
-; dependencies) and links it as the runtime sub-folder of the program folder; the AI models are downloaded as the last
-; (optional) step into the models folder shared with Voxprint AI Audiobook Builder (one copy for both programs).
-; Start menu: the folder "Voxprint", shared with the Audiobook Builder.  The uninstaller never touches the Audiobook Builder's
-; files; shared models are deleted only when no other program uses them and the user agrees (default: keep).
+; While it installs, install-runtime.ps1 installs (or reuses) the shared runtime
+; LOCALAPPDATA\Voxprint\shared\runtimes\py3.14-torch2.11-cu130 (Python 3.14, PyTorch 2.11.0+cu130,
+; torchaudio, torchcodec, the CTranslate2 CUDA 12 libraries), the shared ffmpeg, and the shared models folder.
+; It links the runtime as the runtime sub-folder of the program folder. The AI models are downloaded as the last
+; step into LOCALAPPDATA\Voxprint\shared\models (one copy for every Voxprint program). shared\manifest.json
+; records which programs use each resource.
+; Start menu: the folder "Voxprint", shared with the Audiobook Builder. The uninstaller never touches the Audiobook Builder's
+; own folder. A shared resource is deleted only when no program still references it.
 ; NOTE: never write Inno constants (curly-brace names) in comments - ISCC expands some of them and the build breaks.
 ; Per-machine install (Program Files), Start menu entries, an entry in Apps & features and a full uninstaller.
 ;
@@ -20,7 +22,7 @@
 ;   /TORCH=auto|cu130         PyTorch flavor (default auto = cu130 when the GPU passes the gate)
 ;   /TORCH=cpu                CI only: CPU build for a GPU-less test runner. Not offered to users.
 ;   /SKIPGPUGATE=1            CI only, full installer only: install the cu130 runtime on a GPU-less test runner. Not offered to users.
-;   /TASKS=""                do not download the AI models during the setup (they are downloaded when first needed)
+;   /SKIPMODELS=1             CI only: do not download the AI models during setup. A user install always downloads them.
 ;   /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=<folder>    unattended install
 
 #define AppName "VoxprintMovieDubber"
@@ -206,12 +208,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 RuntimeStatus=Installing Python and PyTorch, or reusing the copy shared with other Voxprint programs (several minutes, depends on your connection)...
 SiblingFound=Voxprint AI Audiobook Builder is installed on this PC: its AI models and voice library are shared with this program (nothing is downloaded twice).
 RuntimeFailed=The Python environment could not be installed.%n%nCheck the internet connection and run the setup again. Details: %1
-HardwareRequired=Voxprint AI Movie Dubber needs an NVIDIA GeForce RTX 40-series graphics card or newer (Ada Lovelace or later, compute capability 8.9 or higher) and an NVIDIA driver from the 600 branch or newer.%n%nThis PC does not meet that requirement, so setup stopped and nothing was installed. A processor-only copy is not offered.%n%nInstall a supported graphics card and driver, then run setup again.
+HardwareRequired=Voxprint AI Movie Dubber needs an NVIDIA GeForce RTX 40-series graphics card or newer (Ada Lovelace or later, compute capability 8.9 or higher) and an NVIDIA driver from the 600 branch or newer.%n%nThis PC does not meet that requirement, so setup stopped and nothing was installed. A processor-only copy is not offered.%n%nInstall a supported graphics card and driver, then run setup again.%n%nNVIDIA driver downloads: https://www.nvidia.com/Download/index.aspx
 UninstallDataQuestion=Also delete the dubbing projects, logs and reports (%1)?
-UninstallModelsQuestion=No other Voxprint program uses the downloaded AI models any more.%n%nDelete them too (%1, several gigabytes)? Choose No to keep them for a later installation.
-
-[Tasks]
-Name: "models"; Description: "Download the AI models now (about 8 GB, one time; otherwise they are downloaded when first needed)"; GroupDescription: "AI models:"
 
 [Files]
 ; the download script, the dependency list and the pins are only needed during the setup
@@ -219,6 +217,7 @@ Source: "install-runtime.ps1"; DestDir: "{tmp}"; Flags: dontcopy
 Source: "..\requirements.txt"; DestDir: "{tmp}"; Flags: dontcopy
 Source: "runtime-constraints.txt"; DestDir: "{tmp}"; Flags: dontcopy
 Source: "..\dubber\infra\runtime_lock.json"; DestDir: "{tmp}"; Flags: dontcopy
+Source: "..\dubber\infra\shared_manifest.py"; DestDir: "{tmp}"; Flags: dontcopy
 #ifdef Full
 Source: "{#PayloadDir}\payload.json"; DestDir: "{tmp}\payload"; Flags: dontcopy
 Source: "{#PayloadDir}\uv\*"; DestDir: "{tmp}\payload\uv"; Flags: dontcopy nocompression
@@ -246,11 +245,11 @@ Name: "{group}\{#AppDisplayName} - diagnostics"; Filename: "{#PyW}"; Parameters:
 Name: "{group}\{cm:UninstallProgram,{#AppDisplayName}}"; Filename: "{uninstallexe}"
 
 [Run]
-; register this program as a user of the shared models folder (models\.users.json)
+; register this program as a user of the shared models folder (models\.users.json, today's store format)
 Filename: "{#Py}"; Parameters: """{app}\main.py"" --register-models-user"; WorkingDir: "{app}"; StatusMsg: "Registering the shared models folder..."; Flags: runhidden runasoriginaluser
 ; the shared Voxprint settings (suite.json: models folder, UI language) - written only where the file has no value yet
 Filename: "{#Py}"; Parameters: """{app}\main.py"" --sync-suite-settings"; WorkingDir: "{app}"; StatusMsg: "Saving the shared Voxprint settings..."; Flags: runhidden runasoriginaluser
-Filename: "{#Py}"; Parameters: """{app}\main.py"" --fetch-models"; WorkingDir: "{app}"; Tasks: models; StatusMsg: "Downloading the AI models (this can take a while)..."; Flags: runasoriginaluser
+Filename: "{#Py}"; Parameters: """{app}\main.py"" --fetch-models"; WorkingDir: "{app}"; StatusMsg: "Downloading the AI models (this can take a while)..."; Flags: runasoriginaluser; Check: ShouldFetchModels
 Filename: "{#PyW}"; Parameters: """{app}\main.py"" --diagnose"; WorkingDir: "{app}"; Description: "Start {#AppDisplayName} and run the diagnostics (a report is saved to the Desktop)"; Flags: nowait postinstall skipifsilent runasoriginaluser
 
 [Registry]
@@ -303,10 +302,14 @@ begin
   Req := ExpandConstant('{tmp}\requirements.txt');
   LogFile := ExpandConstant('{%TEMP}\VoxprintMovieDubber-setup.log');
   HwFile := ExpandConstant('{%TEMP}\VoxprintMovieDubber-hardware.txt');
+  ExtractTemporaryFile('shared_manifest.py');
   Params := '-NoProfile -ExecutionPolicy Bypass -File "' + Script + '" -AppDir "' + ExpandConstant('{app}') +
             '" -Requirements "' + Req + '" -Constraints "' + ExpandConstant('{tmp}\runtime-constraints.txt') +
             '" -Lock "' + ExpandConstant('{tmp}\runtime_lock.json') +
+            '" -ManifestScript "' + ExpandConstant('{tmp}\shared_manifest.py') +
             '" -Backend "' + CmdParam('TORCH', 'auto') + '" -HardwareFile "' + HwFile + '" -Log "' + LogFile + '"';
+  if CmdParam('SKIPMODELS', '') = '1' then
+    Params := Params + ' -SkipModels';
 #ifdef Full
   Params := Params + ' -Payload "' + ExpandConstant('{tmp}\payload') + '"';
   if CmdParam('SKIPGPUGATE', '') = '1' then
@@ -343,19 +346,24 @@ begin
     Result := FmtMessage(CustomMessage('RuntimeFailed'), [LogFile]);
 end;
 
-{ Voxprint AI Audiobook Builder (the sibling program): its Apps and features entry or its key in the shared models\.users.json. }
+function ShouldFetchModels: Boolean;
+begin
+  Result := CmdParam('SKIPMODELS', '') <> '1';
+end;
+
+{ Voxprint AI Audiobook Builder: its Apps and features entry, or its name in shared\manifest.json. }
 function SiblingInstalled: Boolean;
 var
-  Key, Users: String;
+  Key, Manifest: String;
   Raw: AnsiString;
 begin
   Key := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{6F1D2B7A-3C54-4E0B-9A41-7B5E0C9D2F18}_is1';
   Result := RegKeyExists(HKLM64, Key) or RegKeyExists(HKLM32, Key) or RegKeyExists(HKCU, Key);
   if not Result then
   begin
-    Users := ExpandConstant('{localappdata}\Voxprint\models\.users.json');
-    if FileExists(Users) and LoadStringFromFile(Users, Raw) then
-      Result := Pos('"audiobook-builder": true', String(Raw)) > 0;
+    Manifest := ExpandConstant('{localappdata}\Voxprint\shared\manifest.json');
+    if FileExists(Manifest) and LoadStringFromFile(Manifest, Raw) then
+      Result := Pos('audiobook-builder', String(Raw)) > 0;
   end;
 end;
 
@@ -369,73 +377,35 @@ begin
     Result := Result + NewLine + NewLine + CustomMessage('SiblingFound');
 end;
 
-{ Before the files go: remove our key from the shared models\.users.json.  The helper writes two lines to a temp file:
-  the number of other programs still using the models and the models folder. }
+{ Drop this program's references. Directories no app still uses are deleted here, except the runtime this
+  process is running from: its path is written to PendingFile and removed after this process exits.
+  The junction is only a link. SuppressibleMsgBox: a silent uninstall keeps the user's projects (default No). }
 var
-  OtherUsers: Integer;
-  ModelsDir: String;
+  PendingFile: String;
 
-procedure UnregisterModelsUser;
+procedure ReleaseShared;
 var
   Rc: Integer;
-  OutFile: String;
-  Lines: TArrayOfString;
 begin
-  OtherUsers := -1;
-  ModelsDir := '';
-  OutFile := ExpandConstant('{tmp}\vmd-models-users.txt');
-  if not FileExists(ExpandConstant('{#Py}')) then Exit;
-  if Exec(ExpandConstant('{#Py}'), '"' + ExpandConstant('{app}\main.py') + '" --unregister-models-user --out "' + OutFile + '"',
-          ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, Rc) and (Rc = 0) then
-    if LoadStringsFromFile(OutFile, Lines) and (GetArrayLength(Lines) >= 2) then
-    begin
-      OtherUsers := StrToIntDef(Lines[0], -1);
-      ModelsDir := Lines[1];
-    end;
-end;
-
-{ User data is only removed when the user agrees; the shared models only when no other Voxprint program uses them (default: keep).
-  SuppressibleMsgBox: a silent uninstall (/SUPPRESSMSGBOXES) takes the default answer - keep. }
-var
-  RuntimeOthers: Integer;
-  RuntimeDir: String;
-
-{ Our key out of runtime-<key>\.users.json (the runtime is shared by key); then the junction <app>\runtime is removed (only the link,
-  never the shared folder it points to). }
-procedure UnregisterRuntimeUser;
-var
-  Rc: Integer;
-  OutFile: String;
-  Lines: TArrayOfString;
-begin
+  PendingFile := ExpandConstant('{tmp}\vmd-shared-pending.txt');
   Rc := -1;
-  RuntimeOthers := -1;
-  RuntimeDir := '';
-  OutFile := ExpandConstant('{tmp}\vmd-runtime-users.txt');
   if FileExists(ExpandConstant('{#Py}')) then
-    if Exec(ExpandConstant('{#Py}'), '"' + ExpandConstant('{app}\main.py') + '" --unregister-runtime-user --out "' + OutFile + '"',
-            ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, Rc) and (Rc = 0) then
-      if LoadStringsFromFile(OutFile, Lines) and (GetArrayLength(Lines) >= 2) then
-      begin
-        RuntimeOthers := StrToIntDef(Trim(Lines[0]), -1);
-        RuntimeDir := Trim(Lines[1]);
-      end;
-  { the installer's own note of the real runtime-<key> folder, in case the interpreter could not tell }
-  if (RuntimeDir = '') and LoadStringsFromFile(ExpandConstant('{app}\runtime-dir.txt'), Lines) and (GetArrayLength(Lines) >= 1) then
-    RuntimeDir := Trim(Lines[0]);
-  Log(Format('runtime: dir=%s, other users=%d (python rc=%d)', [RuntimeDir, RuntimeOthers, Rc]));
+    if not Exec(ExpandConstant('{#Py}'), '"' + ExpandConstant('{app}\main.py') + '" --release-shared --out "' + PendingFile + '"',
+            ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, Rc) then
+      Rc := -1;
+  Log(Format('shared resources: release rc=%d, pending file=%s', [Rc, PendingFile]));
+  { runtime-dir.txt in the program folder names the shared runtime; the junction is only a link }
   RemoveDir(ExpandConstant('{app}\runtime'));
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
-  DataDir: String;
+  DataDir, Line, Root: String;
+  Lines: TArrayOfString;
+  I: Integer;
 begin
   if CurUninstallStep = usUninstall then
-  begin
-    UnregisterModelsUser;
-    UnregisterRuntimeUser;
-  end;
+    ReleaseShared;
   if CurUninstallStep = usPostUninstall then
   begin
     DataDir := ExpandConstant('{localappdata}\{#AppName}');
@@ -443,16 +413,13 @@ begin
       if SuppressibleMsgBox(FmtMessage(CustomMessage('UninstallDataQuestion'), [DataDir]),
          mbConfirmation, MB_YESNO or MB_DEFBUTTON2, IDNO) = IDYES then
         DelTree(DataDir, True, True, True);
-    { the shared runtime goes only when no other program is listed in its .users.json (it is never the Audiobook Builder's own
-      runtime folder: ours are named runtime-<key>) }
-    if (RuntimeOthers = 0) and (RuntimeDir <> '') and DirExists(RuntimeDir) and
-       (Pos('\runtime-', RuntimeDir) > 0) and FileExists(AddBackslash(RuntimeDir) + 'runtime-key.json') then
-    begin
-      if not DelTree(RuntimeDir, True, True, True) then Log('runtime: could not delete ' + RuntimeDir);
-    end;
-    if (OtherUsers = 0) and (ModelsDir <> '') and DirExists(ModelsDir) then
-      if SuppressibleMsgBox(FmtMessage(CustomMessage('UninstallModelsQuestion'), [ModelsDir]),
-         mbConfirmation, MB_YESNO or MB_DEFBUTTON2, IDNO) = IDYES then
-        DelTree(ModelsDir, True, True, True);
+    Root := Lowercase(ExpandConstant('{localappdata}\Voxprint\shared\'));
+    if (PendingFile <> '') and LoadStringsFromFile(PendingFile, Lines) then
+      for I := 0 to GetArrayLength(Lines) - 1 do
+      begin
+        Line := Trim(Lines[I]);
+        if (Line <> '') and (Pos(Root, Lowercase(Line)) = 1) and DirExists(Line) then
+          if not DelTree(Line, True, True, True) then Log('shared: could not delete ' + Line);
+      end;
   end;
 end;
