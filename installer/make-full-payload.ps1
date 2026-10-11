@@ -85,7 +85,9 @@ $pinText = "torch==$tv+$Flavor`r`ntorchaudio==$taVer`r`ntorchcodec==$tcVer`r`n" 
 [IO.File]::WriteAllText($pins, $pinText, (New-Object Text.UTF8Encoding $false))
 $wheels = Join-Path $Out "wheels"
 # Vendor the v0.1.1 release wheel (sha256 checked) so voxprint-common==0.1.* resolves offline.
-$fetcher = Join-Path (Split-Path -Parent $Requirements) "installer\fetch_common_wheel.py"
+# $Requirements is often a bare file name, so the script is found next to this file, not next to that name.
+$fetcher = Join-Path $PSScriptRoot "fetch_common_wheel.py"
+if (-not (Test-Path -LiteralPath $fetcher)) { throw "missing $fetcher" }
 & $Python $fetcher --dest $wheels
 Check "voxprint-common wheel"
 & $Python -m pip wheel --disable-pip-version-check --wheel-dir $wheels --find-links $wheels --extra-index-url "https://download.pytorch.org/whl/$Flavor" `
