@@ -330,8 +330,12 @@ class BaseTTS:
                 tell(line)
             texts_now = [texts[i] for i in group]
             limit_s = float(self.synthesis_timeout(texts_now))
+
+            def one_call(rows: List[str] = texts_now) -> List[np.ndarray]:
+                return self.synthesize_batch(rows, voice)
+
             try:
-                wavs = _call_with_timeout(lambda rows=texts_now: self.synthesize_batch(rows, voice), limit_s)
+                wavs = _call_with_timeout(one_call, limit_s)
             except SynthesisTimeout as exc:
                 if len(group) == 1:
                     raise RuntimeError(f"TTS made no progress on line {group[0]} after {limit_s:.0f} s") from exc
@@ -344,9 +348,12 @@ class BaseTTS:
                     log.info(alone)
                     if callable(tell):
                         tell(alone)
+
+                    def one_line(line_id: int = i) -> np.ndarray:
+                        return self.synthesize_batch([texts[line_id]], voice)[0]
+
                     try:
-                        wavs.append(_call_with_timeout(
-                            lambda i=i: self.synthesize_batch([texts[i]], voice)[0], one_s))
+                        wavs.append(_call_with_timeout(one_line, one_s))
                     except SynthesisTimeout as stuck:
                         raise RuntimeError(f"TTS made no progress on line {i} after {one_s:.0f} s") from stuck
             except Exception as exc:  # noqa: BLE001
