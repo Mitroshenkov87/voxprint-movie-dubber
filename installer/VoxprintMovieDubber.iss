@@ -214,6 +214,7 @@ UninstallDataQuestion=Also delete the dubbing projects, logs and reports (%1)?
 [Files]
 ; the download script, the dependency list and the pins are only needed during the setup
 Source: "install-runtime.ps1"; DestDir: "{tmp}"; Flags: dontcopy
+Source: "fetch_common_wheel.py"; DestDir: "{tmp}"; Flags: dontcopy
 Source: "..\requirements.txt"; DestDir: "{tmp}"; Flags: dontcopy
 Source: "runtime-constraints.txt"; DestDir: "{tmp}"; Flags: dontcopy
 Source: "..\dubber\infra\runtime_lock.json"; DestDir: "{tmp}"; Flags: dontcopy
@@ -294,6 +295,7 @@ var
 begin
   Result := '';
   ExtractTemporaryFile('install-runtime.ps1');
+  ExtractTemporaryFile('fetch_common_wheel.py');
   ExtractTemporaryFile('requirements.txt');
   ExtractTemporaryFile('runtime-constraints.txt');
   ExtractTemporaryFile('runtime_lock.json');

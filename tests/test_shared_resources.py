@@ -40,7 +40,7 @@ def test_manifest_refcount_preserves_unknown_keys_and_deletes_the_last_ref(tmp_p
     except components.OutsideShared:
         pass
     else:
-        raise AssertionError("a path outside shared/ must be refused")
+        raise AssertionError("a model path outside the shared models directory must be refused")
     data = json.loads((home / "shared" / "manifest.json").read_text(encoding="utf-8"))
     assert data["schema"] == 1 and data["note"] == "keep-me"
     assert data["components"]["ffmpeg-8"]["kind"] == "tool"
@@ -53,6 +53,25 @@ def test_manifest_refcount_preserves_unknown_keys_and_deletes_the_last_ref(tmp_p
     finished = components.release_app(home, "audiobook-builder")
     assert str(folder) in finished.deleted
     assert not folder.exists()
+    assert not (home / "shared" / "manifest.json").exists()
+
+
+def test_model_component_lives_under_the_models_root_and_the_last_ref_deletes_it(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    models = home / "models" / "sep"
+    models.mkdir(parents=True)
+    (models / "weights.bin").write_text("weights", encoding="utf-8")
+    monkeypatch.setenv("VOXPRINT_HOME", str(home))
+    monkeypatch.delenv("VOXPRINT_MODELS_DIR", raising=False)
+    monkeypatch.delenv("VOXPRINT_MODEL_CACHE", raising=False)
+    added = components.add_component(home, "models", kind="model", version="store", path=home / "models", app="movie-dubber")
+    assert added.kind == "model"
+    assert added.path == (home / "models").resolve().as_posix()
+    data = json.loads((home / "shared" / "manifest.json").read_text(encoding="utf-8"))
+    assert data["components"]["models"]["kind"] == "model"
+    finished = components.release_app(home, "movie-dubber")
+    assert str((home / "models").resolve()) in finished.deleted
+    assert not (home / "models").exists()
     assert not (home / "shared" / "manifest.json").exists()
 
 

@@ -8,7 +8,7 @@ rm -rf build/linux && mkdir -p "$stage/linux" dist
 cp -a main.py dubber assets BUILD.json requirements.txt LICENSE NOTICE README.md "$stage/"
 [ -f build_info.json ] && cp build_info.json "$stage/"
 cp installer/runtime-constraints.txt "$stage/"
-cp installer/linux/install.sh "$stage/"
+cp installer/linux/install.sh installer/fetch_common_wheel.py "$stage/"
 cp installer/linux/voxprint-dubber-256.png installer/linux/vxdub-256.png "$stage/linux/"
 find "$stage" -name __pycache__ -type d -prune -exec rm -rf {} +
 find "$stage" -name '*.pyc' -delete

@@ -14,17 +14,19 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_version_label_quotes_the_codename_and_omits_an_empty_one(monkeypatch):
     from dubber import appinfo
+    from voxprint_common.buildinfo import BuildInfo
 
-    monkeypatch.delenv("VOXPRINT_BUILD", raising=False)
-    monkeypatch.delenv("GITHUB_RUN_NUMBER", raising=False)
-    monkeypatch.setattr(appinfo, "build_info", lambda: {})
-    monkeypatch.setattr(appinfo, "build_json", lambda: {"offset": 983, "codename": "Bochan"})
+    monkeypatch.setattr(
+        appinfo,
+        "_identity",
+        lambda: BuildInfo(app="movie-dubber", version="1.0.0", rc=None, build=1001, codename="Bochan", show_rc=True),
+    )
     assert appinfo.APP_VERSION == "1.0.0-rc"
-    assert appinfo.app_build() == 983 and appinfo.app_codename() == "Bochan"
-    assert appinfo.version_label() == '1.0.0 RC · build 983 "Bochan"'
-    assert appinfo.format_version(build=983, codename="") == "1.0.0 RC · build 983"
-    assert appinfo.format_version(build=983, codename="  ") == "1.0.0 RC · build 983"
-    assert appinfo.release_title() == 'Voxprint AI Movie Dubber 1.0.0 RC · build 983 "Bochan"'
+    assert appinfo.app_build() == 1001 and appinfo.app_codename() == "Bochan"
+    assert appinfo.version_label() == '1.0.0 RC · build 1001 "Bochan"'
+    assert appinfo.format_version(build=1001, codename="") == "1.0.0 RC · build 1001"
+    assert appinfo.format_version(build=1001, codename="  ") == "1.0.0 RC · build 1001"
+    assert appinfo.release_title() == 'Voxprint AI Movie Dubber 1.0.0 RC · build 1001 "Bochan"'
 
 
 def test_installer_reads_appinfo_and_docs_state_the_codename_rule():

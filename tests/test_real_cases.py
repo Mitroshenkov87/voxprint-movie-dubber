@@ -516,6 +516,25 @@ def test_driver_cuda_is_read_from_new_nvidia_smi_headers():
     assert "UMD" in src
 
 
+def test_common_pin_is_the_0_1_line_and_the_release_wheel():
+    root = Path(__file__).resolve().parents[1]
+    req = (root / "requirements.txt").read_text(encoding="utf-8")
+    assert "voxprint-common==0.1.*" in req
+    assert "git+https://github.com/Mitroshenkov87/voxprint-common" not in req
+    fetcher = (root / "installer" / "fetch_common_wheel.py").read_text(encoding="utf-8")
+    assert "c9361d5d00913faf39497fc55124e682ba15b2098c775068c49582c0520cd4d1" in fetcher
+    assert "voxprint_common-0.1.1-py3-none-any.whl" in fetcher
+    ps1 = (root / "installer" / "install-runtime.ps1").read_text(encoding="utf-8")
+    sh = (root / "installer" / "linux" / "install.sh").read_text(encoding="utf-8")
+    payload = (root / "installer" / "make-full-payload.ps1").read_text(encoding="utf-8")
+    for text in (ps1, sh, payload):
+        assert "fetch_common_wheel.py" in text
+        assert "git+https://github.com/Mitroshenkov87/voxprint-common" not in text
+    assert "vmd-requirements-offline" not in ps1
+    assert "voxprint-common==0.1.0" not in ps1
+    assert "__version__ == '0.1.1'" in ps1 and "__version__ == '0.1.1'" in sh
+
+
 def test_other_packages_step_keeps_the_torch_build_and_uses_pypi():
     # The second install must not pass --torch-backend (that re-resolves every requirement against the PyTorch index).
     # torchcodec 0.17.0+cu130 does have a win_amd64 wheel, so it is installed in the first step with that flag.

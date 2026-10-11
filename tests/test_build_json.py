@@ -20,28 +20,52 @@ def test_build_json_offset_makes_the_next_release_build_at_least_1001():
     assert data["offset"] == 1001 - nxt
 
 
-def test_resolve_build_order():
-    from dubber.appinfo import DEV_BUILD, resolve_build, resolve_codename
+def test_library_build_number_is_never_invented_as_zero(tmp_path, monkeypatch):
+    """voxprint_common.buildinfo reads BUILD.json and build_info.json. A missing build stays null."""
+    from dubber import appinfo
+    from voxprint_common.buildinfo import parse
 
     source = {"offset": 983, "codename": "Bochan"}
-    assert resolve_build({}, baked={}, source=source) == 983
-    assert resolve_build({"GITHUB_RUN_NUMBER": "18"}, baked={}, source=source) == 1001
-    assert resolve_build({"GITHUB_RUN_NUMBER": "18"}, baked={"build": 1001, "codename": "Bochan"}, source=source) == 1001
-    assert resolve_build({"VOXPRINT_BUILD": "dev", "GITHUB_RUN_NUMBER": "18"}, baked={"build": 1001}, source=source) == DEV_BUILD
-    assert resolve_build({"VOXPRINT_BUILD": "1004"}, baked={"build": 1001}, source=source) == 1004
-    assert resolve_build({}, baked={}, source={}) == DEV_BUILD
-    assert resolve_build({}, baked={"build": "1001"}, source=source) == 1001
-    assert resolve_codename(baked={"codename": "Bochan"}, source={"codename": "Other"}) == "Bochan"
-    assert resolve_codename(baked={}, source={"codename": "Bochan"}) == "Bochan"
-    assert resolve_codename(baked={}, source={}) == ""
+    assert parse(source, env={}).build is None
+    assert parse(source, env={"GITHUB_RUN_NUMBER": "18"}).build == 1001
+    merged = {"offset": 983, "codename": "Bochan", "build": 1001}
+    assert parse(merged, env={"GITHUB_RUN_NUMBER": "18"}).build == 1001
+    assert parse(merged, env={"VOXPRINT_BUILD": "dev", "GITHUB_RUN_NUMBER": "18"}).build == 1001
+    assert parse(merged, env={"VOXPRINT_BUILD": "1004"}).build == 1004
+    assert parse({}, env={}).build is None
+    assert parse({"offset": 983, "build": "1001", "codename": "Bochan"}, env={}).build == 1001
+    assert parse({"build": 0, "codename": "Bochan"}, env={}).build == 0
+
+    folder = tmp_path / "app"
+    folder.mkdir()
+    (folder / "BUILD.json").write_text(json.dumps(source), encoding="utf-8")
+    monkeypatch.setattr(appinfo, "resource_dir", lambda: folder)
+    monkeypatch.delenv("VOXPRINT_BUILD", raising=False)
+    monkeypatch.delenv("GITHUB_RUN_NUMBER", raising=False)
+    assert appinfo.app_build() == appinfo.DEV_BUILD
+    assert appinfo.app_codename() == "Bochan"
+    assert appinfo.version_label() == '1.0.0 RC · build dev "Bochan"'
+    monkeypatch.setenv("GITHUB_RUN_NUMBER", "18")
+    assert appinfo.app_build() == 1001
+    assert appinfo.version_label() == '1.0.0 RC · build 1001 "Bochan"'
+    (folder / "build_info.json").write_text(
+        json.dumps({"build": 1004, "codename": "Stamped"}), encoding="utf-8",
+    )
+    monkeypatch.delenv("GITHUB_RUN_NUMBER", raising=False)
+    assert appinfo.app_build() == 1004
+    assert appinfo.app_codename() == "Stamped"
+    assert "build 0" not in appinfo.version_label()
 
 
 def test_dev_marker_in_the_label(monkeypatch):
     from dubber import appinfo
+    from voxprint_common.buildinfo import BuildInfo
 
-    monkeypatch.setattr(appinfo, "build_info", lambda: {})
-    monkeypatch.setattr(appinfo, "build_json", lambda: {"offset": 983, "codename": "Bochan"})
-    monkeypatch.setenv("VOXPRINT_BUILD", "dev")
+    monkeypatch.setattr(
+        appinfo,
+        "_identity",
+        lambda: BuildInfo(app="movie-dubber", version="1.0.0", rc=None, build=None, codename="Bochan", show_rc=True),
+    )
     assert appinfo.app_build() == "dev"
     assert appinfo.version_label() == '1.0.0 RC · build dev "Bochan"'
 

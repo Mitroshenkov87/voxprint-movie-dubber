@@ -58,11 +58,11 @@ both programs (`voxprint_common.suite_settings`).
 
 `BUILD.json` at the repository root is the only copy of the build offset and the codename. `dubber/appinfo.py` reads it. `APP_VERSION` in that module is the version string (`1.0.0-rc`). The build number is not stored as a constant.
 
-On the Build installers workflow the build number is `GITHUB_RUN_NUMBER` plus `offset`. The workflow writes that number and the codename into `build_info.json`. The installed program reads the stamp, so it does not need the git checkout. A local run, with no stamp and no `GITHUB_RUN_NUMBER`, uses the offset alone. `VOXPRINT_BUILD=dev` (or a missing `BUILD.json` and no stamp) shows the marker `dev`. `VOXPRINT_BUILD=<digits>` forces that number.
+`dubber/appinfo.py` asks `voxprint_common.buildinfo` for the number. On the Build installers workflow that number is `GITHUB_RUN_NUMBER` plus `offset`. The workflow writes it, with the codename, into `build_info.json`. The installed program reads the stamp, so it does not need the git checkout. A missing recorded build is `dev`, never 0. `VOXPRINT_BUILD=<digits>` forces that number.
 
 The offset was chosen from the Build installers workflow: run_number 17 on 2026-10-10 (workflow run 38057799983). The next run is 18, and 18 + 983 = 1001.
 
-The window, the splash, About, `--version`, the installer and the GitHub release title all show `1.0.0 RC · build N "Bochan"` from that calculation. A codename is one Biblical Hebrew word in ASCII transliteration. It describes the state of that build (readiness, a milestone), not a theme of the product. It is shown only when it is not empty, in quotes. The codename of this line is Bochan.
+The window, About, `--version`, the installer and the GitHub release title show `1.0.0 RC · build N "Codename"`. The splash uses the library label, which has no middle dot. A codename is one Biblical Hebrew word in ASCII transliteration. It describes the state of that build (readiness, a milestone), not a theme of the product. It is shown only when it is not empty, in quotes. The codename of this line is Bochan.
 
 Headless commands for other programs are documented in [CLI.md](CLI.md).
 

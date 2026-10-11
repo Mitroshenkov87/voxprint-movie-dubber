@@ -84,7 +84,11 @@ $pins = Join-Path $env:TEMP "vmd-payload-constraints.txt"
 $pinText = "torch==$tv+$Flavor`r`ntorchaudio==$taVer`r`ntorchcodec==$tcVer`r`n" + ((Get-Content -LiteralPath $Constraints -Encoding UTF8) -join "`r`n")
 [IO.File]::WriteAllText($pins, $pinText, (New-Object Text.UTF8Encoding $false))
 $wheels = Join-Path $Out "wheels"
-& $Python -m pip wheel --disable-pip-version-check --wheel-dir $wheels --extra-index-url "https://download.pytorch.org/whl/$Flavor" `
+# Vendor the v0.1.1 release wheel (sha256 checked) so voxprint-common==0.1.* resolves offline.
+$fetcher = Join-Path (Split-Path -Parent $Requirements) "installer\fetch_common_wheel.py"
+& $Python $fetcher --dest $wheels
+Check "voxprint-common wheel"
+& $Python -m pip wheel --disable-pip-version-check --wheel-dir $wheels --find-links $wheels --extra-index-url "https://download.pytorch.org/whl/$Flavor" `
     -c $pins "torch==$tv+$Flavor" "torchaudio==$taVer" "torchcodec==$tcVer" -r $Requirements
 Check "pip wheel"
 # The requirements resolve the CPU onnxruntime wheel (faster-whisper). The installer removes that

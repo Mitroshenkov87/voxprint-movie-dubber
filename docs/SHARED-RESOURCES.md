@@ -26,7 +26,8 @@ shared/
 
 Model weights live at `<home>/models` (`%LOCALAPPDATA%\Voxprint\models`), not inside `shared/`.
 `VOXPRINT_MODELS_DIR`, `suite.json` `models_dir`, and the older `state/models_dir.txt` still override that
-folder. They are not a manifest component: a path outside `shared/` cannot be recorded.
+folder. The folder is a `model` component. Its path in the manifest is absolute and stays under that
+models root (or `VOXPRINT_MODEL_CACHE`). Other component paths stay relative to `shared/`.
 
 The pin hash is still written into `runtime-key.json`. The directory name is the version, so a different Python
 or torch line is a different directory. A broken copy of the same version is repaired in place. It is never
@@ -87,7 +88,7 @@ The app id in `refs` is `movie-dubber`.
 A component id matches `[a-z0-9][a-z0-9._-]*`. The same id, version, and sha256 is reused. A different
 version or digest is written only when no other app still references the component. Writes take
 `manifest.lock` for at most 30 seconds and publish through a temporary file, fsync, and rename.
-Paths are relative to `shared/`. `faster-whisper` pulls in the CPU package `onnxruntime`. The installer uninstalls that distribution and installs `onnxruntime-gpu==1.30.0` (the version in `runtime_lock.json`). The CPU distribution must not remain.
+Paths are relative to `shared/`, except a `model` component, whose path is absolute under the shared models directory. `faster-whisper` pulls in the CPU package `onnxruntime`. The installer uninstalls that distribution and installs `onnxruntime-gpu==1.30.0` (the version in `runtime_lock.json`). The CPU distribution must not remain.
 
 `torch` version `2.11.0+cu130` stands for torch 2.11.0, torchaudio 2.11.0 and torchcodec 0.17.0, all `+cu130`.
 `ctranslate2` version `cu12` means CTranslate2 can import and the CUDA 12 libraries are `nvidia-cublas-cu12==12.9.2.10`
@@ -99,7 +100,9 @@ and `nvidia-cudnn-cu12==9.27.0.42`. The CPU runtime only requires CTranslate2 to
 * Install adds `movie-dubber` to each component. An entry with the same id, version and checksum is reused
   and is not downloaded again.
 * Uninstall removes `movie-dubber`. When `refs` becomes empty, the component is deleted. The directory is
-  deleted only when no remaining component still uses that path, and only when it is inside `shared/`.
+  deleted only when no remaining component still uses that path. A relative path must stay inside `shared/`.
+  An absolute model path must stay under the shared models directory. The last reference also removes that
+  models folder.
 * A directory that this process is running from, or that cannot be deleted yet, is left on disk. The Windows
   uninstaller deletes those pending paths after the process exits.
 * When no components remain, `manifest.json` is deleted. `manifest.lock` may stay.

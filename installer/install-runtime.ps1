@@ -408,19 +408,19 @@ try {
         } else {
             Run "[2/5] Installing PyTorch $tv ($flavor build), torchaudio $taBase and torchcodec $tcBase" $uv @("pip", "install", "--python", $py, "--compile-bytecode", "torch==$tv", "torchaudio==$taBase", "torchcodec==$tcBase", "--torch-backend=$flavor")
         }
-        # --offline cannot clone the git pin. The payload already holds the wheel built from that tag.
-        $reqFile = $Requirements
-        if ($Payload) {
-            $reqFile = Join-Path $env:TEMP "vmd-requirements-offline.txt"
-            $rewritten = foreach ($line in (Get-Content -LiteralPath $Requirements -Encoding UTF8)) {
-                if ($line -match '^\s*voxprint-common\s*@') { 'voxprint-common==0.1.0' } else { $line }
-            }
-            [IO.File]::WriteAllText($reqFile, (($rewritten -join "`r`n") + "`r`n"), (New-Object Text.UTF8Encoding $false))
-        }
-        Run "[3/5] Installing the other packages" $uv (@("pip", "install", "--python", $py, "--compile-bytecode", "-r", $reqFile, "-c", $pins) + $offline)
+        # voxprint-common==0.1.* is not on PyPI. The online installer downloads the
+        # v0.1.1 release wheel and checks its sha256. The full installer already
+        # has that wheel in the payload, so --find-links resolves the same pin.
+        $commonLinks = @()
         if (-not $Payload) {
-            Run "Pinning voxprint-common 0.1.0" $uv @("pip", "install", "--python", $py, "--compile-bytecode", "voxprint-common @ git+https://github.com/Mitroshenkov87/voxprint-common.git@v0.1.0")
+            $wheelDir = Join-Path $env:TEMP "vmd-common-wheel"
+            New-Item -ItemType Directory -Force -Path $wheelDir | Out-Null
+            $fetcher = Join-Path $PSScriptRoot "fetch_common_wheel.py"
+            if (-not (Test-Path -LiteralPath $fetcher)) { throw "fetch_common_wheel.py was not extracted next to install-runtime.ps1" }
+            Run "Downloading voxprint-common 0.1.1" $py @($fetcher, "--dest", $wheelDir)
+            $commonLinks = @("--find-links", $wheelDir)
         }
+        Run "[3/5] Installing the other packages" $uv (@("pip", "install", "--python", $py, "--compile-bytecode", "-r", $Requirements, "-c", $pins) + $offline + $commonLinks)
         # faster-whisper depends on the CPU distribution named onnxruntime. That name shadows onnxruntime-gpu.
         # Same version as runtime_lock.json. The CPU distribution must not remain installed.
         # Exit 1 here means the CPU package is absent, which is the success case, so it must not abort the script.
@@ -433,7 +433,7 @@ try {
             Run "Replacing the CPU onnxruntime package with onnxruntime-gpu 1.30.0" $uv (@("pip", "uninstall", "--python", $py, "onnxruntime"))
             Run "Installing onnxruntime-gpu 1.30.0" $uv (@("pip", "install", "--python", $py, "--compile-bytecode", "onnxruntime-gpu==1.30.0") + $offline)
         }
-        Run "Checking voxprint-common 0.1.0" $py @("-c", "import voxprint_common; from voxprint_common.runtime_manifest import cpu_onnxruntime_conflicts; assert voxprint_common.__version__ == '0.1.0', voxprint_common.__version__; raise SystemExit('The CPU package onnxruntime is installed. The shared runtime must not contain it.' if cpu_onnxruntime_conflicts() else 0)")
+        Run "Checking voxprint-common 0.1.1" $py @("-c", "import voxprint_common; from voxprint_common.runtime_manifest import cpu_onnxruntime_conflicts; assert voxprint_common.__version__ == '0.1.1', voxprint_common.__version__; raise SystemExit('The CPU package onnxruntime is installed. The shared runtime must not contain it.' if cpu_onnxruntime_conflicts() else 0)")
         # no --torch-backend on this step: it would re-resolve every requirement against the PyTorch index
         Run "Checking the installation" $py $check
         $info = [ordered]@{ key = $key; python = $lockObj.python; platform = $lockObj.platform; torch = "$tv+$flavor"; flavor = $flavor
@@ -526,7 +526,7 @@ try {
     $ErrorActionPreference = "Stop"
     Say "[4/5] ffmpeg (LGPL) installed into $ffDir"
 
-    # 5. models live at <home>\models (not a manifest component). The setup downloads the weights unless -SkipModels.
+    # 5. models live at <home>\models and are a model component. The setup downloads the weights unless -SkipModels.
     $sharedModels = Join-Path $shared "models"
     $models = Join-Path $vxHome "models"
     if ((Test-Path -LiteralPath $sharedModels) -and -not (Test-Path -LiteralPath $models)) {
@@ -544,6 +544,7 @@ try {
     Add-SharedRef $torchId "wheels" "$tv+$flavor" $rt ""
     Add-SharedRef "ctranslate2-cu12" "wheels" "cu12" $rt ""
     Add-SharedRef "ffmpeg-8" "tool" "n8.1" $ffDir ((Get-FileHash -LiteralPath $ffExe -Algorithm SHA256).Hash.ToLower())
+    Add-SharedRef "models" "model" "store" $models ""
 
     Say "Python environment is ready."
     exit 0

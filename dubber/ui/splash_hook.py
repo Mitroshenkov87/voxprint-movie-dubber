@@ -1,22 +1,20 @@
 """Movie Dubber splash: the shared window plus the click-burst picture.
 
-``voxprint_common.ui.splash.Splash`` (0.1.0) paints the 960 by 540 window and
-has no click callback. The burst is a Qt event filter on that window, which is
-the smallest hook that leaves the shared splash unchanged. A real click is
-delivered through ``QApplication``; calling ``mousePressEvent`` directly does
-not reach the filter.
+``voxprint_common.ui.splash.Splash`` paints the 960 by 540 window. Clicks arrive
+through ``on_click``. The burst picture is an overlay on that window. A click
+on the picture hides it and leaves the splash up.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QObject, Qt
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
-from dubber.appinfo import app_build, app_codename, resource_dir
+from dubber.appinfo import _identity, resource_dir
 from dubber.i18n import tr
 from dubber.ui.easter_egg import ClickBurst
 from voxprint_common.buildinfo import BuildInfo
-from voxprint_common.ui.splash import Splash
+from voxprint_common.ui.splash import Splash, SplashEvent
 
 IDENTITY = "#b98cff"
 
@@ -64,46 +62,38 @@ class _EggOverlay(QWidget):
         self.raise_()
 
 
-class _ClickFilter(QObject):
-    """Count rapid clicks on the splash window and show the picture once."""
-
-    def __init__(self, window: QWidget, art) -> None:
-        super().__init__(window)
-        self._burst = ClickBurst()
-        self._window = window
-        self.overlay = _EggOverlay(window)
-        self._art = art
-
-    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802 - Qt naming
-        """Record a press on the splash. The picture's own clicks are not counted."""
-        if watched is self._window and event.type() == QEvent.Type.MouseButtonPress and not self.overlay.isVisible():
-            if self._burst.click():
-                self.overlay.show_image(self._art, tr("splash.easter_egg"))
-        return False
-
-
 def splash_build() -> BuildInfo:
-    """Build identity for the splash label. The version line is ``voxprint_common.buildinfo.label``."""
-    number = app_build()
-    build = None if isinstance(number, str) else int(number)
-    return BuildInfo(app="movie-dubber", version="1.0.0", rc=None, build=build, codename=app_codename(), show_rc=True)
+    """Build identity for the splash. The second line is :func:`voxprint_common.buildinfo.label`."""
+    return _identity()
 
 
 def show_splash() -> Splash:
-    """Show the shared splash and attach the click-burst picture.
+    """Show the shared splash and count clicks with ``on_click``.
 
     The returned object is the shared :class:`Splash`. ``_easter`` is the overlay
     widget, so a test can see that a burst did not close the window.
     """
     art = resource_dir() / "assets" / "splash.jpg"
-    splash = Splash(art, IDENTITY, splash_build())
+    easter = resource_dir() / "dubber" / "assets" / "splash-easter.jpg"
+    burst = ClickBurst()
+    overlay_box: dict[str, _EggOverlay] = {}
+
+    def on_click(event: SplashEvent) -> None:
+        """Show the picture after six clicks in two seconds. Clicks on the picture do not count."""
+        del event
+        overlay = overlay_box.get("overlay")
+        if overlay is None or overlay.isVisible():
+            return
+        if burst.click():
+            overlay.show_image(easter, tr("splash.easter_egg"))
+
+    splash = Splash(art, IDENTITY, splash_build(), on_click=on_click)
     window = splash._window
     if not isinstance(window, QWidget):
         raise TypeError("the shared splash window is not a QWidget")
-    filt = _ClickFilter(window, resource_dir() / "dubber" / "assets" / "splash-easter.jpg")
-    window.installEventFilter(filt)
-    # The shared Splash has no fields for the picture. setattr keeps the attributes
+    overlay = _EggOverlay(window)
+    overlay_box["overlay"] = overlay
+    # The shared Splash has no field for the picture. setattr keeps the attribute
     # without a type ignore that mypy flags when the library is not installed.
-    setattr(splash, "_easter", filt.overlay)
-    setattr(splash, "_click_filter", filt)
+    setattr(splash, "_easter", overlay)
     return splash
