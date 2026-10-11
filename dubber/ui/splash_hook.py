@@ -102,6 +102,8 @@ def show_splash() -> Splash:
         raise TypeError("the shared splash window is not a QWidget")
     filt = _ClickFilter(window, resource_dir() / "dubber" / "assets" / "splash-easter.jpg")
     window.installEventFilter(filt)
-    splash._easter = filt.overlay  # type: ignore[attr-defined]
-    splash._click_filter = filt  # type: ignore[attr-defined]
+    # The shared Splash has no fields for the picture. setattr keeps the attributes
+    # without a type ignore that mypy flags when the library is not installed.
+    setattr(splash, "_easter", filt.overlay)
+    setattr(splash, "_click_filter", filt)
     return splash

@@ -87,6 +87,10 @@ $wheels = Join-Path $Out "wheels"
 & $Python -m pip wheel --disable-pip-version-check --wheel-dir $wheels --extra-index-url "https://download.pytorch.org/whl/$Flavor" `
     -c $pins "torch==$tv+$Flavor" "torchaudio==$taVer" "torchcodec==$tcVer" -r $Requirements
 Check "pip wheel"
+# The requirements resolve the CPU onnxruntime wheel (faster-whisper). The installer removes that
+# distribution and installs this GPU build from the payload, so the wheel has to be here.
+& $Python -m pip wheel --disable-pip-version-check --wheel-dir $wheels "onnxruntime-gpu==1.30.0"
+Check "pip wheel onnxruntime-gpu"
 $count = @(Get-ChildItem -LiteralPath $wheels -Filter "*.whl").Count
 $torchWheel = Get-ChildItem -LiteralPath $wheels -Filter "torch-$tv+$Flavor-*.whl" | Select-Object -First 1
 if (-not $torchWheel) { throw "the torch $tv+$Flavor wheel is missing from the payload" }

@@ -13,7 +13,7 @@
                    ffmpeg\ (installer\make-full-payload.ps1 builds it).  Nothing is downloaded when it is given.
     -SkipGpuGate   CI only: lets the full installer's cu130 runtime be installed on a GPU-less test runner.  Not offered to users.
     -ManifestScript dubber\infra\components.py. Records this program's reference in shared\manifest.json.
-    -SkipModels    CI only: create the shared models folder and its reference, but do not treat a missing download as a failure.
+    -SkipModels    CI only: create the models folder, but do not treat a missing download as a failure.
                    The setup's own last step downloads the weights unless /SKIPMODELS=1 is passed.
   Rules (docs/SHARED-RESOURCES.md; dubber/infra/runtime.py has the same key logic):
     key = SHA-256 of Python + platform + torch version/flavor + requirements + constraints (12 hex digits), stored in runtime-key.json
@@ -411,6 +411,18 @@ try {
         Run "[3/5] Installing the other packages" $uv (@("pip", "install", "--python", $py, "--compile-bytecode", "-r", $Requirements, "-c", $pins) + $offline)
         if (-not $Payload) {
             Run "Pinning voxprint-common 0.1.0" $uv @("pip", "install", "--python", $py, "--compile-bytecode", "voxprint-common @ git+https://github.com/Mitroshenkov87/voxprint-common.git@v0.1.0")
+        }
+        # faster-whisper depends on the CPU distribution named onnxruntime. That name shadows onnxruntime-gpu.
+        # Same version as runtime_lock.json. The CPU distribution must not remain installed.
+        # Exit 1 here means the CPU package is absent, which is the success case, so it must not abort the script.
+        $ErrorActionPreference = "Continue"
+        $PSNativeCommandUseErrorActionPreference = $false
+        & $py -c "from voxprint_common.runtime_manifest import cpu_onnxruntime_conflicts; raise SystemExit(0 if cpu_onnxruntime_conflicts() else 1)"
+        $replaceOnnx = ($LASTEXITCODE -eq 0)
+        $ErrorActionPreference = "Stop"
+        if ($replaceOnnx) {
+            Run "Replacing the CPU onnxruntime package with onnxruntime-gpu 1.30.0" $uv (@("pip", "uninstall", "--python", $py, "onnxruntime"))
+            Run "Installing onnxruntime-gpu 1.30.0" $uv (@("pip", "install", "--python", $py, "--compile-bytecode", "onnxruntime-gpu==1.30.0") + $offline)
         }
         Run "Checking voxprint-common 0.1.0" $py @("-c", "import voxprint_common; from voxprint_common.runtime_manifest import cpu_onnxruntime_conflicts; assert voxprint_common.__version__ == '0.1.0', voxprint_common.__version__; raise SystemExit('The CPU package onnxruntime is installed. The shared runtime must not contain it.' if cpu_onnxruntime_conflicts() else 0)")
         # no --torch-backend on this step: it would re-resolve every requirement against the PyTorch index

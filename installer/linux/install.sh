@@ -10,7 +10,7 @@
 # Requirements: x86_64 Linux (a distribution released in 2025 or later), an NVIDIA GeForce RTX 40-series GPU or newer
 # (compute capability 8.9+) and an NVIDIA driver from the 600 branch or newer, about 25 GB of free disk space and an
 # internet connection. The installer puts Python 3.14, PyTorch 2.11.0+cu130, torchaudio, torchcodec, the CTranslate2
-# CUDA 12 libraries, ffmpeg and the default-pipeline models into ~/.local/share/voxprint/shared before the first launch.
+# CUDA 12 libraries and ffmpeg into ~/.local/share/voxprint/shared, and the default-pipeline models into ~/.local/share/voxprint/models, before the first launch.
 # An interrupted download is continued from a .partial file.
 set -euo pipefail
 
@@ -229,6 +229,13 @@ say "[3/5] Installing the other packages and the CUDA 12 libraries"
 "$UV" pip install --python "$PY" --quiet -r "$PREFIX/app/requirements.txt" -c "$PINS"
 "$UV" pip install --python "$PY" --quiet "voxprint-common @ git+https://github.com/Mitroshenkov87/voxprint-common.git@v0.1.0"
 "$UV" pip install --python "$PY" --quiet "nvidia-cublas-cu12==12.9.2.10" "nvidia-cudnn-cu12==9.27.0.42"
+# faster-whisper depends on the CPU distribution named onnxruntime. That name shadows onnxruntime-gpu.
+# Same version as dubber/infra/runtime_lock.json. The CPU distribution must not remain installed.
+if "$PY" -c "from voxprint_common.runtime_manifest import cpu_onnxruntime_conflicts; raise SystemExit(0 if cpu_onnxruntime_conflicts() else 1)"; then
+  say "Replacing the CPU onnxruntime package with onnxruntime-gpu 1.30.0"
+  "$UV" pip uninstall --python "$PY" --quiet onnxruntime
+  "$UV" pip install --python "$PY" --quiet "onnxruntime-gpu==1.30.0"
+fi
 "$PY" -c "import voxprint_common; from voxprint_common.runtime_manifest import cpu_onnxruntime_conflicts; assert voxprint_common.__version__ == '0.1.0', voxprint_common.__version__; raise SystemExit('The CPU package onnxruntime is installed. The shared runtime must not contain it.' if cpu_onnxruntime_conflicts() else 0)"
 "$PY" -c "import torch, transformers, PySide6, faster_whisper, ctranslate2; print('torch', torch.__version__, '- CUDA available:', torch.cuda.is_available())"
 date -u +%Y-%m-%dT%H:%M:%SZ > "$RT/.install-complete"

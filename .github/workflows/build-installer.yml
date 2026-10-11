@@ -8,8 +8,8 @@
 # Runners have no GPU: /TORCH=cpu (online) and /SKIPGPUGATE=1 (full, keeps its cu130 build) are CI-only switches.
 # VOXPRINT_SKIP_GPU_GATE lets the window self-test open on that same runner.
 # /SKIPMODELS=1 and VOXPRINT_SKIP_MODEL_FETCH skip the multi-gigabyte model download on that runner.
-# A user install downloads the models. The shared runtime, ffmpeg and models folder are removed on uninstall
-# only when movie-dubber was the last reference.
+# A user install downloads the models into <home>\models. The shared runtime and ffmpeg are removed on uninstall
+# only when movie-dubber was the last reference. The models folder is not a manifest component and stays.
 # The audit job runs first. The installer is not built when ruff, mypy, bandit (high), gitleaks, or an
 # un-allowlisted pip-audit high/critical finding fails that job. Vulture and radon do not fail it.
 name: Build installers
@@ -165,15 +165,22 @@ jobs:
           if (-not (Test-Path "$($rt.FullName)\runtime-key.json")) { throw "no shared runtime folder" }
           "runtime: " + $rt.FullName + " " + (Get-Content "$($rt.FullName)\runtime-key.json" -Raw)
           if (-not (Test-Path "$shared\ffmpeg\n8.1\ffmpeg.exe")) { throw "shared ffmpeg is missing" }
-          if (-not (Test-Path "$shared\models")) { throw "shared models folder is missing" }
+          $models = "$env:LOCALAPPDATA\Voxprint\models"
+          if (-not (Test-Path $models)) { throw "models folder is missing: $models" }
+          if (Test-Path "$shared\models") { throw "models must not live under shared\" }
           $manifest = Get-Content "$shared\manifest.json" -Raw | ConvertFrom-Json
           if ($manifest.schema -ne 1) { throw "manifest schema is $($manifest.schema)" }
-          foreach ($id in @("runtime", "torch", "ctranslate2", "ffmpeg", "models")) {
-            $row = @($manifest.resources | Where-Object { $_.id -eq $id }) | Select-Object -First 1
+          $pyId = if ($flavor -eq "cpu") { "python-3.14-cpu" } else { "python-3.14" }
+          $torchId = if ($flavor -eq "cpu") { "torch-2.11.0-cpu" } else { "torch-2.11.0-cu130" }
+          foreach ($id in @($pyId, $torchId, "ctranslate2-cu12", "ffmpeg-8")) {
+            $row = $manifest.components.$id
             if (-not $row) { throw "manifest has no $id" }
-            if (@($row.apps) -notcontains "movie-dubber") { throw "$id is not referenced by movie-dubber" }
+            foreach ($field in @("kind", "version", "path", "sha256", "installed_at", "refs")) {
+              if (-not ($row.PSObject.Properties.Name -contains $field)) { throw "$id is missing $field" }
+            }
+            if (@($row.refs) -notcontains "movie-dubber") { throw "$id is not referenced by movie-dubber" }
           }
-          "manifest resources: " + ((@($manifest.resources) | ForEach-Object { $_.id }) -join ", ")
+          "manifest components: " + (($manifest.components.PSObject.Properties.Name) -join ", ")
           & C:\vmd\runtime\Scripts\python.exe -c "import torch; print('torch', torch.__version__); assert torch.__version__.startswith('2.11.0')"
           if ($LASTEXITCODE -ne 0) { throw "the runtime does not have the pinned PyTorch 2.11.0" }
           if ("${{ matrix.kind }}" -eq "full") {
@@ -192,7 +199,7 @@ jobs:
           if (-not $reg) { throw "no Apps and features entry" }
           "apps and features: $($reg.DisplayName) $($reg.DisplayVersion)"
           if (-not (Test-Path C:\vmd\build_info.json)) { throw "build_info.json was not installed" }
-          $users = "$env:LOCALAPPDATA\Voxprint\shared\models\.users.json"
+          $users = "$env:LOCALAPPDATA\Voxprint\models\.users.json"
           if (-not (Test-Path $users)) { throw "the shared models users file was not created: $users" }
           "models users: " + (Get-Content $users -Raw)
           if (-not ((Get-Content $users -Raw | ConvertFrom-Json).'movie-dubber')) { throw "movie-dubber is not registered in $users" }
@@ -246,15 +253,15 @@ jobs:
           if ($menu) { throw "Start menu shortcuts are still there" }
           $reg = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*","HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like "Voxprint AI Movie Dubber*" }
           if ($reg) { throw "the Apps and features entry is still there" }
-          # movie-dubber is the only app on this runner, so every shared resource goes when its reference count hits zero
+          # movie-dubber is the only app on this runner, so every shared component goes when its reference count hits zero.
+          # Model weights live at <home>\models and are not a manifest component, so that folder is not deleted.
           $flavor = if ("${{ matrix.kind }}" -eq "full") { "cu130" } else { "cpu" }
           $shared = "$env:LOCALAPPDATA\Voxprint\shared"
           $rt = "$shared\runtimes\py3.14-torch2.11-$flavor"
           for ($i = 0; $i -lt 120; $i++) {
             $runtimeLeft = Test-Path $rt
             $ffmpegLeft = Test-Path "$shared\ffmpeg\n8.1"
-            $modelsLeft = Test-Path "$shared\models"
-            if (-not $runtimeLeft -and -not $ffmpegLeft -and -not $modelsLeft) { break }
+            if (-not $runtimeLeft -and -not $ffmpegLeft) { break }
             Start-Sleep 2
           }
           if ((Test-Path $rt) -or (Test-Path "$shared\ffmpeg\n8.1") -or (Test-Path "$shared\models")) {

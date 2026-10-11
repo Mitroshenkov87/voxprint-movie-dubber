@@ -87,7 +87,7 @@ The app id in `refs` is `movie-dubber`.
 A component id matches `[a-z0-9][a-z0-9._-]*`. The same id, version, and sha256 is reused. A different
 version or digest is written only when no other app still references the component. Writes take
 `manifest.lock` for at most 30 seconds and publish through a temporary file, fsync, and rename.
-Paths are relative to `shared/`. The CPU package `onnxruntime` is refused.
+Paths are relative to `shared/`. `faster-whisper` pulls in the CPU package `onnxruntime`. The installer uninstalls that distribution and installs `onnxruntime-gpu==1.30.0` (the version in `runtime_lock.json`). The CPU distribution must not remain.
 
 `torch` version `2.11.0+cu130` stands for torch 2.11.0, torchaudio 2.11.0 and torchcodec 0.17.0, all `+cu130`.
 `ctranslate2` version `cu12` means CTranslate2 can import and the CUDA 12 libraries are `nvidia-cublas-cu12==12.9.2.10`
