@@ -284,7 +284,13 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $env:VOXPRINT_DUBBER_HOME = "C:\vmd-data"
-          & "$env:VMD_APP\runtime\Scripts\python.exe" "$env:VMD_APP\main.py" --fetch-models --models sep
+          $py = "$env:VMD_APP\runtime\Scripts\python.exe"
+          $manifest = "$env:VMD_APP\mdl.json"
+          Remove-Item Env:HF_TOKEN -ErrorAction SilentlyContinue
+          Remove-Item Env:HUGGINGFACE_HUB_TOKEN -ErrorAction SilentlyContinue
+          & $py -m voxprint_common.mdl enqueue --app movie-dubber --manifest $manifest --model sep
+          if ($LASTEXITCODE -ne 0) { throw "MDL enqueue failed" }
+          & $py -m voxprint_common.mdl --json status --wait --manifest $manifest
           if ($LASTEXITCODE -ne 0) { throw "model download failed" }
 
       - name: Diagnostics on the runner (CPU, short run); the report is kept as an artifact

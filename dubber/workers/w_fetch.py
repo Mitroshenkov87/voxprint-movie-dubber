@@ -1,7 +1,7 @@
-"""Worker ``fetch``: make sure the models are on disk (download when allowed) and report where each came from.
+"""Worker ``fetch``: report models that are already on disk. It does not download.
 
-Args: ``keys`` (model keys from ``dubber.models.SPECS``), ``allow_download``, ``repos`` (optional {key: repo} overrides).
-Separated from the model checks so that download time never pollutes load-time numbers.
+Args: ``keys`` (model keys from ``dubber.models.SPECS``), ``repos`` (optional {key: repo} overrides).
+``allow_download`` is accepted and ignored.
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
         try:
             ctx.log(f"models: checking {repo}")
             folder, info = models.ensure(repo, args.get("allow_download", True), log=ctx.log)
-            size = model_store._dir_size(folder) / 1024 ** 3
+            size = model_store.folder_bytes(folder) / 1024 ** 3
             lines.append(f"{title:<46} OK    [{repo}] {info['source']}" + (f", downloaded in {info['download_s']} s" if info["download_s"] else "") + f"  ({size:.2f} GB)")
             ok_n += 1
             dl_total += float(info["download_s"])

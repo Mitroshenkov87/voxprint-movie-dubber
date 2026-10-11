@@ -80,7 +80,7 @@ jobs:
                    "$prefix/share/mime/packages/voxprint-movie-dubber.xml" \
                    "$prefix/share/icons/hicolor/256x256/apps/voxprint-movie-dubber.png" \
                    "$prefix/share/icons/hicolor/256x256/mimetypes/application-vnd.voxprint.dub+zip.png" \
-                   "$app/main.py" "$app/build_info.json"; do
+                   "$app/main.py" "$app/build_info.json" "$app/mdl.json"; do
             test -e "$f" || { echo "missing: $f"; exit 1; }
           done
           test -x "$prefix/bin/voxprint-movie-dubber"
@@ -115,6 +115,23 @@ jobs:
           print("shared layout OK", sorted(comps))
           PY
           echo "installation OK"
+
+      - name: MDL inventory (no download, HF_TOKEN unset)
+        run: |
+          set -euo pipefail
+          test -z "${HF_TOKEN}"
+          test -z "${HUGGINGFACE_HUB_TOKEN}"
+          py="$HOME/.local/share/voxprint/shared/runtimes/py3.14-torch2.11-cu130/env/bin/python"
+          "$py" -m voxprint_common.mdl --json --dry-run plan --manifest "$VOX_PREFIX/movie-dubber/mdl.json" > mdl-plan.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          rows = [json.loads(line) for line in Path("mdl-plan.json").read_text(encoding="utf-8").splitlines() if line.strip()]
+          last = rows[-1]
+          if last.get("ok") is not True or "planned" not in str(last.get("message") or ""):
+              raise SystemExit(f"MDL plan failed: {last}")
+          print("mdl inventory", last.get("message"))
+          PY
 
       - name: voxprint-movie-dubber --dry-run --json
         run: |

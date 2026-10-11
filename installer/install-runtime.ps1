@@ -408,16 +408,16 @@ try {
         } else {
             Run "[2/5] Installing PyTorch $tv ($flavor build), torchaudio $taBase and torchcodec $tcBase" $uv @("pip", "install", "--python", $py, "--compile-bytecode", "torch==$tv", "torchaudio==$taBase", "torchcodec==$tcBase", "--torch-backend=$flavor")
         }
-        # voxprint-common==0.1.* is not on PyPI. The online installer downloads the
-        # v0.1.1 release wheel and checks its sha256. The full installer already
-        # has that wheel in the payload, so --find-links resolves the same pin.
+        # requirements.txt pins the voxprint-common 0.2.1 wheel by URL and sha256.
+        # The online installer also downloads that wheel. The full installer already
+        # has it in the payload, so --find-links can satisfy the same pin offline.
         $commonLinks = @()
         if (-not $Payload) {
             $wheelDir = Join-Path $env:TEMP "vmd-common-wheel"
             New-Item -ItemType Directory -Force -Path $wheelDir | Out-Null
             $fetcher = Join-Path $PSScriptRoot "fetch_common_wheel.py"
             if (-not (Test-Path -LiteralPath $fetcher)) { throw "fetch_common_wheel.py was not extracted next to install-runtime.ps1" }
-            Run "Downloading voxprint-common 0.1.1" $py @($fetcher, "--dest", $wheelDir)
+            Run "Downloading voxprint-common 0.2.1" $py @($fetcher, "--dest", $wheelDir)
             $commonLinks = @("--find-links", $wheelDir)
         }
         Run "[3/5] Installing the other packages" $uv (@("pip", "install", "--python", $py, "--compile-bytecode", "-r", $Requirements, "-c", $pins) + $offline + $commonLinks)
@@ -433,7 +433,7 @@ try {
             Run "Replacing the CPU onnxruntime package with onnxruntime-gpu 1.30.0" $uv (@("pip", "uninstall", "--python", $py, "onnxruntime"))
             Run "Installing onnxruntime-gpu 1.30.0" $uv (@("pip", "install", "--python", $py, "--compile-bytecode", "onnxruntime-gpu==1.30.0") + $offline)
         }
-        Run "Checking voxprint-common 0.1.1" $py @("-c", "import voxprint_common; from voxprint_common.runtime_manifest import cpu_onnxruntime_conflicts; assert voxprint_common.__version__ == '0.1.1', voxprint_common.__version__; raise SystemExit('The CPU package onnxruntime is installed. The shared runtime must not contain it.' if cpu_onnxruntime_conflicts() else 0)")
+        Run "Checking voxprint-common 0.2.1" $py @("-c", "import voxprint_common; from voxprint_common.runtime_manifest import cpu_onnxruntime_conflicts; assert voxprint_common.__version__ == '0.2.1', voxprint_common.__version__; raise SystemExit('The CPU package onnxruntime is installed. The shared runtime must not contain it.' if cpu_onnxruntime_conflicts() else 0)")
         # no --torch-backend on this step: it would re-resolve every requirement against the PyTorch index
         Run "Checking the installation" $py $check
         $info = [ordered]@{ key = $key; python = $lockObj.python; platform = $lockObj.platform; torch = "$tv+$flavor"; flavor = $flavor
@@ -526,9 +526,8 @@ try {
     $ErrorActionPreference = "Stop"
     Say "[4/5] ffmpeg (LGPL) installed into $ffDir"
 
-    # 5. models live at <home>\models and are a model component. The setup downloads the weights unless -SkipModels.
-    # That download (the models task) is anonymous. HF_TOKEN is not required.
-    # TODO: fetching moves to voxprint-mdl later.
+    # 5. models live at <home>\models. VOXPrint MDL downloads them unless -SkipModels.
+    # The app does not download. HF_TOKEN is removed and is not passed to MDL.
     if (Test-Path Env:HF_TOKEN) { Remove-Item Env:HF_TOKEN }
     if (Test-Path Env:HUGGINGFACE_HUB_TOKEN) { Remove-Item Env:HUGGINGFACE_HUB_TOKEN }
     $sharedModels = Join-Path $shared "models"
@@ -540,7 +539,17 @@ try {
     if ($SkipModels) {
         Say "[5/5] CI switch -SkipModels: the models folder is ready and the weights are not downloaded here"
     } else {
-        Say "[5/5] Models folder $models (the setup downloads the default-pipeline models next)"
+        $manifest = Join-Path $AppDir "mdl.json"
+        $mdl = Join-Path (Split-Path -Parent $py) "voxprint-mdl.exe"
+        if (Test-Path -LiteralPath $mdl) {
+            $mdlExe = $mdl
+            $mdlPrefix = @()
+        } else {
+            $mdlExe = $py
+            $mdlPrefix = @("-m", "voxprint_common.mdl")
+        }
+        Run "[5/5] Enqueueing models with VOXPrint MDL" $mdlExe ($mdlPrefix + @("enqueue", "--app", "movie-dubber", "--manifest", $manifest))
+        Run "[5/5] Waiting for VOXPrint MDL" $mdlExe ($mdlPrefix + @("--json", "status", "--wait", "--manifest", $manifest))
     }
     $runtimeId = if ($flavor -eq "cpu") { "python-3.14-cpu" } else { "python-3.14" }
     $torchId = if ($flavor -eq "cpu") { "torch-2.11.0-cpu" } else { "torch-2.11.0-cu130" }

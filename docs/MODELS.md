@@ -1,9 +1,12 @@
 # Models
 
-Movie Dubber downloads weights into the shared Voxprint model folder. Each entry below is the model the program
-actually fetches. The licence in `dubber/models.py` and the licence in `dubber/infra/model_manifest.json` are the
-licence on that model's Hugging Face card. A download is pinned to the revision below, and every file it fetches
-is checked (size, then SHA-256) before the folder is used.
+VOXPrint MDL downloads weights into the shared Voxprint model folder. Movie Dubber does not download them.
+The app manifest is `mdl.json` at the program root. Each entry below is a model that manifest pins.
+The licence in `dubber/models.py` is the licence on that model's card. A download is pinned to the revision
+below, and MDL checks every file (size, then SHA-256) before the folder is used. Diarization and the speaker
+embedding are optional: one voice does not need them. Qwen3-TTS is written out in full, with the same
+repository and revision Audiobook Builder uses, because voxprint-common 0.2.1 cannot resolve a shared-component
+id into files. See the TODO in `mdl.json`.
 
 The pyannote diarization pipeline and the speaker embedding are ungated mirrors. File hashes are the `SHA256SUMS`
 published with those revisions. The pipeline config loads embedding, segmentation and PLDA from the mirror folder.
@@ -12,19 +15,19 @@ published with those revisions. The pipeline config loads embedding, segmentatio
 
 | Key | Repository | Revision | Licence | Checksums |
 |---|---|---|---|---|
-| `tts_1_7b` | `Qwen/Qwen3-TTS-12Hz-1.7B-Base` | `fd4b254389122332181a7c3db7f27e918eec64e3` | Apache-2.0 | pinned, verified on download |
-| `tts_0_6b` | `Qwen/Qwen3-TTS-12Hz-0.6B-Base` | `5d83992436eae1d760afd27aff78a71d676296fc` | Apache-2.0 | pinned, verified on download |
-| `asr` | `deepdml/faster-whisper-large-v3-turbo-ct2` | `4df90f75321148c3a29a9e2351b7ddf8f5b115a8` | MIT | pinned, verified on download |
-| `sep` | `JusperLee/TIGER-DnR` | `b7a59560bbca10febbcd46fb01600f868e587f57` | Apache-2.0 (weights), MIT (code) | pinned, verified on download |
-| `diar` | `Mitroshenkov87/voxprint-pyannote-speaker-diarization-community-1` | `9c851af727f1085a361777d13e32734f7f5ebb30` | CC-BY-4.0 | pinned, verified on download |
-| `embed` | `Mitroshenkov87/voxprint-pyannote-embedding` | `4655ca656e1d7b1d8fe8100b39b4fdbf3015c7b8` | MIT | pinned, verified on download |
-| `roformer` | `KimberleyJSN/melbandroformer` | `ac9b0614ab3cd7f77219e18ba494dfd93956c348` | MIT | pinned, verified on download |
-| `mt_en_ru` | `Helsinki-NLP/opus-mt-tc-big-en-zle` | `708be1d372fe4c358a352f404e6dc9ca0126ba48` | CC-BY-4.0 | pinned, verified on download |
-| `mt_ru_en` | `Helsinki-NLP/opus-mt-tc-big-zle-en` | `09a40f722d6d8b76aaad6fe51a06c914622a13d1` | CC-BY-4.0 | pinned, verified on download |
-| `mt_ru_de` | `Helsinki-NLP/opus-mt-tc-big-zle-de` | `b2e247f0c413ca6aa51a32f2f2be8666cf72405e` | CC-BY-4.0 | pinned, verified on download |
-| `mt_de_ru` | `Helsinki-NLP/opus-mt-tc-big-de-zle` | `d4db2a2cbaa6c2f1ea57d0ed40924d35767b05f9` | CC-BY-4.0 | pinned, verified on download |
-| `mt_en_de` | `Helsinki-NLP/opus-mt-tc-bible-big-deu_eng_fra_por_spa-gmw` | `0a10a154b1d057720d03d8227bc59ea9633c590b` | Apache-2.0 | pinned, verified on download |
-| `mt_de_en` | `Helsinki-NLP/opus-mt-tc-bible-big-gmw-deu_eng_fra_por_spa` | `a6933ed14d06d91d797809258bdb2d52f5487a36` | Apache-2.0 | pinned, verified on download |
+| `tts_1_7b` | `Qwen/Qwen3-TTS-12Hz-1.7B-Base` | `fd4b254389122332181a7c3db7f27e918eec64e3` | Apache-2.0 | pinned in `mdl.json` (24 GB) |
+| `tts_0_6b` | `Qwen/Qwen3-TTS-12Hz-0.6B-Base` | `5d83992436eae1d760afd27aff78a71d676296fc` | Apache-2.0 | pinned in `mdl.json` |
+| `asr` | `deepdml/faster-whisper-large-v3-turbo-ct2` | `4df90f75321148c3a29a9e2351b7ddf8f5b115a8` | MIT | pinned in `mdl.json` |
+| `sep` | `JusperLee/TIGER-DnR` | `b7a59560bbca10febbcd46fb01600f868e587f57` | Apache-2.0 (weights), MIT (code) | pinned in `mdl.json` |
+| `diar` | `Mitroshenkov87/voxprint-pyannote-speaker-diarization-community-1` | `9c851af727f1085a361777d13e32734f7f5ebb30` | CC-BY-4.0 | pinned in `mdl.json` |
+| `embed` | `Mitroshenkov87/voxprint-pyannote-embedding` | `4655ca656e1d7b1d8fe8100b39b4fdbf3015c7b8` | MIT | pinned in `mdl.json` |
+| `roformer` | `KimberleyJSN/melbandroformer` | `ac9b0614ab3cd7f77219e18ba494dfd93956c348` | MIT | pinned in `mdl.json` |
+| `mt_en_ru` | `Helsinki-NLP/opus-mt-tc-big-en-zle` | `708be1d372fe4c358a352f404e6dc9ca0126ba48` | CC-BY-4.0 | pinned in `mdl.json` |
+| `mt_ru_en` | `Helsinki-NLP/opus-mt-tc-big-zle-en` | `09a40f722d6d8b76aaad6fe51a06c914622a13d1` | CC-BY-4.0 | pinned in `mdl.json` |
+| `mt_ru_de` | `Helsinki-NLP/opus-mt-tc-big-zle-de` | `b2e247f0c413ca6aa51a32f2f2be8666cf72405e` | CC-BY-4.0 | pinned in `mdl.json` |
+| `mt_de_ru` | `Helsinki-NLP/opus-mt-tc-big-de-zle` | `d4db2a2cbaa6c2f1ea57d0ed40924d35767b05f9` | CC-BY-4.0 | pinned in `mdl.json` |
+| `mt_en_de` | `Helsinki-NLP/opus-mt-tc-bible-big-deu_eng_fra_por_spa-gmw` | `0a10a154b1d057720d03d8227bc59ea9633c590b` | Apache-2.0 | pinned in `mdl.json` |
+| `mt_de_en` | `Helsinki-NLP/opus-mt-tc-bible-big-gmw-deu_eng_fra_por_spa` | `a6933ed14d06d91d797809258bdb2d52f5487a36` | Apache-2.0 | pinned in `mdl.json` |
 
 The 2020 Helsinki-NLP `opus-mt-en-ru` and `opus-mt-de-en` cards are Apache-2.0. `opus-mt-ru-en` and `opus-mt-en-de` are
 CC-BY-4.0. Those four checkpoints are not used. en↔ru and ru↔de use tc-big. en↔de uses tc-bible-big.

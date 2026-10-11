@@ -26,6 +26,8 @@ def ensure_with_dialog() -> Report:
 
     def progress(event: dict[str, Any]) -> None:
         nonlocal shown
+        if str(event.get("resource") or "") == "models":
+            return
         status = str(event.get("status") or "")
         message = str(event.get("message") or "Checking shared components...")
         if status in {"repairing", "failed"} or shown:

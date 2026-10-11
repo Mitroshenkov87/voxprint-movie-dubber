@@ -247,64 +247,36 @@ def test_reference_check_warn_is_capped(tmp_path, monkeypatch):
     assert any("warn" in (line or "") for line in logs)
 
 
-def test_download_retries_getaddrinfo_then_succeeds(tmp_path, monkeypatch):
-    from dubber.infra import model_store
-
-    sleeps = []
-    monkeypatch.setattr(model_store.time, "sleep", lambda seconds: sleeps.append(seconds))
-    calls = {"n": 0}
-    good = {"config.json": b"{}", "model.safetensors": b"w"}
-
-    def dl(_repo, dest, _revision, _patterns, _token):
-        calls["n"] += 1
-        if calls["n"] < 3:
-            raise OSError("[Errno 11001] getaddrinfo failed")
-        for name, data in good.items():
-            path = dest / name
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(data)
-
-    info = model_store.ensure_model("org/retry", root=tmp_path, downloader=dl, log_fn=lambda _m: None)
-    assert info.source == "downloaded" and calls["n"] == 3
-    assert sleeps == [1.0, 2.0]
-
-
-def test_download_does_not_retry_a_local_error(tmp_path, monkeypatch):
-    from dubber.infra import model_store
-
-    monkeypatch.setattr(model_store.time, "sleep", lambda _s: (_ for _ in ()).throw(AssertionError("slept")))
-    calls = {"n": 0}
-
-    def dl(*_a):
-        calls["n"] += 1
-        raise RuntimeError("permission denied")
-
-    with pytest.raises(model_store.ModelUnavailable, match="permission denied"):
-        model_store.ensure_model("org/local", root=tmp_path, downloader=dl)
-    assert calls["n"] == 1
-
-
-def test_fetch_tries_pyannote_mirrors_without_a_token(tmp_path, monkeypatch):
+def test_fetch_enqueues_mdl_without_a_token(tmp_path, monkeypatch):
     from dubber import cli, models
 
-    monkeypatch.delenv("HF_TOKEN", raising=False)
-    monkeypatch.delenv("HUGGINGFACE_HUB_TOKEN", raising=False)
-    seen = []
+    monkeypatch.setenv("HF_TOKEN", "present-but-unused")
+    monkeypatch.setenv("HUGGINGFACE_HUB_TOKEN", "also-present")
+    calls = []
 
-    def ensure(repo, *_a, **kwargs):
-        seen.append(repo)
-        assert kwargs.get("token") in (None, "")
-        raise models.ModelUnavailable("download failed: OSError: getaddrinfo failed")
+    def run(argv, **kwargs):
+        calls.append((list(argv), kwargs.get("env") or {}))
 
-    monkeypatch.setattr(models, "ensure", ensure)
+        class Proc:
+            returncode = 2
+            stdout = "queue failed"
+            stderr = ""
+
+        return Proc()
+
+    monkeypatch.setattr(cli.subprocess, "run", run)
     monkeypatch.setattr(models, "locate", lambda _repo: None)
     report = tmp_path / "models.txt"
     code = cli.main(["fetch-models", "--models", "sep,diar,embed", "--report", str(report)])
     text = report.read_text(encoding="utf-8")
     assert code == cli.EXIT_MODELS
     assert "FAILED: sep, diar, embed" in text
-    assert "HF_TOKEN" not in text and "GATED" not in text and "one-voice" not in text.lower()
-    assert models.SPECS["diar"].repo in seen and models.SPECS["embed"].repo in seen
+    assert "HF_TOKEN" not in text
+    argv, env = calls[0]
+    assert "enqueue" in argv and "--app" in argv and "movie-dubber" in argv
+    assert "diar" in argv and "embed" in argv and "sep" in argv
+    assert "HF_TOKEN" not in env and "HUGGINGFACE_HUB_TOKEN" not in env
+    assert all("download" != item for item in argv)
 
 
 def test_fetch_dry_run_succeeds_without_hf_token(tmp_path, monkeypatch, capsys):

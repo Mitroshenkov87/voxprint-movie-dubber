@@ -118,6 +118,27 @@ jobs:
               raise SystemExit("would_run missing")
           print("dry-run ok", code, data["label"], gpu["code"])
           PY
+      - name: MDL inventory (no download, HF_TOKEN unset)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "${HF_TOKEN}"
+          test -z "${HUGGINGFACE_HUB_TOKEN}"
+          .app/bin/python -m voxprint_common.mdl --json --dry-run plan --manifest mdl.json > /tmp/mdl-plan.json
+          .app/bin/python - <<'PY'
+          import json
+          from pathlib import Path
+          rows = [json.loads(line) for line in Path("/tmp/mdl-plan.json").read_text(encoding="utf-8").splitlines() if line.strip()]
+          if not rows:
+              raise SystemExit("MDL plan wrote no JSON")
+          last = rows[-1]
+          if last.get("ok") is not True:
+              raise SystemExit(f"MDL plan failed: {last}")
+          message = str(last.get("message") or "")
+          if "planned" not in message:
+              raise SystemExit(f"MDL plan did not report an inventory: {last}")
+          print("mdl inventory", message)
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -15,7 +15,7 @@ SECRET_KEYS = ("subdl_key", "opensubtitles_key", "opensubtitles_password")
 DEFAULTS: Dict[str, Any] = {
     "subdl_key": "", "opensubtitles_key": "", "opensubtitles_user": "", "opensubtitles_password": "",
     "separation": "tiger", "asr": "whisper", "diarization": "pyannote", "translation": "opus", "tts": "qwen",
-    "tts_model": "tts_1_7b", "tts_backend": "auto", "device": "auto", "allow_download": True,
+    "tts_model": "tts_1_7b", "tts_backend": "auto", "device": "auto", "allow_download": False,
     # VRAM tier (dubber.infra.vram_tier): "auto" picks it from the card; the advanced override can only pick a tier the card supports
     "vram_tier": "auto",
     "output_format": "mkv", "projects_dir": "",

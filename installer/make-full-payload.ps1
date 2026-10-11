@@ -84,7 +84,7 @@ $pins = Join-Path $env:TEMP "vmd-payload-constraints.txt"
 $pinText = "torch==$tv+$Flavor`r`ntorchaudio==$taVer`r`ntorchcodec==$tcVer`r`n" + ((Get-Content -LiteralPath $Constraints -Encoding UTF8) -join "`r`n")
 [IO.File]::WriteAllText($pins, $pinText, (New-Object Text.UTF8Encoding $false))
 $wheels = Join-Path $Out "wheels"
-# Vendor the v0.1.1 release wheel (sha256 checked) so voxprint-common==0.1.* resolves offline.
+# Vendor the v0.2.1 release wheel (sha256 checked) so the requirements pin resolves offline.
 # $Requirements is often a bare file name, so the script is found next to this file, not next to that name.
 $fetcher = Join-Path $PSScriptRoot "fetch_common_wheel.py"
 if (-not (Test-Path -LiteralPath $fetcher)) { throw "missing $fetcher" }

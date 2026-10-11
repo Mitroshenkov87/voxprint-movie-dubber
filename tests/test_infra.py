@@ -1,4 +1,4 @@
-"""Shared Voxprint infrastructure: folders, model store (lock, manifest, users), GPU lock, stdio guard."""
+"""Shared Voxprint infrastructure: folders, model store (locate, manifest, users), GPU lock, stdio guard."""
 import hashlib
 import json
 import os
@@ -64,68 +64,57 @@ def test_model_lock_is_exclusive_and_removed(tmp_path):
     assert not p.exists()
 
 
-def test_sweep_stale_locks(tmp_path):
-    (tmp_path / ".a--b.lock").write_bytes(b"")
-    (tmp_path / ".not-ours.lock").write_bytes(b"data")
-    assert model_store.sweep_stale_locks(tmp_path) == 1
-    assert (tmp_path / ".not-ours.lock").exists()
+def test_the_app_does_not_download_models():
+    source = Path(model_store.__file__).read_text(encoding="utf-8")
+    models_source = Path(models.__file__).read_text(encoding="utf-8")
+    for text in (source, models_source):
+        assert "snapshot_download" not in text
+        assert "huggingface_hub" not in text
+        assert "ensure_model" not in text
+    assert "ensure_ready(" not in source
+    assert models_source.count("ensure_ready(app='movie-dubber')") == 2
+    assert "is not called" in models_source
 
 
-def _fake_downloader(files):
-    def dl(repo, dest, revision, patterns, token):
-        for name, data in files.items():
-            p = dest / name
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_bytes(data)
-    return dl
-
-
-def test_ensure_downloads_into_partial_then_renames(tmp_path):
-    seen = []
-    info = model_store.ensure_model("org/model", root=tmp_path, downloader=_fake_downloader({"config.json": b"{}", "model.safetensors": b"w"}),
-                                    log_fn=seen.append)
-    assert info.source == "downloaded" and info.path == tmp_path / "org--model"
-    assert (info.path / "model.safetensors").exists()
-    assert not (tmp_path / "org--model.partial").exists() and not (tmp_path / ".org--model.lock").exists()
-    again = model_store.ensure_model("org/model", root=tmp_path, downloader=None)
-    assert again.source == "present"
-
-
-def test_manifest_mismatch_deletes_bad_file_and_keeps_partial(tmp_path, monkeypatch):
+def test_size_mismatch_is_not_ready_and_the_file_stays(tmp_path, monkeypatch):
     good = b"weights"
-    manifest = {"org/m": {"revision": "a" * 40, "files": {"config.json": {"size": 2, "sha256": hashlib.sha256(b"{}").hexdigest()},
-                                                         "model.safetensors": {"size": len(good), "sha256": hashlib.sha256(good).hexdigest()}}}}
+    manifest = {"org/m": {"revision": "a" * 40, "license": "MIT",
+                          "files": {"config.json": {"size": 2, "sha256": hashlib.sha256(b"{}").hexdigest()},
+                                    "model.safetensors": {"size": len(good), "sha256": hashlib.sha256(good).hexdigest()}}}}
     monkeypatch.setattr(model_store, "load_manifest", lambda path=None: manifest)
-    with pytest.raises(model_store.ModelUnavailable, match="checksum"):
-        model_store.ensure_model("org/m", root=tmp_path, downloader=_fake_downloader({"config.json": b"{}", "model.safetensors": b"WEIGHTS"}))
-    part = tmp_path / "org--m.partial"
-    assert (part / "config.json").exists() and not (part / "model.safetensors").exists()   # resume: only the bad file goes
-    info = model_store.ensure_model("org/m", root=tmp_path, downloader=_fake_downloader({"model.safetensors": good}))
-    assert info.source == "downloaded" and (info.path / ".verified").exists()
+    folder = tmp_path / "org--m"
+    folder.mkdir()
+    (folder / "config.json").write_bytes(b"{}")
+    (folder / "model.safetensors").write_bytes(b"WEIGHTS")
+    assert model_store.is_ready(folder, "org/m") is False
+    assert (folder / "model.safetensors").read_bytes() == b"WEIGHTS"
 
 
-def test_download_off_and_gated(tmp_path):
-    with pytest.raises(model_store.ModelUnavailable, match="switched off"):
-        model_store.ensure_model("org/none", root=tmp_path, allow_download=False)
-    with pytest.raises(model_store.ModelUnavailable, match="gated"):
-        model_store.ensure_model("org/gated", root=tmp_path, gated=True)
+def test_link_blobs_hardlinks_a_complete_model(tmp_path, monkeypatch):
+    payload = b"weights"
+    digest = hashlib.sha256(payload).hexdigest()
+    config = b"{}"
+    config_digest = hashlib.sha256(config).hexdigest()
+    manifest = {"org/m": {"revision": "c" * 40, "license": "MIT", "files": {
+        "config.json": {"size": len(config), "sha256": config_digest},
+        "model.safetensors": {"size": len(payload), "sha256": digest},
+    }}}
+    monkeypatch.setattr(model_store, "load_manifest", lambda path=None: manifest)
+    blobs = tmp_path / "blobs"
+    blobs.mkdir()
+    (blobs / digest).write_bytes(payload)
+    (blobs / config_digest).write_bytes(config)
+    linked = model_store.link_blobs("org/m", root=tmp_path)
+    assert linked == tmp_path / "org--m"
+    assert (linked / "model.safetensors").read_bytes() == payload
+    assert (linked / ".verified").is_file()
+    assert model_store.is_ready(linked, "org/m")
 
 
-def test_download_ignores_an_hf_token(tmp_path, monkeypatch):
-    monkeypatch.setenv("HF_TOKEN", "present-but-unused")
-    monkeypatch.setenv("HUGGINGFACE_HUB_TOKEN", "also-present-but-unused")
-    seen = {}
-
-    def dl(repo, dest, revision, patterns, token):
-        seen["token"] = token
-        seen["revision"] = revision
-        dest.mkdir(parents=True, exist_ok=True)
-        (dest / "config.json").write_text("{}", encoding="utf-8")
-        (dest / "model.safetensors").write_bytes(b"w")
-
-    info = model_store.ensure_model("org/anon", root=tmp_path, downloader=dl)
-    assert info.source == "downloaded"
-    assert seen["token"] is None
+def test_ensure_names_mdl_and_does_not_fetch(monkeypatch):
+    monkeypatch.setattr(models, "locate", lambda _repo: None)
+    with pytest.raises(models.ModelUnavailable, match="voxprint-mdl enqueue --app movie-dubber"):
+        models.ensure("org/missing", allow_download=True)
 
 
 def test_registry_has_no_gated_model_and_pins_the_mirrors(tmp_path):
@@ -179,17 +168,6 @@ def test_registry_has_no_gated_model_and_pins_the_mirrors(tmp_path):
     assert "pyannote/" not in body and "$model/embedding" in body
 
 
-def test_stalled_download_gives_up(tmp_path, monkeypatch):
-    monkeypatch.setattr(model_store, "WATCH_INTERVAL", 0.05)
-    stop = threading.Event()
-
-    def hang(*a):
-        stop.wait(5)
-    with pytest.raises(model_store.ModelUnavailable, match="stalled"):
-        model_store.ensure_model("org/slow", root=tmp_path, downloader=hang, stall_s=0.2)
-    stop.set()
-
-
 def test_users_file(tmp_path):
     model_store.register_user("audiobook-builder", tmp_path)
     model_store.register_user(root=tmp_path)
@@ -197,6 +175,27 @@ def test_users_file(tmp_path):
     assert model_store.unregister_user(root=tmp_path) == ["audiobook-builder"]
     assert model_store.unregister_user("audiobook-builder", tmp_path) == []
     assert json.loads((tmp_path / ".users.json").read_text()) == {}
+
+
+def test_plan_keys_leave_diarization_optional_and_pick_one_tts():
+    big = models.plan_keys(24)
+    small = models.plan_keys(8)
+    unknown = models.plan_keys(0)
+    assert "tts_1_7b" in big and "tts_0_6b" not in big
+    assert "tts_0_6b" in small and "tts_1_7b" not in small
+    assert "tts_0_6b" in unknown and "tts_1_7b" not in unknown
+    for keys in (big, small, unknown):
+        assert "diar" not in keys and "embed" not in keys
+        assert "asr" in keys and "sep" in keys
+    raw = json.loads(models.manifest_path().read_text(encoding="utf-8"))
+    assert raw["schema"] == 1 and raw["app"] == "movie-dubber"
+    assert "TODO" in raw["notes"] and "Qwen3-TTS" in raw["notes"]
+    tiers = {row["vram_tier"] for row in raw["models"] if row["id"] == "qwen3-tts"}
+    assert tiers == {"24gb", "16gb", "any"}
+    diar = next(row for row in raw["models"] if row["id"] == "diar")
+    assert diar["on_demand"] is True
+    assert diar["repo"].startswith("Mitroshenkov87/voxprint-pyannote-")
+    assert all(not str(row.get("repo", "")).startswith("pyannote/") for row in raw["models"])
 
 
 def test_bundled_manifest_is_well_formed():
@@ -269,9 +268,10 @@ def test_checkpoint_model_is_checksummed_without_a_config(tmp_path, monkeypatch)
     assert model_store.is_ready(folder, repo, ("*.ckpt",), ("weights.ckpt",), require_config=False)
     (folder / "weights.ckpt").write_bytes(b"nope")
     assert model_store.is_ready(folder, repo, ("*.ckpt",), ("weights.ckpt",), require_config=False) is False
-    info = model_store.ensure_model(repo, root=tmp_path, weights=("*.ckpt",), patterns=("weights.ckpt",),
-                                    require_config=False, downloader=_fake_downloader({"weights.ckpt": payload}))
-    assert info.source == "downloaded" and (info.path / ".verified").exists()
+    (folder / "weights.ckpt").write_bytes(payload)
+    model_store.write_verified_marker(folder, repo)
+    assert (folder / ".verified").is_file()
+    assert model_store.is_ready(folder, repo, ("*.ckpt",), ("weights.ckpt",), require_config=False)
     linked = tmp_path / "link"
     linked.mkdir()
     (linked / "MelBandRoformer.ckpt").write_bytes(payload)

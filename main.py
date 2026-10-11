@@ -7,7 +7,7 @@ r"""Voxprint AI Movie Dubber - entry point.
     main.py version|diagnose|fetch-models|run-project|info   headless commands (docs/CLI.md)
     main.py --dry-run --json      discovery only: one JSON object, no model load or download
     main.py --worker NAME ARGS    internal: one heavy step in its own process (used by the diagnostics and the pipeline)
-    main.py --fetch-models        download the AI models (used by the installer); --models KEY,KEY limits the set
+    main.py --fetch-models        ask VOXPrint MDL to fetch the models; --models KEY,KEY limits the set
     main.py --register-models-user      (installer) add this program to the shared models folder's .users.json
     main.py --unregister-models-user --out FILE   (uninstaller) remove it; FILE gets "<other users>\n<models folder>"
     main.py --register-runtime-user / --unregister-runtime-user --out FILE   the same for the shared runtime in shared/manifest.json
@@ -181,7 +181,7 @@ def main(argv=None) -> int:
     from dubber.ui.setup_progress import ensure_with_dialog
 
     ensured = ensure_with_dialog()
-    if ensured.exit_code != 0:
+    if ensured.exit_code != 0 and ensured.outcome != "models":
         QMessageBox.critical(None, tr("gpu.gate_title"), ensured.message or "A shared component could not be repaired.")
         return ensured.exit_code
     from dubber.ui.splash_hook import show_splash
@@ -232,7 +232,6 @@ def _models_users(argv) -> int:
     from dubber.infra import model_store
 
     try:
-        model_store.sweep_stale_locks()
         if "--register-models-user" in argv:
             model_store.register_user()
             return 0
