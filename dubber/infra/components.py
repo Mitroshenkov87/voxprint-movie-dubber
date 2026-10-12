@@ -4,7 +4,8 @@ The file format, the lock (``manifest.lock``, 30 seconds), the atomic publish
 and the Canvas / Enlarge migration live in ``voxprint_common.runtime_manifest``.
 This module only chooses component ids, turns this app's older list-shaped
 manifest into the object that library reads, and deletes a directory when no
-component still points at it. The app id stored in ``refs`` is ``movie-dubber``.
+component still points at it. The shared models directory is not removed while
+another program's weights are inside it. The app id stored in ``refs`` is ``movie-dubber``.
 
 A path must stay inside ``<home>/shared``, except a ``model`` component, which
 may be an absolute path under ``voxprint_common.paths.models_dir``
@@ -19,6 +20,25 @@ import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from types import ModuleType
+
+# Linux runs ``python <app>/dubber/infra/components.py``. The app root has to be
+# importable before ``dubber`` loads. The Windows setup copies this file alone
+# into a temp directory and only calls ``add``; ``release`` goes through main.py.
+_script = Path(__file__).resolve()
+if len(_script.parents) >= 3:
+    _candidate = _script.parents[2]
+    if (_candidate / "dubber" / "__init__.py").is_file():
+        _root_text = str(_candidate)
+        if _root_text not in sys.path:
+            sys.path.insert(0, _root_text)
+
+try:
+    from dubber.infra import model_guard as _model_guard
+except ImportError:
+    model_guard: ModuleType | None = None
+else:
+    model_guard = _model_guard
 
 from voxprint_common.atomic import LockTimeout, exclusive_lock, write_json
 from voxprint_common.hashing import sha256_bytes, sha256_file
@@ -352,7 +372,19 @@ def _delete_unused(home: Path, removed: list[str]) -> ReleaseResult:
             continue
         seen.add(rel)
         folder = _deletable(rel, shared)
-        if folder is None or _covers_kept(folder, kept, shared):
+        if folder is None:
+            continue
+        guard = model_guard
+        if guard is not None and guard.is_models_root(folder):
+            deleted.extend(guard.delete_owned_models(folder))
+            continue
+        if _covers_kept(folder, kept, shared):
+            continue
+        under_models = any(_inside(folder, root) for root in _model_roots())
+        if guard is None:
+            if under_models:
+                continue
+        elif guard.is_under_models(folder) and not guard.may_delete_model(folder):
             continue
         if running_from(folder):
             pending.append(str(folder))
@@ -363,6 +395,8 @@ def _delete_unused(home: Path, removed: list[str]) -> ReleaseResult:
             pending.append(str(folder))
         else:
             deleted.append(str(folder))
+            if guard is not None and guard.is_under_models(folder):
+                guard.forget_installed(folder.parent, folder.name)
     if not still.components and target.is_file():
         target.unlink()
     return ReleaseResult(tuple(deleted), tuple(pending))

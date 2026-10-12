@@ -101,8 +101,11 @@ and `nvidia-cudnn-cu12==9.27.0.42`. The CPU runtime only requires CTranslate2 to
   and is not downloaded again.
 * Uninstall removes `movie-dubber`. When `refs` becomes empty, the component is deleted. The directory is
   deleted only when no remaining component still uses that path. A relative path must stay inside `shared/`.
-  An absolute model path must stay under the shared models directory. The last reference also removes that
-  models folder.
+  An absolute model path must stay under the shared models directory. The models directory itself is not
+  removed while another program's weights are inside it. Movie Dubber deletes a model folder only when it
+  recorded that folder in `<models>/.installed.json` and it is the only program in `<models>/.users.json`.
+  `.users.json` and `manifest.json` are updated under a file lock. Unknown keys and other programs' entries stay.
+  A checksum failure re-downloads the bad files. It does not remove a folder another program shares.
 * A directory that this process is running from, or that cannot be deleted yet, is left on disk. The Windows
   uninstaller deletes those pending paths after the process exits.
 * When no components remain, `manifest.json` is deleted. `manifest.lock` may stay.

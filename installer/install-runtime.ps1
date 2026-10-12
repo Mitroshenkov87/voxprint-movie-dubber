@@ -46,16 +46,41 @@ $ProgressPreference = "SilentlyContinue"
 if ($Backend -notmatch '^[a-z0-9]+$') { throw "Invalid PyTorch backend: $Backend" }
 $UserKey = "movie-dubber"
 
+function Write-Log([string]$text) {
+    $utf8 = New-Object Text.UTF8Encoding $false
+    [IO.File]::AppendAllText($script:Log, ($text + "`r`n"), $utf8)
+}
+
 function Say([string]$text) {
     $line = "[{0}] {1}" -f (Get-Date -Format "HH:mm:ss"), $text
     Write-Host $line
-    Add-Content -LiteralPath $Log -Value $line -Encoding UTF8
+    Write-Log $line
+}
+
+function Start-SetupLog {
+    $dir = Split-Path -Parent $Log
+    if (-not $dir) { $dir = $env:TEMP }
+    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+    $leaf = Split-Path -Leaf $Log
+    if ($leaf -match '^VoxprintMovieDubber-setup-.+\.log$') {
+        $script:Log = $Log
+    } else {
+        $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+        $script:Log = Join-Path $dir ("VoxprintMovieDubber-setup-" + $stamp + ".log")
+    }
+    $utf8 = New-Object Text.UTF8Encoding $false
+    [IO.File]::WriteAllText($script:Log, "", $utf8)
+    Get-ChildItem -LiteralPath $dir -Filter "VoxprintMovieDubber-setup-*.log" -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -Skip 5 |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+    [IO.File]::WriteAllText((Join-Path $dir "VoxprintMovieDubber-setup-latest.txt"), ($script:Log + "`r`n"), $utf8)
 }
 
 function Run([string]$what, [string]$exe, [string[]]$arguments) {
     Say "$what"
     $ErrorActionPreference = "Continue"      # uv writes its progress to stderr; that is not an error
-    & $exe @arguments 2>&1 | ForEach-Object { $s = "$_"; Write-Host $s; Add-Content -LiteralPath $Log -Value $s -Encoding UTF8 }
+    & $exe @arguments 2>&1 | ForEach-Object { $s = "$_"; Write-Host $s; Write-Log $s }
     if ($LASTEXITCODE -ne 0) { throw "$what failed (exit code $LASTEXITCODE)" }
 }
 
@@ -209,38 +234,81 @@ function Stop-ForHardware([string]$message) {
 }
 
 function Resume-Download([string]$Url, [string]$Dest) {
-    # Continue a dest.partial file with an HTTP Range request. A full 200 response replaces it.
+    # Continue a dest.partial file with an HTTP Range request. Each attempt has its own read timeout.
     $partial = "$Dest.partial"
-    $have = [int64]0
-    if (Test-Path -LiteralPath $partial) { $have = (Get-Item -LiteralPath $partial).Length }
-    $req = [System.Net.HttpWebRequest]::Create($Url)
-    $req.UserAgent = "VoxprintMovieDubber"
-    $req.Timeout = 120000
-    $req.ReadWriteTimeout = 120000
-    if ($have -gt 0) {
-        $req.AddRange($have)
-        Say "Resuming download ($have bytes already saved)"
-    }
-    try {
-        $resp = $req.GetResponse()
-    } catch {
-        if ($have -gt 0 -and ("$($_.Exception.Message)" -match '416')) {
+    for ($attempt = 1; $attempt -le 5; $attempt++) {
+        $have = [int64]0
+        if (Test-Path -LiteralPath $partial) { $have = (Get-Item -LiteralPath $partial).Length }
+        Say ("Download attempt {0} of 5: {1}" -f $attempt, (Split-Path -Leaf $Dest))
+        $req = [System.Net.HttpWebRequest]::Create($Url)
+        $req.UserAgent = "VoxprintMovieDubber"
+        $req.Timeout = 120000
+        $req.ReadWriteTimeout = 30000
+        if ($have -gt 0) {
+            $req.AddRange($have)
+            Say "Resuming download ($have bytes already saved)"
+        }
+        $resp = $null
+        $fs = $null
+        try {
+            $resp = $req.GetResponse()
+            $status = [int]$resp.StatusCode
+            $mode = if ($have -gt 0 -and $status -eq 206) { [IO.FileMode]::Append } else { [IO.FileMode]::Create }
+            $fs = New-Object IO.FileStream $partial, $mode, ([IO.FileAccess]::Write)
+            $src = $resp.GetResponseStream()
+            $src.ReadTimeout = 30000
+            $buffer = New-Object byte[] 1048576
+            while ($true) {
+                $read = $src.Read($buffer, 0, $buffer.Length)
+                if ($read -le 0) { break }
+                $fs.Write($buffer, 0, $read)
+            }
+            $fs.Dispose(); $fs = $null
+            $resp.Dispose(); $resp = $null
             Move-Item -LiteralPath $partial -Destination $Dest -Force
             return
+        } catch {
+            if ($have -gt 0 -and ("$($_.Exception.Message)" -match '416')) {
+                if ($fs) { $fs.Dispose(); $fs = $null }
+                if ($resp) { $resp.Dispose(); $resp = $null }
+                Move-Item -LiteralPath $partial -Destination $Dest -Force
+                return
+            }
+            Say ("Download attempt {0} of 5 failed: {1}" -f $attempt, $_.Exception.Message)
+            if ($attempt -ge 5) { throw }
+            Start-Sleep -Seconds ([int][math]::Pow(2, $attempt - 1))
+        } finally {
+            if ($fs) { $fs.Dispose() }
+            if ($resp) { $resp.Dispose() }
         }
-        throw
     }
-    $status = [int]$resp.StatusCode
-    $mode = if ($have -gt 0 -and $status -eq 206) { [IO.FileMode]::Append } else { [IO.FileMode]::Create }
-    $fs = New-Object IO.FileStream $partial, $mode, ([IO.FileAccess]::Write)
-    try {
-        $src = $resp.GetResponseStream()
-        $src.CopyTo($fs)
-    } finally {
-        $fs.Dispose()
-        $resp.Dispose()
+}
+
+function Invoke-Retry([string]$What, [scriptblock]$Action) {
+    for ($attempt = 1; $attempt -le 5; $attempt++) {
+        Say ("{0}: attempt {1} of 5" -f $What, $attempt)
+        try {
+            & $Action
+            return
+        } catch {
+            Say ("{0}: attempt {1} of 5 failed: {2}" -f $What, $attempt, $_.Exception.Message)
+            if ($attempt -ge 5) { throw }
+            Start-Sleep -Seconds ([int][math]::Pow(2, $attempt - 1))
+        }
     }
-    Move-Item -LiteralPath $partial -Destination $Dest -Force
+}
+
+function Remove-Owned([string]$Path) {
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return }
+    $models = Join-Path $script:vxHome "models"
+    $full = [IO.Path]::GetFullPath($Path)
+    $root = [IO.Path]::GetFullPath($models)
+    $rootTrim = $root.TrimEnd('\')
+    if (($full.TrimEnd('\') -eq $rootTrim) -or $full.StartsWith($rootTrim + '\')) {
+        Say "refusing to delete shared models path"
+        return
+    }
+    Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 function Add-SharedRef([string]$Id, [string]$Kind, [string]$Version, [string]$ResourcePath, [string]$Sha) {
@@ -254,6 +322,18 @@ function Add-SharedRef([string]$Id, [string]$Kind, [string]$Version, [string]$Re
 
 function RemoveLinkOrDir([string]$path) {
     if (-not (Test-Path -LiteralPath $path)) { return }
+    $full = [IO.Path]::GetFullPath($path)
+    $app = [IO.Path]::GetFullPath($AppDir).TrimEnd('\')
+    $models = ""
+    if ($script:vxHome) { $models = [IO.Path]::GetFullPath((Join-Path $script:vxHome "models")).TrimEnd('\') }
+    if ($models -and (($full.TrimEnd('\') -eq $models) -or $full.StartsWith($models + '\'))) {
+        Say "refusing to delete shared models path"
+        return
+    }
+    if (-not ($full.TrimEnd('\') -eq $app -or $full.StartsWith($app + '\'))) {
+        Say "refusing to delete shared models path"
+        return
+    }
     $item = Get-Item -LiteralPath $path -Force
     if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
         [IO.Directory]::Delete($path)                 # the junction only, never what it points to
@@ -267,6 +347,7 @@ if ($KeyOnly) {                                       # tests: print the key for
     RuntimeKey $lockObj $Backend
     exit 0
 }
+Start-SetupLog
 
 try {
     New-Item -ItemType Directory -Force -Path $AppDir | Out-Null
@@ -334,7 +415,7 @@ try {
             if ($oldFlavor -ne $flavor) { continue }
             Say "Moving $($old.FullName) into $rt"
             New-Item -ItemType Directory -Force -Path (Split-Path -Parent $rt) | Out-Null
-            if (Test-Path -LiteralPath $rt) { Remove-Item -LiteralPath $rt -Recurse -Force -ErrorAction SilentlyContinue }
+            if (Test-Path -LiteralPath $rt) { Remove-Owned $rt }
             Move-Item -LiteralPath $old.FullName -Destination $rt
             break
         }
@@ -368,7 +449,7 @@ try {
     $reuse = $false
     if ((Test-Path (Join-Path $rt ".install-complete")) -and (Test-Path $py)) {
         $ErrorActionPreference = "Continue"
-        & $py @check 2>&1 | ForEach-Object { Add-Content -LiteralPath $Log -Value "$_" -Encoding UTF8 }
+        & $py @check 2>&1 | ForEach-Object { Write-Log "$_" }
         $reuse = ($LASTEXITCODE -eq 0)
         $ErrorActionPreference = "Stop"
         if ($reuse) { Say "Reusing the shared runtime $rt (same pinned versions)" } else { Say "The shared runtime $rt failed its check: repairing it with the same versions" }
@@ -393,7 +474,7 @@ try {
             $offline = @("--offline", "--no-index", "--find-links", (Join-Path $Payload "wheels"))
             Say "Full installer: Python, PyTorch and the other packages come from the installer itself (no download)"
         }
-        Run "[2/5] Creating the Python $($lockObj.python) environment" $uv @("venv", $envDir, "--python", $lockObj.python, "--allow-existing")
+        Invoke-Retry "Creating the Python environment" { Run "[2/5] Creating the Python $($lockObj.python) environment" $uv @("venv", $envDir, "--python", $lockObj.python, "--allow-existing") }
         $taVer = LockWheelVersion $lockObj "torchaudio" $flavor
         $tcVer = LockWheelVersion $lockObj "torchcodec" $flavor
         if (-not $taVer -or -not $tcVer) { throw "runtime lock has no torchaudio/torchcodec wheel for flavor $flavor" }
@@ -404,9 +485,9 @@ try {
         $pinText = "torch==$tv+$flavor`r`ntorchaudio==$taVer`r`ntorchcodec==$tcVer`r`n" + ((Get-Content -LiteralPath $Constraints -Encoding UTF8) -join "`r`n")
         [IO.File]::WriteAllText($pins, $pinText, (New-Object Text.UTF8Encoding $false))
         if ($Payload) {
-            Run "[2/5] Installing PyTorch $tv ($flavor build), torchaudio $taBase and torchcodec $tcBase" $uv (@("pip", "install", "--python", $py, "--compile-bytecode", "torch==$tv+$flavor", "torchaudio==$taVer", "torchcodec==$tcVer") + $offline)
+            Invoke-Retry "Installing PyTorch" { Run "[2/5] Installing PyTorch $tv ($flavor build), torchaudio $taBase and torchcodec $tcBase" $uv (@("pip", "install", "--python", $py, "--compile-bytecode", "torch==$tv+$flavor", "torchaudio==$taVer", "torchcodec==$tcVer") + $offline) }
         } else {
-            Run "[2/5] Installing PyTorch $tv ($flavor build), torchaudio $taBase and torchcodec $tcBase" $uv @("pip", "install", "--python", $py, "--compile-bytecode", "torch==$tv", "torchaudio==$taBase", "torchcodec==$tcBase", "--torch-backend=$flavor")
+            Invoke-Retry "Installing PyTorch" { Run "[2/5] Installing PyTorch $tv ($flavor build), torchaudio $taBase and torchcodec $tcBase" $uv @("pip", "install", "--python", $py, "--compile-bytecode", "torch==$tv", "torchaudio==$taBase", "torchcodec==$tcBase", "--torch-backend=$flavor") }
         }
         # voxprint-common==0.1.* is not on PyPI. The online installer downloads the
         # v0.1.1 release wheel and checks its sha256. The full installer already
@@ -417,10 +498,10 @@ try {
             New-Item -ItemType Directory -Force -Path $wheelDir | Out-Null
             $fetcher = Join-Path $PSScriptRoot "fetch_common_wheel.py"
             if (-not (Test-Path -LiteralPath $fetcher)) { throw "fetch_common_wheel.py was not extracted next to install-runtime.ps1" }
-            Run "Downloading voxprint-common 0.1.1" $py @($fetcher, "--dest", $wheelDir)
+            Invoke-Retry "Downloading voxprint-common" { Run "Downloading voxprint-common 0.1.1" $py @($fetcher, "--dest", $wheelDir) }
             $commonLinks = @("--find-links", $wheelDir)
         }
-        Run "[3/5] Installing the other packages" $uv (@("pip", "install", "--python", $py, "--compile-bytecode", "-r", $Requirements, "-c", $pins) + $offline + $commonLinks)
+        Invoke-Retry "Installing the other packages" { Run "[3/5] Installing the other packages" $uv (@("pip", "install", "--python", $py, "--compile-bytecode", "-r", $Requirements, "-c", $pins) + $offline + $commonLinks) }
         # faster-whisper depends on the CPU distribution named onnxruntime. That name shadows onnxruntime-gpu.
         # Same version as runtime_lock.json. The CPU distribution must not remain installed.
         # Exit 1 here means the CPU package is absent, which is the success case, so it must not abort the script.
@@ -431,7 +512,7 @@ try {
         $ErrorActionPreference = "Stop"
         if ($replaceOnnx) {
             Run "Replacing the CPU onnxruntime package with onnxruntime-gpu 1.30.0" $uv (@("pip", "uninstall", "--python", $py, "onnxruntime"))
-            Run "Installing onnxruntime-gpu 1.30.0" $uv (@("pip", "install", "--python", $py, "--compile-bytecode", "onnxruntime-gpu==1.30.0") + $offline)
+            Invoke-Retry "Installing onnxruntime-gpu" { Run "Installing onnxruntime-gpu 1.30.0" $uv (@("pip", "install", "--python", $py, "--compile-bytecode", "onnxruntime-gpu==1.30.0") + $offline) }
         }
         Run "Checking voxprint-common 0.1.1" $py @("-c", "import voxprint_common; from voxprint_common.runtime_manifest import cpu_onnxruntime_conflicts; assert voxprint_common.__version__ == '0.1.1', voxprint_common.__version__; raise SystemExit('The CPU package onnxruntime is installed. The shared runtime must not contain it.' if cpu_onnxruntime_conflicts() else 0)")
         # no --torch-backend on this step: it would re-resolve every requirement against the PyTorch index
@@ -441,7 +522,7 @@ try {
                             lock_generated = $lockObj.generated; created_by = $UserKey; created = (Get-Date -Format s) }
         [IO.File]::WriteAllText((Join-Path $rt "runtime-key.json"), ($info | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
         Set-Content -LiteralPath (Join-Path $rt ".install-complete") -Value (Get-Date -Format s) -Encoding ASCII
-        Remove-Item -LiteralPath $env:UV_CACHE_DIR -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Owned $env:UV_CACHE_DIR
         if ($Payload) { Remove-Item -LiteralPath (Join-Path $env:TEMP "vmd-python-mirror") -Recurse -Force -ErrorAction SilentlyContinue }
     }
 
@@ -456,7 +537,7 @@ try {
     foreach ($old in (Get-ChildItem -LiteralPath $vxHome -Directory -Filter "runtime-*" -ErrorAction SilentlyContinue)) {
         if ($old.Name -notmatch '^runtime-[0-9a-f]{12}$') { continue }
         Say "Removing the old runtime $($old.FullName)"
-        Remove-Item -LiteralPath $old.FullName -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Owned $old.FullName
     }
     if ($OutFile) { Set-Content -LiteralPath $OutFile -Value $rt -Encoding UTF8 }
 
