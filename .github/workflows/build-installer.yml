@@ -207,8 +207,7 @@ jobs:
           $manifest = Get-Content "$shared\manifest.json" -Raw | ConvertFrom-Json
           if ($manifest.schema -ne 1) { throw "manifest schema is $($manifest.schema)" }
           $pyId = if ($flavor -eq "cpu") { "python-3.14-cpu" } else { "python-3.14" }
-          $torchId = if ($flavor -eq "cpu") { "torch-2.11.0-cpu" } else { "torch-2.11.0-cu130" }
-          foreach ($id in @($pyId, $torchId, "ctranslate2-cu12", "ffmpeg-8")) {
+          foreach ($id in @($pyId, "ffmpeg-8")) {
             $row = $manifest.components.$id
             if (-not $row) { throw "manifest has no $id" }
             foreach ($field in @("kind", "version", "path", "sha256", "installed_at", "refs")) {

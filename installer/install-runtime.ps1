@@ -633,10 +633,9 @@ try {
         Run "[5/5] Waiting for VOXPrint MDL" $mdlExe ($mdlPrefix + @("--json", "status", "--wait", "--manifest", $manifest))
     }
     $runtimeId = if ($flavor -eq "cpu") { "python-3.14-cpu" } else { "python-3.14" }
-    $torchId = if ($flavor -eq "cpu") { "torch-2.11.0-cpu" } else { "torch-2.11.0-cu130" }
     Add-SharedRef $runtimeId "runtime" $rtName $rt ""
-    Add-SharedRef $torchId "wheels" "$tv+$flavor" $rt ""
-    Add-SharedRef "ctranslate2-cu12" "wheels" "cu12" $rt ""
+    # torch and CTranslate2 live in that runtime directory. voxprint-common 0.2.4
+    # refuses a second component on a path another component already uses.
     Add-SharedRef "ffmpeg-8" "tool" "n8.1" $ffDir ((Get-FileHash -LiteralPath $ffExe -Algorithm SHA256).Hash.ToLower())
     # The models directory is not a component. VOXPrint MDL records one ref per file.
 

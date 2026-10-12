@@ -353,8 +353,9 @@ def release_app(home: Path, app: str = APP_ID) -> ReleaseResult:
 
     A directory this process is running from is left on disk and named in
     ``pending``. A component record is removed only when its ``refs`` list is
-    empty. Two components may share one directory (the runtime and its wheels);
-    the directory stays while any component still points at it.
+    empty. A second component is not added on a path another component already
+    uses. An older manifest that still has two ids on one directory keeps that
+    directory while any of them remains.
     """
     prepare(home)
     target = manifest_file(home)

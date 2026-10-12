@@ -32,7 +32,14 @@ from dubber import paths
 from dubber.appinfo import resource_dir
 from dubber.i18n import tr
 from dubber.infra import model_guard
-from dubber.infra.components import APP_ID, OutsideShared, add_component, component_id_for, guard_cpu_onnxruntime
+from dubber.infra.components import (
+    APP_ID,
+    ManifestError,
+    OutsideShared,
+    add_component,
+    component_id_for,
+    guard_cpu_onnxruntime,
+)
 from dubber.infra.gpu_policy import (
     NVIDIA_DRIVER_URL,
     driver_branch,
@@ -633,6 +640,12 @@ def _register(home: Path, piece: Piece) -> None:
             sha256=piece.sha256 or "",
         )
     except OutsideShared:
+        return
+    except ManifestError:
+        # Torch and CTranslate2 live in the runtime directory. voxprint-common 0.2.4
+        # refuses a second component on a path another component already uses.
+        if piece.id not in {"torch", "ctranslate2"}:
+            raise
         return
 
 

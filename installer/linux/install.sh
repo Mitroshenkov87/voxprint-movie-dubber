@@ -485,8 +485,8 @@ else
 fi
 ff_sha="$(sha256sum "$FF_DIR/ffmpeg" | awk '{ print $1 }')"
 add_ref --id python-3.14 --kind runtime --version "$RUNTIME_VERSION" --path "$RT"
-add_ref --id torch-2.11.0-cu130 --kind wheels --version "${TV}+cu130" --path "$RT"
-add_ref --id ctranslate2-cu12 --kind wheels --version cu12 --path "$RT"
+# torch and CTranslate2 live in that runtime directory. voxprint-common 0.2.4
+# refuses a second component on a path another component already uses.
 add_ref --id ffmpeg-8 --kind tool --version "$FFMPEG_VERSION" --path "$FF_DIR" --sha256 "$ff_sha"
 # The models directory is not a component. VOXPrint MDL records one ref per file.
 
