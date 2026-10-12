@@ -135,7 +135,8 @@ jobs:
           if last.get("ok") is not True:
               raise SystemExit(f"MDL plan failed: {last}")
           message = str(last.get("message") or "")
-          if "planned" not in message:
+          inventory = ("planned" in message or "needs download" in message or message in {"ready", "nothing to download"})
+          if not inventory:
               raise SystemExit(f"MDL plan did not report an inventory: {last}")
           print("mdl inventory", message)
           PY

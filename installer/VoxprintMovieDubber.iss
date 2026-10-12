@@ -344,7 +344,7 @@ begin
   ExtractTemporaryFile('runtime_lock.json');
   Script := ExpandConstant('{tmp}\install-runtime.ps1');
   Req := ExpandConstant('{tmp}\requirements.txt');
-  LogFile := ExpandConstant('{%TEMP}\VoxprintMovieDubber-setup.log');
+  LogFile := ExpandConstant('{%TEMP}\VoxprintMovieDubber-setup-') + GetDateTimeString('yyyymmdd-hhnnss', #0, #0) + '.log';
   HwFile := ExpandConstant('{%TEMP}\VoxprintMovieDubber-hardware.txt');
   ExtractTemporaryFile('components.py');
   Params := '-NoProfile -ExecutionPolicy Bypass -File "' + Script + '" -AppDir "' + ExpandConstant('{app}') +
@@ -606,7 +606,9 @@ begin
       for I := 0 to GetArrayLength(Lines) - 1 do
       begin
         Line := Trim(Lines[I]);
-        if (Line <> '') and (Pos(Root, Lowercase(Line)) = 1) and DirExists(Line) then
+        if (Line <> '') and (Pos('\models', Lowercase(Line)) > 0) then
+          Log('refusing to delete shared models path ' + Line)
+        else if (Line <> '') and (Pos(Root, Lowercase(Line)) = 1) and DirExists(Line) then
           if not DelTree(Line, True, True, True) then Log('shared: could not delete ' + Line);
       end;
   end;

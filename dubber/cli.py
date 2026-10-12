@@ -567,6 +567,18 @@ def _cmd_dry(req: Request) -> int:
     return _finish(req, EXIT_OK, extra, human=version_line())
 
 
+def _blocking_model_failures(failed: list[str], explicit: bool) -> list[str]:
+    """Return failures that must stop a fetch. Optional speaker models do not, unless they were named."""
+    if explicit:
+        return list(failed)
+    optional = set(models.OPTIONAL_MODELS)
+    return [key for key in failed if key not in optional]
+
+
+def _models_were_explicit(req: Request) -> bool:
+    return bool([key for key in req.values.get("--models", "").split(",") if key])
+
+
 def _requested_models(req: Request) -> list[str]:
     spec = req.values.get("--models", "")
     keys = [key for key in spec.split(",") if key]
@@ -593,10 +605,11 @@ def _cmd_fetch(req: Request) -> int:
         if gpu_exit is not None:
             return _finish(req, gpu_exit, extra, error=str(gpu["summary"]))
         missing = [row["key"] for row in chosen if not row["available"]]
-        if missing:
-            return _finish(req, EXIT_MODELS, extra, error="missing models: " + ", ".join(missing))
+        blocking = _blocking_model_failures(missing, _models_were_explicit(req))
+        if blocking:
+            return _finish(req, EXIT_MODELS, extra, error="missing models: " + ", ".join(blocking))
         return _finish(req, EXIT_OK, extra, human="models present: " + ", ".join(keys))
-    return _fetch_for_real(req, keys, chosen)
+    return _fetch_for_real(req, keys, chosen, _models_were_explicit(req))
 
 
 def _write_report(req: Request, text: str) -> None:
@@ -627,7 +640,7 @@ def _run_mdl(argv: list[str], env: dict[str, str], emit: Callable[[str], None]) 
     return proc.returncode
 
 
-def _fetch_for_real(req: Request, keys: list[str], chosen: list[dict[str, Any]]) -> int:
+def _fetch_for_real(req: Request, keys: list[str], chosen: list[dict[str, Any]], explicit: bool = False) -> int:
     """Enqueue with VOXPrint MDL and wait. This process does not download."""
     _setup_logging()
     notes: list[str] = []
@@ -636,7 +649,6 @@ def _fetch_for_real(req: Request, keys: list[str], chosen: list[dict[str, Any]])
         notes.append(text)
         _log(text) if req.json_mode else _human(text)
 
-    explicit = bool(req.values.get("--models", "").strip())
     model_ids = _mdl_ids(keys) if explicit else None
     env = models.mdl_env()
     emit("voxprint-mdl enqueue --app movie-dubber")
@@ -645,12 +657,15 @@ def _fetch_for_real(req: Request, keys: list[str], chosen: list[dict[str, Any]])
         emit("voxprint-mdl status --wait")
         code = _run_mdl(models.mdl_argv("status", "--json", "--wait"), env, emit)
     failed = list(keys) if code != 0 else [key for key in keys if models.locate(models.SPECS[key].repo) is None]
-    if failed:
-        emit("FAILED: " + ", ".join(failed))
+    blocking = _blocking_model_failures(failed, explicit)
+    if blocking:
+        emit("FAILED: " + ", ".join(blocking))
+    elif failed:
+        emit("Optional models were not downloaded: " + ", ".join(failed))
     _write_report(req, "\n".join(notes) + "\n")
-    if failed:
-        message = f"Not downloaded: {', '.join(failed)}.  Run voxprint-mdl enqueue --app movie-dubber again."
-        return _finish(req, EXIT_MODELS, {"models": chosen, "failed": failed, "gated": [], "log": notes}, error=message)
+    if blocking:
+        message = f"Not downloaded: {', '.join(blocking)}.  Run voxprint-mdl enqueue --app movie-dubber again."
+        return _finish(req, EXIT_MODELS, {"models": chosen, "failed": blocking, "gated": [], "log": notes}, error=message)
     return _finish(req, EXIT_OK, {"models": chosen, "failed": [], "gated": [], "log": notes}, human="All models are ready.")
 
 

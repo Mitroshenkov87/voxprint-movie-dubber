@@ -19,6 +19,7 @@ import re
 import shutil
 import subprocess
 import tarfile
+import time
 import urllib.request
 import zipfile
 from dataclasses import dataclass, field
@@ -30,6 +31,7 @@ from dubber import models as model_registry
 from dubber import paths
 from dubber.appinfo import resource_dir
 from dubber.i18n import tr
+from dubber.infra import model_guard
 from dubber.infra.components import APP_ID, OutsideShared, add_component, component_id_for, guard_cpu_onnxruntime
 from dubber.infra.gpu_policy import (
     NVIDIA_DRIVER_URL,
@@ -57,6 +59,8 @@ FFMPEG_RELEASE = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest
 _LEGACY_RUNTIME = re.compile(r"^runtime-[0-9a-f]{12}$")
 _SKIP_MODELS = "VOXPRINT_SKIP_MODEL_FETCH"
 _FLAVOR_ENV = "VOXPRINT_TORCH_FLAVOR"
+_DOWNLOAD_ATTEMPTS = 5
+_READ_TIMEOUT_S = 30
 
 
 class RepairError(RuntimeError):
@@ -98,6 +102,7 @@ class Report:
     message: str
     repaired: List[str] = field(default_factory=list)
     resources: List[Dict[str, Any]] = field(default_factory=list)
+    optional_missing: List[str] = field(default_factory=list)
 
     def as_dict(self) -> Dict[str, Any]:
         """Fields merged into the command's JSON object."""
@@ -108,6 +113,8 @@ class Report:
         }
         if self.message:
             body["error"] = self.message
+        if self.optional_missing:
+            body["optional_missing"] = list(self.optional_missing)
         return body
 
 
@@ -325,34 +332,47 @@ def _check(cmd: Sequence[str], env: Dict[str, str], resource_id: str) -> None:
 
 
 def download_resumable(url: str, dest: Path, progress: Progress, resource: str, opener: Any = urllib.request.urlopen) -> None:
-    """Download ``url`` to ``dest``. A ``dest.partial`` file from an interrupted run is continued."""
+    """Download ``url`` to ``dest``, resuming a partial file. Each attempt uses a per-read timeout and backs off."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     partial = dest.with_name(dest.name + ".partial")
-    have = partial.stat().st_size if partial.is_file() else 0
-    request = urllib.request.Request(url, headers={"User-Agent": "VoxprintMovieDubber"})
-    if have:
-        request.add_header("Range", f"bytes={have}-")
-        progress(_event(resource, "repairing", f"Resuming download ({have} bytes already saved)"))
-    else:
-        progress(_event(resource, "repairing", f"Downloading {dest.name}"))
-    try:
-        response = opener(request, timeout=120)
-    except URLError as exc:
-        raise RepairError(resource, f"download failed: {exc}") from exc
-    status = getattr(response, "status", 200)
-    mode = "ab" if have and status == 206 else "wb"
-    try:
-        with partial.open(mode) as handle:
-            while True:
-                block = response.read(1 << 20)
-                if not block:
-                    break
-                handle.write(block)
-    finally:
-        close = getattr(response, "close", None)
-        if close:
-            close()
-    partial.replace(dest)
+    last = "download failed"
+    for attempt in range(1, _DOWNLOAD_ATTEMPTS + 1):
+        progress(_event(resource, "repairing", f"Download attempt {attempt} of {_DOWNLOAD_ATTEMPTS}: {resource}"))
+        have = partial.stat().st_size if partial.is_file() else 0
+        request = urllib.request.Request(url, headers={"User-Agent": "VoxprintMovieDubber"})
+        if have:
+            request.add_header("Range", f"bytes={have}-")
+            progress(_event(resource, "repairing", f"Resuming download ({have} bytes already saved)"))
+        try:
+            response = opener(request, timeout=_READ_TIMEOUT_S)
+        except URLError as exc:
+            last = str(exc)
+            if attempt >= _DOWNLOAD_ATTEMPTS:
+                raise RepairError(resource, f"download failed: {exc}") from exc
+            time.sleep(2 ** (attempt - 1))
+            continue
+        status = getattr(response, "status", 200)
+        mode = "ab" if have and status == 206 else "wb"
+        try:
+            with partial.open(mode) as handle:
+                while True:
+                    block = response.read(1 << 20)
+                    if not block:
+                        break
+                    handle.write(block)
+        except OSError as exc:
+            last = str(exc)
+            if attempt >= _DOWNLOAD_ATTEMPTS:
+                raise RepairError(resource, f"download failed: {exc}") from exc
+            time.sleep(2 ** (attempt - 1))
+            continue
+        finally:
+            close = getattr(response, "close", None)
+            if close:
+                close()
+        partial.replace(dest)
+        return
+    raise RepairError(resource, f"download failed: {last}")
 
 
 def _checksum(name: str, text: str) -> str:
@@ -426,7 +446,7 @@ def _extract_ffmpeg(archive: Path, dest: Path) -> None:
 def install_shared_models(progress: Progress) -> Path:
     """Check the models the default pipeline needs. This does not download them.
 
-    A missing model is a repair error that names ``voxprint-mdl enqueue --app movie-dubber``.
+    A missing model is a repair error that names ``voxprint-mdl --gui --app movie-dubber``.
     ``ensure_ready(app='movie-dubber')`` is not called, because that function downloads.
     """
     path = paths.models_dir()
@@ -438,9 +458,20 @@ def install_shared_models(progress: Progress) -> Path:
     if missing:
         raise RepairError(
             "models",
-            "missing " + ", ".join(missing) + ". Run: voxprint-mdl enqueue --app movie-dubber",
+            "missing " + ", ".join(missing) + ". Run: voxprint-mdl --gui --app movie-dubber",
         )
     return path
+
+
+def missing_optional_models() -> List[str]:
+    """Speaker-model keys that are not on disk. An empty list means multi-voice can run."""
+    if model_fetch_skipped():
+        return []
+    missing: List[str] = []
+    for key in model_registry.OPTIONAL_MODELS:
+        if model_registry.locate(model_registry.SPECS[key].repo) is None:
+            missing.append(key)
+    return missing
 
 
 def live_fix(home: Path, resource_id: str, progress: Progress) -> None:
@@ -482,7 +513,7 @@ def _relink(app_dir: Path, env_dir: Path) -> None:
             if env_dir.exists() and link.resolve() == env_dir.resolve():
                 return
             if link.is_dir():
-                shutil.rmtree(link)
+                _remove_tree(link)
             else:
                 link.unlink()
         if os.name == "nt":
@@ -527,11 +558,11 @@ def _migrate_runtimes(home: Path, app_dir: Optional[Path]) -> List[str]:
         dest.parent.mkdir(parents=True, exist_ok=True)
         if not (dest / "runtime-key.json").is_file():
             if dest.exists():
-                shutil.rmtree(dest, ignore_errors=True)
+                _remove_tree(dest)
             shutil.move(str(old), str(dest))
             actions.append(f"moved {old.name} to {dest}")
         else:
-            shutil.rmtree(old, ignore_errors=True)
+            _remove_tree(old)
             actions.append(f"removed {old.name}")
         if app_dir is not None:
             _relink(app_dir, dest / "env")
@@ -692,7 +723,24 @@ def live_selftest(progress: Progress, *, repair: bool = True, check_gpu: bool = 
     def register(piece: Piece) -> None:
         _register(home, piece)
 
-    return run_selftest(progress, gpu=gpu, inspect=inspect, fix=fix, register=register, repair=repair)
+    report = run_selftest(progress, gpu=gpu, inspect=inspect, fix=fix, register=register, repair=repair)
+    if report.exit_code == 0:
+        report.optional_missing = list(missing_optional_models())
+    return report
+
+
+def _remove_tree(path: Path) -> None:
+    """Delete a directory this app owns. A path inside the shared models store is left in place."""
+    try:
+        if model_guard.is_models_root(path) or model_guard.is_under_models(path):
+            return
+    except OSError:
+        return
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path, ignore_errors=True)
+        return
+    if path.is_symlink() or path.is_file():
+        path.unlink(missing_ok=True)
 
 
 def _app_dir() -> Path:

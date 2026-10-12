@@ -1,7 +1,7 @@
 {
  "schema": 1,
  "app": "movie-dubber",
- "notes": "TODO: Qwen3-TTS is a shared component pinned in Model Forge. voxprint-common 0.2.1 ships a model index that only pins the pyannote mirrors, and plan() does not resolve an index id into file URLs. These entries repeat the Audiobook Builder repository and revision. Switch to a shared-component reference when the index publishes these ids.",
+ "notes": "TODO: Qwen3-TTS is a shared component pinned in Model Forge. voxprint-common 0.2.4 ships a model index that only pins the pyannote mirrors, and plan() does not resolve an index id into file URLs. These entries repeat the Audiobook Builder repository and revision. Switch to a shared-component reference when the index publishes these ids.",
  "models": [
   {
    "id": "qwen3-tts",
@@ -168,7 +168,7 @@
      ]
     }
    ],
-   "note": "TODO: Qwen3-TTS is a shared component pinned in Model Forge. voxprint-common 0.2.1 ships a model index that only pins the pyannote mirrors, and plan() does not resolve an index id into file URLs. These entries repeat the Audiobook Builder repository and revision. Switch to a shared-component reference when the index publishes these ids."
+   "note": "TODO: Qwen3-TTS is a shared component pinned in Model Forge. voxprint-common 0.2.4 ships a model index that only pins the pyannote mirrors, and plan() does not resolve an index id into file URLs. These entries repeat the Audiobook Builder repository and revision. Switch to a shared-component reference when the index publishes these ids."
   },
   {
    "id": "qwen3-tts",
@@ -335,7 +335,7 @@
      ]
     }
    ],
-   "note": "TODO: Qwen3-TTS is a shared component pinned in Model Forge. voxprint-common 0.2.1 ships a model index that only pins the pyannote mirrors, and plan() does not resolve an index id into file URLs. These entries repeat the Audiobook Builder repository and revision. Switch to a shared-component reference when the index publishes these ids."
+   "note": "TODO: Qwen3-TTS is a shared component pinned in Model Forge. voxprint-common 0.2.4 ships a model index that only pins the pyannote mirrors, and plan() does not resolve an index id into file URLs. These entries repeat the Audiobook Builder repository and revision. Switch to a shared-component reference when the index publishes these ids."
   },
   {
    "id": "qwen3-tts",
@@ -502,7 +502,7 @@
      ]
     }
    ],
-   "note": "TODO: Qwen3-TTS is a shared component pinned in Model Forge. voxprint-common 0.2.1 ships a model index that only pins the pyannote mirrors, and plan() does not resolve an index id into file URLs. These entries repeat the Audiobook Builder repository and revision. Switch to a shared-component reference when the index publishes these ids."
+   "note": "TODO: Qwen3-TTS is a shared component pinned in Model Forge. voxprint-common 0.2.4 ships a model index that only pins the pyannote mirrors, and plan() does not resolve an index id into file URLs. These entries repeat the Audiobook Builder repository and revision. Switch to a shared-component reference when the index publishes these ids."
   },
   {
    "id": "asr",

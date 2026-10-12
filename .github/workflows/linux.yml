@@ -105,13 +105,14 @@ jobs:
           data = json.load(open(sys.argv[1], encoding="utf-8"))
           assert data.get("schema") == 1, data
           comps = data["components"]
-          for key in ("python-3.14", "torch-2.11.0-cu130", "ctranslate2-cu12", "ffmpeg-8", "models"):
+          for key in ("python-3.14", "torch-2.11.0-cu130", "ctranslate2-cu12", "ffmpeg-8"):
               row = comps[key]
               for field in ("kind", "version", "path", "sha256", "installed_at", "refs"):
                   assert field in row, (key, field)
               assert "movie-dubber" in row["refs"], (key, row["refs"])
-          assert comps["models"]["kind"] == "model"
-          assert comps["models"]["path"].rstrip("/").endswith("/models"), comps["models"]["path"]
+          for key, row in comps.items():
+              path = str(row.get("path") or "").rstrip("/")
+              assert not path.endswith("/models"), (key, path)
           print("shared layout OK", sorted(comps))
           PY
           echo "installation OK"
@@ -128,7 +129,9 @@ jobs:
           from pathlib import Path
           rows = [json.loads(line) for line in Path("mdl-plan.json").read_text(encoding="utf-8").splitlines() if line.strip()]
           last = rows[-1]
-          if last.get("ok") is not True or "planned" not in str(last.get("message") or ""):
+          message = str(last.get("message") or "")
+          inventory = ("planned" in message or "needs download" in message or message in {"ready", "nothing to download"})
+          if last.get("ok") is not True or not inventory:
               raise SystemExit(f"MDL plan failed: {last}")
           print("mdl inventory", last.get("message"))
           PY

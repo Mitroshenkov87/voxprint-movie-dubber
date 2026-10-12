@@ -3,7 +3,7 @@
 The files live in the suite model store (``VOXPRINT_MODELS_DIR``, otherwise the shared
 models folder). ``mdl.json`` at the install root is the app manifest. Qwen3-TTS is
 declared there with the Audiobook Builder repository and revision because
-voxprint-common 0.2.1 cannot resolve a shared-component id into files.
+voxprint-common 0.2.4 cannot resolve a shared-component id into files.
 """
 from __future__ import annotations
 
@@ -22,8 +22,6 @@ from dubber.infra.resources import snapshot
 from dubber.infra.vram_tier import detect
 
 APP_ID = "movie-dubber"
-#: Diarization and the speaker embedding are optional. One voice does not need them.
-OPTIONAL_MODELS = ("diar", "embed")
 
 
 @dataclass(frozen=True)
@@ -83,6 +81,9 @@ SPECS: Dict[str, ModelSpec] = {s.key: s for s in (
 #: Both TTS sizes are listed; :func:`dubber.infra.vram_tier.install_models` keeps the one the card can run.
 INSTALL_MODELS = ("tts_1_7b", "tts_0_6b", "asr", "sep", "roformer", "diar", "embed",
                   "mt_en_ru", "mt_ru_en", "mt_en_de", "mt_de_en", "mt_ru_de", "mt_de_ru")
+#: Speaker models. One-voice dubbing runs without them, so a missing download does not stop startup.
+OPTIONAL_MODELS = ("diar", "embed")
+REQUIRED_MODELS = tuple(key for key in INSTALL_MODELS if key not in OPTIONAL_MODELS)
 
 
 def mt_spec(source: str, target: str) -> Optional[ModelSpec]:
@@ -163,29 +164,28 @@ def mdl_env(base: Optional[Dict[str, str]] = None) -> Dict[str, str]:
     return env
 
 
-def _open_console(argv: Sequence[str], env: Dict[str, str]) -> None:
-    if sys.platform == "win32":
-        subprocess.Popen(list(argv), env=env, creationflags=subprocess.CREATE_NEW_CONSOLE)
-        return
-    for prefix in (["x-terminal-emulator", "-e"], ["gnome-terminal", "--"], ["konsole", "-e"], ["xterm", "-e"]):
-        if shutil.which(prefix[0]):
-            subprocess.Popen(prefix + list(argv), env=env)
-            return
-    subprocess.Popen(list(argv), env=env)
+def gui_argv() -> List[str]:
+    """Build ``voxprint-mdl --gui --app movie-dubber``.
+
+    ``--gui`` is a top-level flag in voxprint-common 0.2.4. It opens the
+    localized Manage models window and is not a download subcommand.
+    """
+    exe = shutil.which("voxprint-mdl")
+    argv = [exe] if exe else [sys.executable, "-m", "voxprint_common.mdl"]
+    argv.extend(["--gui", "--app", APP_ID])
+    return argv
 
 
 def launch_mdl() -> None:
-    """Enqueue this app and open ``voxprint-mdl status --wait`` in a console.
+    """Open ``voxprint-mdl --gui --app movie-dubber``.
 
     ``voxprint_common.mdl.ensure_ready(app='movie-dubber')`` is not called. That
     function downloads inside the process, and this app has no downloader.
 
-    TODO: switch this button to ``voxprint-mdl --gui --app movie-dubber`` when
-    voxprint-common 0.2.2 lands.
+    Raises:
+        OSError: The MDL window could not be started.
     """
-    env = mdl_env()
-    subprocess.run(mdl_argv("enqueue"), env=env, check=False)
-    _open_console(mdl_argv("status", "--wait"), env)
+    subprocess.Popen(gui_argv(), env=mdl_env())
 
 
 def local_dir(repo: str, root: Optional[Path] = None) -> Path:

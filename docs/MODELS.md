@@ -5,7 +5,7 @@ The app manifest is `mdl.json` at the program root. Each entry below is a model 
 The licence in `dubber/models.py` is the licence on that model's card. A download is pinned to the revision
 below, and MDL checks every file (size, then SHA-256) before the folder is used. Diarization and the speaker
 embedding are optional: one voice does not need them. Qwen3-TTS is written out in full, with the same
-repository and revision Audiobook Builder uses, because voxprint-common 0.2.1 cannot resolve a shared-component
+repository and revision Audiobook Builder uses, because voxprint-common 0.2.4 cannot resolve a shared-component
 id into files. See the TODO in `mdl.json`.
 
 The pyannote diarization pipeline and the speaker embedding are ungated mirrors. File hashes are the `SHA256SUMS`

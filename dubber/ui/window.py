@@ -9,6 +9,7 @@ process for the model stages (``dubber.pipeline.runner``); diagnostics live in t
 """
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import tempfile
@@ -34,7 +35,10 @@ from dubber.ui.icons import suite_icon
 from dubber.ui.jobs import PipelineThread
 from dubber.ui.pages import TARGET_LANGS, CharactersPage, DubPage, FilmPage, LinesPage, fmt_eta, fmt_time
 from dubber.ui.player import HAVE_MULTIMEDIA, Player
+from dubber.ui.setup_progress import fetch_optional_with_dialog
 from voxprint_common.ui.theme import build_style
+
+log = logging.getLogger("dubber.ui")
 
 MIN_W, MIN_H = 720, 520
 VIDEO_EXTS = {".mkv", ".mp4", ".avi", ".mov", ".webm", ".m4v", ".ts", ".m2ts"}
@@ -71,6 +75,8 @@ class MainWindow(QWidget):
         self.vxdub_doc: Optional[vxdub.Document] = None
         self._cfg = cfg
         self._options_hook = options_hook
+        self._optional_missing: list[str] = []
+        self._optional_logged: list[str] = []
         self.setObjectName("root")
         self.setAcceptDrops(True)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
@@ -127,6 +133,17 @@ class MainWindow(QWidget):
         notice.addWidget(self.lbl_models, 1)
         notice.addWidget(self.btn_models)
         body.addLayout(notice)
+        optional = QHBoxLayout()
+        self.lbl_optional = QLabel()
+        self.lbl_optional.setObjectName("subtitle")
+        self.lbl_optional.setWordWrap(True)
+        self.lbl_optional.hide()
+        self.btn_optional_retry = QPushButton()
+        self.btn_optional_retry.hide()
+        self.btn_optional_retry.clicked.connect(self.retry_optional_models)
+        optional.addWidget(self.lbl_optional, 1)
+        optional.addWidget(self.btn_optional_retry)
+        body.addLayout(optional)
 
         bar = QHBoxLayout()
         bar.setSpacing(6)
@@ -203,6 +220,7 @@ class MainWindow(QWidget):
             self.setWindowIcon(QIcon(str(icon)))
         self.lbl_tagline.setText(tr("ui.tagline"))
         self._refresh_model_notice()
+        self._refresh_optional_banner()
         self.btn_file.setText(tr("vxdub.file"))
         self.act_open.setText(tr("vxdub.open"))
         self.act_save.setText(tr("vxdub.save"))
@@ -231,8 +249,15 @@ class MainWindow(QWidget):
             self.btn_models.setText(tr("models.manage"))
 
     def manage_models(self) -> None:
-        """Enqueue this app with VOXPrint MDL and open the CLI progress in a console."""
-        models.launch_mdl()
+        """Open the VOXPrint MDL window for this app."""
+        try:
+            models.launch_mdl()
+        except OSError:
+            QMessageBox.warning(
+                self,
+                tr("models.manage"),
+                tr("models.gui_failed", command="voxprint-mdl --gui --app movie-dubber"),
+            )
 
     def _language_menu(self) -> None:
         menu = QMenu(self)
@@ -242,6 +267,32 @@ class MainWindow(QWidget):
             act.setChecked(code == i18n.current())
             act.triggered.connect(lambda _=False, c=code: self.set_language(c))
         menu.exec(self.btn_gear.mapToGlobal(self.btn_gear.rect().bottomLeft()))
+
+    def show_optional_models(self, missing: list[str]) -> None:
+        """Warn once that multi-voice is off, and offer another download. An empty list clears the banner."""
+        self._optional_missing = list(missing)
+        if missing and missing != self._optional_logged:
+            log.warning("optional models missing: %s", ", ".join(missing))
+            self._optional_logged = list(missing)
+        if missing and not self.isVisible():
+            self.show()
+        self._refresh_optional_banner()
+        self.film.set_multi_voice_available(not missing)
+
+    def retry_optional_models(self) -> None:
+        """Download the speaker models again. The banner stays up while any of them are still missing."""
+        self.show_optional_models(fetch_optional_with_dialog())
+
+    def _refresh_optional_banner(self) -> None:
+        if not self._optional_missing:
+            self.lbl_optional.hide()
+            self.btn_optional_retry.hide()
+            return
+        names = ", ".join(self._optional_missing)
+        self.lbl_optional.setText(tr("models.optional_banner", names=names))
+        self.btn_optional_retry.setText(tr("models.optional_retry"))
+        self.lbl_optional.show()
+        self.btn_optional_retry.show()
 
     def set_language(self, code: str) -> None:
         """Switch the interface language and refresh the window."""

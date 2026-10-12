@@ -178,11 +178,13 @@ def main(argv=None) -> int:
         app.setWindowIcon(QIcon(str(icon)))
     if _refuse_unsupported_gpu(QMessageBox):
         return EXIT_GPU
-    from dubber.ui.setup_progress import ensure_with_dialog
+    from dubber.ui.setup_progress import ensure_with_dialog, startup_repair_dialog
 
     ensured = ensure_with_dialog()
-    if ensured.exit_code != 0 and ensured.outcome != "models":
-        QMessageBox.critical(None, tr("gpu.gate_title"), ensured.message or "A shared component could not be repaired.")
+    if ensured.exit_code != 0:
+        dialog = startup_repair_dialog(ensured)
+        title, body = dialog if dialog is not None else (tr("models.repair_title"), ensured.message or "")
+        QMessageBox.critical(None, title, body or ensured.message or "")
         return ensured.exit_code
     from dubber.ui.splash_hook import show_splash
 
@@ -195,6 +197,8 @@ def main(argv=None) -> int:
     splash.set_progress(0.8)
     win = MainWindow(autorun="--diagnose" in argv, options_hook=(lambda o: _apply_cli(o, argv)) if "--diagnose" in argv else None)
     win.show()
+    if ensured.optional_missing:
+        win.show_optional_models(list(ensured.optional_missing))
     opened = project_file_from_argv(argv)
     if opened:
         win.open_vxdub(Path(opened))

@@ -4,7 +4,8 @@ The file format, the lock (``manifest.lock``, 30 seconds), the atomic publish
 and the Canvas / Enlarge migration live in ``voxprint_common.runtime_manifest``.
 This module only chooses component ids, turns this app's older list-shaped
 manifest into the object that library reads, and deletes a directory when no
-component still points at it. The app id stored in ``refs`` is ``movie-dubber``.
+component still points at it. The shared models directory is not removed while
+another program's weights are inside it. The app id stored in ``refs`` is ``movie-dubber``.
 
 A path must stay inside ``<home>/shared``, except a ``model`` component, which
 may be an absolute path under ``voxprint_common.paths.models_dir``
@@ -19,6 +20,25 @@ import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from types import ModuleType
+
+# Linux runs ``python <app>/dubber/infra/components.py``. The app root has to be
+# importable before ``dubber`` loads. The Windows setup copies this file alone
+# into a temp directory and only calls ``add``; ``release`` goes through main.py.
+_script = Path(__file__).resolve()
+if len(_script.parents) >= 3:
+    _candidate = _script.parents[2]
+    if (_candidate / "dubber" / "__init__.py").is_file():
+        _root_text = str(_candidate)
+        if _root_text not in sys.path:
+            sys.path.insert(0, _root_text)
+
+try:
+    from dubber.infra import model_guard as _model_guard
+except ImportError:
+    model_guard: ModuleType | None = None
+else:
+    model_guard = _model_guard
 
 from voxprint_common.atomic import LockTimeout, exclusive_lock, write_json
 from voxprint_common.hashing import sha256_bytes, sha256_file
@@ -250,6 +270,14 @@ def prepare(home: Path) -> None:
         write_json(target, data)
 
 
+def _is_shared_models_root(path: Path) -> bool:
+    """True when ``path`` is the shared models directory, which must not receive a ref."""
+    try:
+        return Path(path).resolve() == models_dir().resolve()
+    except OSError:
+        return False
+
+
 def add_component(
     home: Path,
     component_id: str,
@@ -259,8 +287,12 @@ def add_component(
     path: Path,
     app: str = APP_ID,
     sha256: str = "",
-) -> object:
+) -> object | None:
     """Add ``app`` to one component. The same id, version and digest is reused.
+
+    The shared models directory itself is never given a ref. voxprint-common
+    0.2.4 refuses that path, and a ref there could delete every app's weights.
+    Per-model folders under that directory are recorded as usual.
 
     Raises:
         OutsideShared: ``path`` is outside ``<home>/shared``, or a model path is
@@ -268,6 +300,8 @@ def add_component(
         ManifestError: The id, kind, or digest is not valid.
     """
     prepare(home)
+    if kind == "model" and _is_shared_models_root(path):
+        return None
     rel = component_path(home, path, kind)
     digest = sha256.strip().lower()
     if len(digest) != 64:
@@ -324,16 +358,37 @@ def release_app(home: Path, app: str = APP_ID) -> ReleaseResult:
     """
     prepare(home)
     target = manifest_file(home)
-    if not target.is_file():
-        return ReleaseResult((), ())
-    document = load(target)
-    owned = [key for key, value in document.components.items() if app in value.refs]
-    removed: list[str] = []
-    for key in owned:
-        rel = document.components[key].path
-        if remove_ref(key, app, manifest=target):
-            removed.append(rel)
-    return _delete_unused(home, removed)
+    result = ReleaseResult((), ())
+    if target.is_file():
+        document = load(target)
+        owned = [key for key, value in document.components.items() if app in value.refs]
+        removed: list[str] = []
+        for key in owned:
+            rel = document.components[key].path
+            if remove_ref(key, app, manifest=target):
+                removed.append(rel)
+        result = _delete_unused(home, removed)
+    return _drop_owned_models(home, app, result)
+
+
+def _drop_owned_models(home: Path, app: str, result: ReleaseResult) -> ReleaseResult:
+    """Delete model folders this app recorded when it is the only user.
+
+    The models directory is not a component. This only runs when ``home/models``
+    is the configured models root, so a release of some other home cannot touch it.
+    """
+    if app != APP_ID or model_guard is None:
+        return result
+    folder = Path(home) / "models"
+    try:
+        if not folder.is_dir() or folder.resolve() != models_dir().resolve():
+            return result
+    except OSError:
+        return result
+    extra = [path for path in model_guard.delete_owned_models(folder) if path not in result.deleted]
+    if not extra:
+        return result
+    return ReleaseResult(tuple(result.deleted) + tuple(extra), result.pending)
 
 
 def _delete_unused(home: Path, removed: list[str]) -> ReleaseResult:
@@ -352,7 +407,19 @@ def _delete_unused(home: Path, removed: list[str]) -> ReleaseResult:
             continue
         seen.add(rel)
         folder = _deletable(rel, shared)
-        if folder is None or _covers_kept(folder, kept, shared):
+        if folder is None:
+            continue
+        guard = model_guard
+        if guard is not None and guard.is_models_root(folder):
+            deleted.extend(guard.delete_owned_models(folder))
+            continue
+        if _covers_kept(folder, kept, shared):
+            continue
+        under_models = any(_inside(folder, root) for root in _model_roots())
+        if guard is None:
+            if under_models:
+                continue
+        elif guard.is_under_models(folder) and not guard.may_delete_model(folder):
             continue
         if running_from(folder):
             pending.append(str(folder))
@@ -363,6 +430,8 @@ def _delete_unused(home: Path, removed: list[str]) -> ReleaseResult:
             pending.append(str(folder))
         else:
             deleted.append(str(folder))
+            if guard is not None and guard.is_under_models(folder):
+                guard.forget_installed(folder.parent, folder.name)
     if not still.components and target.is_file():
         target.unlink()
     return ReleaseResult(tuple(deleted), tuple(pending))
