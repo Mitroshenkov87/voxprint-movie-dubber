@@ -9,7 +9,7 @@ Screenshots are placeholders for now; they are added after the first test on rea
 Start **VOXPrint AI Movie Dubber** from the Start menu (folder "VOXPrint AI Suite"). The splash screen appears first, then the main window.
 
 - If the PC has no NVIDIA RTX 40-series card or newer, or the driver is older than the 600 branch, the program says so and closes. There is no processor-only mode.
-- The first dub downloads any AI models that are still missing (about 8 GB in total, one time) into the shared Voxprint models folder. Voxprint AI Audiobook Builder uses the same folder, so nothing is downloaded twice.
+- The installer asks VOXPrint MDL to download the AI models (one time) into the shared Voxprint models folder. The program does not download them. If something required is missing, a notice offers Manage models, which runs `voxprint-mdl --gui --app movie-dubber`. Voxprint AI Audiobook Builder uses the same folder, so a model is not stored twice.
 - The program checks how much video memory (VRAM) the card has and picks a matching model tier by itself: a 16 GB tier, or a 24 GB tier for cards with 24 GB or more. There is nothing to set.
 
 <!-- screenshot: splash screen -->

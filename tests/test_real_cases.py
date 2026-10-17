@@ -530,14 +530,20 @@ def test_driver_cuda_is_read_from_new_nvidia_smi_headers():
     assert "UMD" in src
 
 
-def test_common_pin_is_the_0_1_line_and_the_release_wheel():
+def test_common_pin_is_the_0_2_4_wheel():
     root = Path(__file__).resolve().parents[1]
     req = (root / "requirements.txt").read_text(encoding="utf-8")
-    assert "voxprint-common==0.1.*" in req
+    pin = (
+        "voxprint-common @ https://github.com/Mitroshenkov87/voxprint-common/releases/download/"
+        "v0.2.4/voxprint_common-0.2.4-py3-none-any.whl "
+        "--hash=sha256:3051bc64700964705bf5cee5182829d1311560a38a9f7436195f26481e4fa239"
+    )
+    assert pin in req
+    assert "voxprint-common==0.1.*" not in req
     assert "git+https://github.com/Mitroshenkov87/voxprint-common" not in req
     fetcher = (root / "installer" / "fetch_common_wheel.py").read_text(encoding="utf-8")
-    assert "c9361d5d00913faf39497fc55124e682ba15b2098c775068c49582c0520cd4d1" in fetcher
-    assert "voxprint_common-0.1.1-py3-none-any.whl" in fetcher
+    assert "3051bc64700964705bf5cee5182829d1311560a38a9f7436195f26481e4fa239" in fetcher
+    assert "voxprint_common-0.2.4-py3-none-any.whl" in fetcher
     ps1 = (root / "installer" / "install-runtime.ps1").read_text(encoding="utf-8")
     sh = (root / "installer" / "linux" / "install.sh").read_text(encoding="utf-8")
     payload = (root / "installer" / "make-full-payload.ps1").read_text(encoding="utf-8")
@@ -546,7 +552,7 @@ def test_common_pin_is_the_0_1_line_and_the_release_wheel():
         assert "git+https://github.com/Mitroshenkov87/voxprint-common" not in text
     assert "vmd-requirements-offline" not in ps1
     assert "voxprint-common==0.1.0" not in ps1
-    assert "__version__ == '0.1.1'" in ps1 and "__version__ == '0.1.1'" in sh
+    assert "__version__ == '0.2.4'" in ps1 and "__version__ == '0.2.4'" in sh
 
 
 def test_other_packages_step_keeps_the_torch_build_and_uses_pypi():

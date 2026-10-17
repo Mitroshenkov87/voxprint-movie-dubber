@@ -26,8 +26,8 @@ shared/
 
 Model weights live at `<home>/models` (`%LOCALAPPDATA%\Voxprint\models`), not inside `shared/`.
 `VOXPRINT_MODELS_DIR`, `suite.json` `models_dir`, and the older `state/models_dir.txt` still override that
-folder. The folder is a `model` component. Its path in the manifest is absolute and stays under that
-models root (or `VOXPRINT_MODEL_CACHE`). Other component paths stay relative to `shared/`.
+folder. The models directory itself is never a component. VOXPrint MDL records one ref per file, and
+that path stays under the models root (or `VOXPRINT_MODEL_CACHE`). Other component paths stay relative to `shared/`.
 
 The pin hash is still written into `runtime-key.json`. The directory name is the version, so a different Python
 or torch line is a different directory. A broken copy of the same version is repaired in place. It is never
@@ -57,22 +57,6 @@ The app id in `refs` is `movie-dubber`.
       "installed_at": "2026-10-11T12:00:00",
       "refs": ["movie-dubber"]
     },
-    "torch-2.11.0-cu130": {
-      "kind": "wheels",
-      "version": "2.11.0+cu130",
-      "path": "runtimes/py3.14-torch2.11-cu130",
-      "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-      "installed_at": "2026-10-11T12:00:00",
-      "refs": ["movie-dubber"]
-    },
-    "ctranslate2-cu12": {
-      "kind": "wheels",
-      "version": "cu12",
-      "path": "runtimes/py3.14-torch2.11-cu130",
-      "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-      "installed_at": "2026-10-11T12:00:00",
-      "refs": ["movie-dubber"]
-    },
     "ffmpeg-8": {
       "kind": "tool",
       "version": "n8.1",
@@ -93,7 +77,9 @@ Paths are relative to `shared/`, except a `model` component, whose path is absol
 `torch` version `2.11.0+cu130` stands for torch 2.11.0, torchaudio 2.11.0 and torchcodec 0.17.0, all `+cu130`.
 `ctranslate2` version `cu12` means CTranslate2 can import and the CUDA 12 libraries are `nvidia-cublas-cu12==12.9.2.10`
 and `nvidia-cudnn-cu12==9.27.0.42`. The CPU runtime only requires CTranslate2 to import. Its component id is
-`python-3.14-cpu` and its torch id is `torch-2.11.0-cpu`.
+`python-3.14-cpu`. Torch and CTranslate2 are installed into that runtime directory. They are not separate
+manifest components: voxprint-common 0.2.4 refuses a second component whose path is a directory another
+component already uses.
 
 ### Reference counting
 

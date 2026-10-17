@@ -131,10 +131,10 @@ def test_release_fetch_and_repair_keep_other_apps_models(tmp_path, monkeypatch):
     model_guard.publish_download(repair, ours)
     assert (ours / "sidecar.txt").read_text(encoding="utf-8") == "foreign-extra"
     assert (planted["gemma"] / "weights.bin").is_file()
-    info = model_store.ensure_model("org/movie-dubber-tts", root=models_dir, allow_download=False)
-    assert info.path == ours and info.source == "present"
+    found, info = models.ensure("org/movie-dubber-tts", allow_download=False)
+    assert found == ours and info["source"] == "present"
     with pytest.raises(ModelUnavailable):
-        model_store.ensure_model("org/not-installed", root=models_dir, allow_download=False)
+        models.ensure("org/not-installed", allow_download=False)
 
     components.add_component(home, "models", kind="model", version="store", path=models_dir, app="movie-dubber")
     components.release_app(home, "movie-dubber")
@@ -159,7 +159,8 @@ def test_sole_user_deletes_only_models_this_app_recorded(tmp_path, monkeypatch):
     monkeypatch.delenv("VOXPRINT_MODELS_DIR", raising=False)
     model_store.register_user(root=models_dir)
     ours = _publish_model(models_dir, "org/ours", b"ours")
-    assert model_store.ensure_model("org/ours", root=models_dir, allow_download=False).path == ours
+    found, info = models.ensure("org/ours", allow_download=False)
+    assert found == ours and info["source"] == "present"
     components.add_component(home, "models", kind="model", version="store", path=models_dir, app="movie-dubber")
     components.release_app(home, "movie-dubber")
     assert not (models_dir / "org--ours").exists()
@@ -173,12 +174,15 @@ def test_sole_user_deletes_only_models_this_app_recorded(tmp_path, monkeypatch):
 def test_optional_model_repair_does_not_abort(monkeypatch, tmp_path):
     from dubber.infra.shared_deps import install_shared_models
 
-    def ensure(repo, allow_download=True, token=None, log=lambda message: None):
-        if repo in (models.SPECS["diar"].repo, models.SPECS["embed"].repo):
-            raise ModelUnavailable(f"{repo} missing")
-        return tmp_path / "present", {"source": "present", "download_s": 0.0}
+    present = tmp_path / "present"
+    present.mkdir()
 
-    monkeypatch.setattr("dubber.infra.shared_deps.model_registry.ensure", ensure)
+    def locate(repo: str):
+        if repo in (models.SPECS["diar"].repo, models.SPECS["embed"].repo):
+            return None
+        return present
+
+    monkeypatch.setattr("dubber.infra.shared_deps.model_registry.locate", locate)
     install_shared_models(lambda event: None)
 
 
@@ -320,22 +324,29 @@ def test_default_fetch_does_not_fail_when_only_optional_models_fail(monkeypatch,
     present.mkdir()
     optional = {models.SPECS["diar"].repo, models.SPECS["embed"].repo}
     failed = set(optional)
-
-    def ensure(repo, allow_download=True, token=None, log=lambda message: None):
-        del allow_download, token, log
-        if repo in failed:
-            raise ModelUnavailable(repo)
-        return present, {"source": "present", "download_s": 0.0}
+    calls: list[list[str]] = []
 
     def locate(repo):
         if repo in failed:
             return None
         return present
 
+    def run(argv, **kwargs):
+        del kwargs
+        calls.append(list(argv))
+
+        class Proc:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        return Proc()
+
     monkeypatch.setattr("dubber.cli.snapshot", lambda use_torch=False: Snapshot(vram_total_gb=24.0))
-    monkeypatch.setattr("dubber.cli.models.ensure", ensure)
     monkeypatch.setattr("dubber.cli.models.locate", locate)
+    monkeypatch.setattr("dubber.cli.subprocess.run", run)
     assert cli_main(["fetch-models"]) == 0
+    assert any("enqueue" in argv and "movie-dubber" in argv for argv in calls)
     assert cli_main(["fetch-models", "--models", "diar"]) == EXIT_MODELS
     failed.add(models.SPECS["asr"].repo)
     assert cli_main(["fetch-models"]) == EXIT_MODELS
@@ -373,11 +384,15 @@ def test_components_script_records_a_ref_from_the_install_tree_and_from_a_lone_c
     home = tmp_path / "home"
     installed = add(script, home, "python-3.14", "runtime", home / "shared" / "runtimes" / "py3.14")
     assert installed.returncode == 0, installed.stderr
-    models = add(script, home, "models", "model", home / "models")
-    assert models.returncode == 0, models.stderr
+    root_add = add(script, home, "models", "model", home / "models")
+    assert root_add.returncode == 0, root_add.stderr
+    leaf = add(script, home, "model-sep", "model", home / "models" / "org--sep")
+    assert leaf.returncode == 0, leaf.stderr
     recorded = json.loads((home / "shared" / "manifest.json").read_text(encoding="utf-8"))
     assert "movie-dubber" in recorded["components"]["python-3.14"]["refs"]
-    assert recorded["components"]["models"]["path"].endswith("/models")
+    assert "models" not in recorded["components"]
+    assert recorded["components"]["model-sep"]["path"].endswith("/models/org--sep")
+    assert "movie-dubber" in recorded["components"]["model-sep"]["refs"]
 
     lone = tmp_path / "components.py"
     lone.write_text(script.read_text(encoding="utf-8"), encoding="utf-8")

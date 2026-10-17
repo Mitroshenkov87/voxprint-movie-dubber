@@ -8,12 +8,12 @@ This is the 1.0.0 release candidate. The build number and the codename (Bochan) 
 
 ## Install
 
-**Requirements:** Windows 11 24H2 or newer (64-bit), an NVIDIA GeForce RTX 40-series graphics card or newer with an NVIDIA driver from the 600 branch or newer, about 25 GB of free disk space and an internet connection for the first model download. The setup and the program stop with a clear message on older hardware; there is no processor-only mode. Linux (x86_64) is available as a preview tarball, see [Linux](#linux-preview) below.
+**Requirements:** Windows 11 24H2 or newer (64-bit), an NVIDIA GeForce RTX 40-series graphics card or newer with an NVIDIA driver from the 600 branch or newer, about 25 GB of free disk space and an internet connection so VOXPrint MDL can fetch the models. The setup and the program stop with a clear message on older hardware; there is no processor-only mode. Linux (x86_64) is available as a preview tarball, see [Linux](#linux-preview) below.
 
 1. Download the installer from the [latest release](https://github.com/Mitroshenkov87/voxprint-movie-dubber/releases):
    - **Full installer** (offline, recommended): `VoxprintMovieDubber-Full-Setup.exe` together with every `VoxprintMovieDubber-Full-Setup-N.bin` part, all in the same folder. It carries Python and PyTorch, so setup needs no internet.
    - **Online installer**: the small `VoxprintMovieDubber-Setup.exe`, which downloads Python and PyTorch during setup.
-2. Check the download against the SHA-256 in the release notes, run the `.exe` and follow the setup. Leave "Download the AI models now" ticked if you want the models (about 8 GB) right away; otherwise they are downloaded on first use.
+2. Check the download against the SHA-256 in the release notes, run the `.exe` and follow the setup. The last step runs VOXPrint MDL, which downloads the models (about 8 GB). The program itself does not download them.
 3. Start **VOXPrint AI Movie Dubber** from the Start menu (folder "VOXPrint AI Suite"). The program is installed in `C:\Program Files\VOXPrint AI Suite\Movie Dubber`. The window launcher is `voxprint-movie-dubber.exe` and the command-line launcher is `voxprint-movie-dubber-cli.exe`.
 
 <!-- screenshot: setup wizard -->

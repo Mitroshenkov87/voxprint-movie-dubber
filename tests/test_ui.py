@@ -240,7 +240,7 @@ def test_settings_and_diagnostics_dialogs(tmp_path):
     from dubber import paths
     from dubber.ui import dialogs
     d = dialogs.SettingsDialog()
-    assert not d.chk_download.icon().isNull()
+    assert not hasattr(d, "chk_download")
     d.edt_subdl.setText("k1")
     assert not hasattr(d, "edt_hf")
     d.cmb_device.setCurrentIndex(d.cmb_device.findData("cuda"))
@@ -251,7 +251,7 @@ def test_settings_and_diagnostics_dialogs(tmp_path):
     assert paths.models_dir() == tmp_path / "models-elsewhere"
     assert settings.redacted(s)["subdl_key"] == "set"
     g = dialogs.DiagnosticsDialog(target_lang=lambda: "de")
-    assert not g.chk_download.icon().isNull()
+    assert not hasattr(g, "chk_download")
     opt = g.build_options()
-    assert opt.target_lang == "de" and opt.hf_token == ""
+    assert opt.target_lang == "de" and opt.hf_token == "" and opt.allow_download is False
     g.close()

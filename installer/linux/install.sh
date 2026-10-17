@@ -276,7 +276,7 @@ LAUNCH
 install_program_files() {
   local stage item
   stage="$(mktemp -d)"
-  for item in main.py dubber assets BUILD.json build_info.json requirements.txt runtime-constraints.txt LICENSE NOTICE README.md; do
+  for item in main.py dubber assets BUILD.json build_info.json requirements.txt runtime-constraints.txt LICENSE NOTICE README.md mdl.json; do
     [ -e "$HERE/$item" ] && cp -a "$HERE/$item" "$stage/"
   done
   if [ "$SYSTEM" = 1 ]; then
@@ -459,7 +459,7 @@ if "$PY" -c "from voxprint_common.runtime_manifest import cpu_onnxruntime_confli
   as_user "$UV" pip uninstall --python "$PY" --quiet onnxruntime
   retry "Installing onnxruntime-gpu" as_user "$UV" pip install --python "$PY" --quiet "onnxruntime-gpu==1.30.0"
 fi
-"$PY" -c "import voxprint_common; from voxprint_common.runtime_manifest import cpu_onnxruntime_conflicts; assert voxprint_common.__version__ == '0.1.1', voxprint_common.__version__; raise SystemExit('The CPU package onnxruntime is installed. The shared runtime must not contain it.' if cpu_onnxruntime_conflicts() else 0)"
+"$PY" -c "import voxprint_common; from voxprint_common.runtime_manifest import cpu_onnxruntime_conflicts; assert voxprint_common.__version__ == '0.2.4', voxprint_common.__version__; raise SystemExit('The CPU package onnxruntime is installed. The shared runtime must not contain it.' if cpu_onnxruntime_conflicts() else 0)"
 "$PY" -c "import torch, transformers, PySide6, faster_whisper, ctranslate2; print('torch', torch.__version__, '- CUDA available:', torch.cuda.is_available())"
 date -u +%Y-%m-%dT%H:%M:%SZ > "$RT/.install-complete"
 "$PY" - "$RT/runtime-key.json" "$TV" <<'PYEOF'
@@ -473,22 +473,22 @@ PYEOF
 # 5. ffmpeg, models, manifest
 install_ffmpeg
 mkdir -p "$VX_HOME/models"
-# Anonymous model fetch. A Hugging Face token is not required.
-# TODO: fetching moves to voxprint-mdl later.
+# VOXPrint MDL fetches the models. The app does not. A Hugging Face token is not passed.
 unset HF_TOKEN
 unset HUGGINGFACE_HUB_TOKEN
 if [ "$SKIP_MODELS" = 1 ]; then
   say "[5/5] Skipping the model download (--skip-models, CI only)"
 else
-  say "[5/5] Downloading the AI models the default pipeline needs"
-  as_user "$PY" "$APP_DIR/main.py" --fetch-models
+  say "[5/5] Asking VOXPrint MDL to download the models"
+  as_user "$PY" -m voxprint_common.mdl enqueue --app movie-dubber --manifest "$APP_DIR/mdl.json"
+  as_user "$PY" -m voxprint_common.mdl --json status --wait --manifest "$APP_DIR/mdl.json"
 fi
 ff_sha="$(sha256sum "$FF_DIR/ffmpeg" | awk '{ print $1 }')"
 add_ref --id python-3.14 --kind runtime --version "$RUNTIME_VERSION" --path "$RT"
-add_ref --id torch-2.11.0-cu130 --kind wheels --version "${TV}+cu130" --path "$RT"
-add_ref --id ctranslate2-cu12 --kind wheels --version cu12 --path "$RT"
+# torch and CTranslate2 live in that runtime directory. voxprint-common 0.2.4
+# refuses a second component on a path another component already uses.
 add_ref --id ffmpeg-8 --kind tool --version "$FFMPEG_VERSION" --path "$FF_DIR" --sha256 "$ff_sha"
-add_ref --id models --kind model --version store --path "$VX_HOME/models"
+# The models directory is not a component. VOXPrint MDL records one ref per file.
 
 # 6. launchers, menu entry, icons and the .vxdub file type
 say "Adding $GUI_BIN and $CLI_BIN in $BIN_DIR"

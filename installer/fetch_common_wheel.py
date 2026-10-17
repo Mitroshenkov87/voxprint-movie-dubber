@@ -1,8 +1,7 @@
-"""Download the voxprint-common 0.1.1 wheel and check its release checksum.
+"""Download the voxprint-common 0.2.4 wheel and check its release checksum.
 
-``requirements.txt`` pins ``voxprint-common==0.1.*``. That package is not on
-PyPI, so the pin resolves only when this wheel is on ``--find-links``. The
-script prints the directory that contains the wheel.
+``requirements.txt`` pins that wheel by URL and sha256. The offline installer
+vendors the same file. The script prints the directory that contains the wheel.
 """
 from __future__ import annotations
 
@@ -15,10 +14,10 @@ from urllib.error import URLError
 
 WHEEL_URL = (
     "https://github.com/Mitroshenkov87/voxprint-common/releases/download/"
-    "v0.1.1/voxprint_common-0.1.1-py3-none-any.whl"
+    "v0.2.4/voxprint_common-0.2.4-py3-none-any.whl"
 )
-WHEEL_SHA256 = "c9361d5d00913faf39497fc55124e682ba15b2098c775068c49582c0520cd4d1"
-WHEEL_NAME = "voxprint_common-0.1.1-py3-none-any.whl"
+WHEEL_SHA256 = "3051bc64700964705bf5cee5182829d1311560a38a9f7436195f26481e4fa239"
+WHEEL_NAME = "voxprint_common-0.2.4-py3-none-any.whl"
 
 
 def fetch(dest: Path) -> Path:
@@ -79,7 +78,7 @@ def _sha256(path: Path) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     """Download the wheel into ``--dest`` and print that directory."""
-    parser = argparse.ArgumentParser(description="Download the voxprint-common 0.1.1 wheel.")
+    parser = argparse.ArgumentParser(description="Download the voxprint-common 0.2.4 wheel.")
     parser.add_argument("--dest", required=True, help="directory that will hold the wheel")
     args = parser.parse_args(argv)
     print(fetch(Path(args.dest)))

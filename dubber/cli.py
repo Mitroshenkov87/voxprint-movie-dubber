@@ -15,12 +15,13 @@ import json
 import logging
 import platform
 import signal
+import subprocess
 import sys
 import threading
 import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Never, Sequence
+from typing import Any, Callable, Literal, Never, Sequence
 
 from dubber import models, paths
 from dubber import settings as app_settings
@@ -30,7 +31,7 @@ from dubber.core.project import Project
 from dubber.diag.runner import ALL_TTS_MODES, DiagOptions, DiagnosticRunner
 from dubber.infra.gpu_policy import driver_branch, gate_skipped, launch_block, probe_torch
 from dubber.infra.resources import snapshot
-from dubber.infra.vram_tier import detect, install_models
+from dubber.infra.vram_tier import detect
 from dubber.pipeline.runner import Callbacks, Runner
 from dubber.pipeline.stages import ORDER
 
@@ -120,7 +121,7 @@ def build_parser() -> argparse.ArgumentParser:
     diag.add_argument("--asr-repo", metavar="REPO", help="Hugging Face repo for the speech-recognition model.")
     diag.add_argument("--models", metavar="KEY,KEY", help="Model keys to download. Unknown keys exit 2.")
     diag.add_argument("--report", metavar="FILE",
-                      help="Write the fetch-models log to this file. The installer reads it after the download.")
+                      help="Write the fetch-models log to this file.")
     diag.add_argument("--languages", metavar="SRC,TGT",
                       help="Source and target, for example en,ru. Source: auto, en, ru, de. Target: en, ru, de.")
     diag.add_argument("--source-lang", metavar="LANG", help="Source language. Default: auto. Kept when the project already has one.")
@@ -143,12 +144,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     commands.add_parser(
         "fetch-models",
-        help="Download the models the installer would fetch.",
-        description="Downloads the models the installer would fetch, or the keys passed to --models. "
-                    "An unknown key is exit 2. A download that does not finish is exit 4. "
-                    "--dry-run reports which of those keys are already on disk and does not download. "
-                    "The real download does not refuse to start because of the GPU. "
-                    "The download is anonymous and does not use a Hugging Face token.",
+        help="Ask VOXPrint MDL to fetch the models this computer needs.",
+        description="Runs voxprint-mdl enqueue --app movie-dubber and then waits for that queue. "
+                    "With --models, those keys are passed as --model (diarization and embedding are optional "
+                    "and are fetched only when named). An unknown key is exit 2. A model that is still missing "
+                    "is exit 4. --dry-run reports which of the requested keys are already on disk and does not "
+                    "download or enqueue. The real fetch does not refuse to start because of the GPU. "
+                    "No Hugging Face token is used.",
     )
     run = commands.add_parser(
         "run-project",
@@ -587,7 +589,7 @@ def _requested_models(req: Request) -> list[str]:
             raise UsageError(f"Unknown model key(s): {', '.join(unknown)}.  Known: {known}")
         return keys
     vram = snapshot(use_torch=False).vram_total_gb
-    return install_models(vram, models.INSTALL_MODELS)
+    return models.plan_keys(vram)
 
 
 def _cmd_fetch(req: Request) -> int:
@@ -620,29 +622,41 @@ def _write_report(req: Request, text: str) -> None:
     dest.write_text(text, encoding="utf-8")
 
 
+def _mdl_ids(keys: list[str]) -> list[str]:
+    found: list[str] = []
+    for key in keys:
+        model_id = models.mdl_id(key)
+        if model_id not in found:
+            found.append(model_id)
+    return found
+
+
+def _run_mdl(argv: list[str], env: dict[str, str], emit: Callable[[str], None]) -> int:
+    proc = subprocess.run(argv, env=env, capture_output=True, text=True)
+    for line in (proc.stdout or "").splitlines():
+        emit(line)
+    for line in (proc.stderr or "").splitlines():
+        emit(line)
+    return proc.returncode
+
+
 def _fetch_for_real(req: Request, keys: list[str], chosen: list[dict[str, Any]], explicit: bool = False) -> int:
+    """Enqueue with VOXPrint MDL and wait. This process does not download."""
     _setup_logging()
-    failed: list[str] = []
     notes: list[str] = []
 
     def emit(text: str) -> None:
         notes.append(text)
         _log(text) if req.json_mode else _human(text)
 
-    emit(f"Downloading AI models (about {models.total_download_gb(keys)} GB, finished ones are skipped) to {paths.models_dir()}")
-    for key in keys:
-        spec = models.SPECS[key]
-        emit(f"- {spec.title} [{spec.repo}] ...")
-        try:
-            models.ensure(spec.repo, True, log=lambda message: emit("    " + str(message)))
-            if models.locate(spec.repo) is None:
-                failed.append(key)
-                emit("  FAILED: the folder is still incomplete after the download")
-            else:
-                emit("  done")
-        except Exception as exc:  # noqa: BLE001 - report and continue with the next model
-            failed.append(key)
-            emit(f"  FAILED: {' '.join(str(exc).split())[:300]}")
+    model_ids = _mdl_ids(keys) if explicit else None
+    env = models.mdl_env()
+    emit("voxprint-mdl enqueue --app movie-dubber")
+    code = _run_mdl(models.mdl_argv("enqueue", model_ids=model_ids), env, emit)
+    if code == 0:
+        emit("voxprint-mdl status --wait")
+        code = _run_mdl(models.mdl_argv("status", "--json", "--wait"), env, emit)
+    failed = list(keys) if code != 0 else [key for key in keys if models.locate(models.SPECS[key].repo) is None]
     blocking = _blocking_model_failures(failed, explicit)
     if blocking:
         emit("FAILED: " + ", ".join(blocking))
@@ -650,7 +664,7 @@ def _fetch_for_real(req: Request, keys: list[str], chosen: list[dict[str, Any]],
         emit("Optional models were not downloaded: " + ", ".join(failed))
     _write_report(req, "\n".join(notes) + "\n")
     if blocking:
-        message = f"Not downloaded: {', '.join(blocking)}.  Run this step again or start the diagnostics later."
+        message = f"Not downloaded: {', '.join(blocking)}.  Run voxprint-mdl enqueue --app movie-dubber again."
         return _finish(req, EXIT_MODELS, {"models": chosen, "failed": blocking, "gated": [], "log": notes}, error=message)
     return _finish(req, EXIT_OK, {"models": chosen, "failed": [], "gated": [], "log": notes}, human="All models are ready.")
 
@@ -705,7 +719,7 @@ def _describe_input(req: Request) -> dict[str, Any]:
 
 
 def _needed_models(source: str, target: str, total_gb: float) -> list[str]:
-    keys = list(install_models(total_gb, models.INSTALL_MODELS))
+    keys = models.plan_keys(total_gb)
     if source != "auto":
         spec = models.mt_spec(source, target)
         if spec is not None and spec.key not in keys:

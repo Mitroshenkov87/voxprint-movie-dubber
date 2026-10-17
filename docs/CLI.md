@@ -50,7 +50,7 @@ voxprint-movie-dubber-cli --dry-run --json
 | `--clip FILE` | Use this clip instead of the bundled diagnostics clip. |
 | `--asr-repo REPO` | Hugging Face repo for the speech-recognition model. |
 | `--models KEY,KEY` | Model keys to download. Unknown keys exit 2. |
-| `--report FILE` | Write the fetch-models log to this file. The installer reads it after the download. |
+| `--report FILE` | Write the fetch-models log to this file. |
 | `--languages SRC,TGT` | Source and target, for example en,ru. Source: auto, en, ru, de. Target: en, ru, de. |
 | `--source-lang LANG` | Source language. Default: auto. Kept when the project already has one. |
 | `--target-lang LANG` | Target language. Default: ru. |
@@ -88,7 +88,7 @@ voxprint-movie-dubber-cli diagnose
 
 ## fetch-models
 
-Downloads the models the installer would fetch, or the keys passed to --models. An unknown key is exit 2. A download that does not finish is exit 4. --dry-run reports which of those keys are already on disk and does not download. The real download does not refuse to start because of the GPU. The download is anonymous and does not use a Hugging Face token.
+Runs voxprint-mdl enqueue --app movie-dubber and then waits for that queue. With --models, those keys are passed as --model (diarization and embedding are optional and are fetched only when named). An unknown key is exit 2. A model that is still missing is exit 4. --dry-run reports which of the requested keys are already on disk and does not download or enqueue. The real fetch does not refuse to start because of the GPU. No Hugging Face token is used.
 
 ```
 voxprint-movie-dubber-cli fetch-models

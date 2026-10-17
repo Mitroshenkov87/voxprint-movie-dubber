@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, 
                                QLineEdit, QListWidget, QListWidgetItem, QPlainTextEdit, QProgressBar, QPushButton, QVBoxLayout,
                                QWidget)
 
-from dubber import models, settings
+from dubber import settings
 from dubber.appinfo import APP_DISPLAY_NAME, version_label
 from dubber.diag.runner import DiagnosticRunner, DiagOptions
 from dubber.i18n import tr
@@ -95,9 +95,6 @@ class SettingsDialog(QDialog):
         self.cmb_backend = _combo([("auto", tr("settings.auto")), ("standard/flash_attention_2", "FlashAttention 2"),
                                    ("graphs/sdpa", "CUDA Graphs"), ("standard/sdpa", "SDPA")], s["tts_backend"])
         self.cmb_device = _combo([("auto", tr("settings.auto")), ("cuda", "CUDA")], settings.device())
-        self.chk_download = QCheckBox(tr("settings.allow_download"))
-        self.chk_download.setIcon(suite_icon("download"))
-        self.chk_download.setChecked(bool(s["allow_download"]))
         for label, w in (("settings.subdl", self.edt_subdl), ("settings.os_key", self.edt_os_key), ("settings.os_user", self.edt_os_user),
                          ("settings.os_pass", self.edt_os_pass)):
             form.addRow(tr(label), w)
@@ -106,7 +103,6 @@ class SettingsDialog(QDialog):
                            ("settings.backend", self.cmb_backend), ("settings.device", self.cmb_device),
                            ("settings.vram_tier", self.cmb_tier)):
             form.addRow(tr(label), box)
-        form.addRow("", self.chk_download)
         lay.addLayout(form)
         hint = QLabel(tr("settings.hint"))
         hint.setObjectName("hint")
@@ -134,7 +130,7 @@ class SettingsDialog(QDialog):
                 "separation": self.cmb_sep.currentData(),
                 "diarization": self.cmb_diar.currentData(), "tts_model": self.cmb_tts.currentData(),
                 "tts_backend": self.cmb_backend.currentData(), "device": self.cmb_device.currentData(),
-                "allow_download": self.chk_download.isChecked(), "vram_tier": self.cmb_tier.currentData()}
+                "allow_download": False, "vram_tier": self.cmb_tier.currentData()}
 
     def accept(self) -> None:
         """Save the form and close the dialog."""
@@ -194,9 +190,6 @@ class DiagnosticsDialog(QDialog):
         self.lbl_desc = QLabel(tr("ui.diag_desc"))
         self.lbl_desc.setObjectName("fileLabel")
         self.lbl_desc.setWordWrap(True)
-        self.chk_download = QCheckBox()
-        self.chk_download.setIcon(suite_icon("download"))
-        self.chk_download.setChecked(True)
         self.chk_quick = QCheckBox(tr("ui.diag_quick"))
         self.btn_diag = QPushButton(tr("ui.btn_diag"))
         self.btn_diag.setObjectName("primary")
@@ -229,23 +222,15 @@ class DiagnosticsDialog(QDialog):
         foot = QLabel(tr("ui.footer"))
         foot.setObjectName("hint")
         foot.setWordWrap(True)
-        for w in (self.lbl_desc, self.chk_download, self.chk_quick, self.btn_diag, self.btn_cancel, self.progress, self.lbl_status, self.log):
+        for w in (self.lbl_desc, self.chk_quick, self.btn_diag, self.btn_cancel, self.progress, self.lbl_status, self.log):
             lay.addWidget(w)
         lay.addLayout(row)
         lay.addWidget(foot)
-        self._download_text()
-
-    def _download_text(self) -> None:
-        try:
-            gb = models.total_download_gb(["tts_1_7b", "asr", "sep", "mt_en_ru", "diar"])
-        except Exception:  # noqa: BLE001
-            gb = 8.0
-        self.chk_download.setText(tr("ui.diag_download", gb=gb) if gb > 0 else tr("ui.diag_download_none"))
 
     def build_options(self) -> DiagOptions:
         """Build the diagnostic options from this dialog."""
         s = settings.load()
-        opt = DiagOptions(allow_download=self.chk_download.isChecked(), quick=self.chk_quick.isChecked(), target_lang=self._target_lang(),
+        opt = DiagOptions(allow_download=False, quick=self.chk_quick.isChecked(), target_lang=self._target_lang(),
                           tts_model=str(s.get("tts_model") or "tts_1_7b"))
         if self._options_hook:
             self._options_hook(opt)
@@ -305,7 +290,6 @@ class DiagnosticsDialog(QDialog):
         self.lbl_status.setText(tr("ui.diag_cancelled" if cancelled else "ui.diag_done", path=path) + "\n" + counts)
         for b in (self.btn_open, self.btn_folder, self.btn_copy):
             b.show()
-        self._download_text()
 
     def _on_failed(self, error: str) -> None:
         self._finish_ui()

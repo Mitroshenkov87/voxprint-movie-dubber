@@ -72,9 +72,9 @@ def _looks_like_oom(exc: BaseException) -> bool:
 
 
 def _prepare_environment(args: Dict[str, Any]) -> None:
-    """Offline mode when downloads are not allowed. Model fetches are anonymous."""
-    if not args.get("allow_download", True):
-        os.environ["HF_HUB_OFFLINE"] = "1"
+    """Keep Hugging Face libraries offline. VOXPrint MDL is the only downloader."""
+    del args
+    os.environ["HF_HUB_OFFLINE"] = "1"
     os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))     # run from source: repo root importable
     _add_torch_dll_dirs()

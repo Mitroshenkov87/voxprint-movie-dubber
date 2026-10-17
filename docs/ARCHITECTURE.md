@@ -54,7 +54,7 @@ The thermal rule is also automatic. The job runs at full speed for the first 2.5
 
 ## Model store
 
-Weights live in one shared Voxprint models folder (the Audiobook Builder uses the same folder). Each model is a plain directory, not the Hugging Face cache. A download lands in a `.partial` directory and is renamed only after the size and SHA-256 checks in `model_manifest.json`. The installer records this program in `<models>/.users.json` and the folders it installed in `<models>/.installed.json`. Both files are updated under a lock and keep unknown keys and other programs' entries. Uninstall removes only folders this program recorded and solely owns. The models directory stays while another program's weights are inside it. Speaker diarization and embedding are optional: if they are missing, one-voice dubbing still starts and multi-voice stays off.
+Weights live in one shared Voxprint models folder (the Audiobook Builder uses the same folder). VOXPrint MDL downloads them from `mdl.json` into `blobs/<sha256>` and the app links a complete set into `<owner>--<name>`. The app does not download. The installer records this program in `<models>/.users.json` and the folders it installed in `<models>/.installed.json`. Both files are updated under a lock and keep unknown keys and other programs' entries. Uninstall removes only folders this program recorded and solely owns. The models directory itself is never a manifest ref and stays while another program's weights are inside it. Speaker diarization and embedding are optional: if they are missing, one-voice dubbing still starts and multi-voice stays off.
 
 ## `.vxdub`
 

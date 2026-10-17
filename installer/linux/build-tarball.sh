@@ -5,7 +5,7 @@ set -euo pipefail
 name="VoxprintMovieDubber-Linux-x86_64"
 stage="build/linux/$name"
 rm -rf build/linux && mkdir -p "$stage/linux" dist
-cp -a main.py dubber assets BUILD.json requirements.txt LICENSE NOTICE README.md "$stage/"
+cp -a main.py dubber assets BUILD.json requirements.txt LICENSE NOTICE README.md mdl.json "$stage/"
 [ -f build_info.json ] && cp build_info.json "$stage/"
 cp installer/runtime-constraints.txt "$stage/"
 cp installer/linux/install.sh installer/fetch_common_wheel.py "$stage/"

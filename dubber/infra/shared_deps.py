@@ -32,7 +32,14 @@ from dubber import paths
 from dubber.appinfo import resource_dir
 from dubber.i18n import tr
 from dubber.infra import model_guard
-from dubber.infra.components import APP_ID, OutsideShared, add_component, component_id_for, guard_cpu_onnxruntime
+from dubber.infra.components import (
+    APP_ID,
+    ManifestError,
+    OutsideShared,
+    add_component,
+    component_id_for,
+    guard_cpu_onnxruntime,
+)
 from dubber.infra.gpu_policy import (
     NVIDIA_DRIVER_URL,
     driver_branch,
@@ -248,7 +255,7 @@ def live_pieces(home: Path) -> List[Piece]:
         models_ok = True
         models_detail = "model download is skipped for this run"
     else:
-        missing = [key for key in model_registry.REQUIRED_MODELS if model_registry.locate(model_registry.SPECS[key].repo) is None]
+        missing = model_registry.missing_required()
         models_ok = not missing
         models_detail = "" if models_ok else "missing " + ", ".join(missing)
     ffmpeg_sha = sha256_file(ffmpeg) if ffmpeg.is_file() else None
@@ -444,23 +451,23 @@ def _extract_ffmpeg(archive: Path, dest: Path) -> None:
 
 
 def install_shared_models(progress: Progress) -> Path:
-    """Download the models the default pipeline needs. Partial downloads are kept and resumed."""
+    """Check the models the default pipeline needs. This does not download them.
+
+    A missing model is a repair error that names ``voxprint-mdl --gui --app movie-dubber``.
+    ``ensure_ready(app='movie-dubber')`` is not called, because that function downloads.
+    """
+    path = paths.models_dir()
     if model_fetch_skipped():
-        path = paths.models_dir()
         path.mkdir(parents=True, exist_ok=True)
         return path
-    folder = paths.models_dir()
-    for key in model_registry.INSTALL_MODELS:
-        spec = model_registry.SPECS[key]
-        progress(_event("models", "repairing", f"Checking model {key}"))
-        try:
-            model_registry.ensure(spec.repo, log=lambda message: progress(_event("models", "repairing", message)))
-        except Exception as exc:  # noqa: BLE001 - one message for the self-test, the store keeps the partial files
-            if key in model_registry.OPTIONAL_MODELS:
-                progress(_event("models", "warning", f"{key}: {exc}"))
-                continue
-            raise RepairError("models", f"{key}: {exc}") from exc
-    return folder
+    missing = model_registry.missing_required()
+    progress(_event("models", "repairing" if missing else "ok", "Checking models"))
+    if missing:
+        raise RepairError(
+            "models",
+            "missing " + ", ".join(missing) + ". Run: voxprint-mdl --gui --app movie-dubber",
+        )
+    return path
 
 
 def missing_optional_models() -> List[str]:
@@ -633,6 +640,12 @@ def _register(home: Path, piece: Piece) -> None:
             sha256=piece.sha256 or "",
         )
     except OutsideShared:
+        return
+    except ManifestError:
+        # Torch and CTranslate2 live in the runtime directory. voxprint-common 0.2.4
+        # refuses a second component on a path another component already uses.
+        if piece.id not in {"torch", "ctranslate2"}:
+            raise
         return
 
 

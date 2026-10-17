@@ -10,8 +10,8 @@
 ; While it installs, install-runtime.ps1 installs (or reuses) the shared runtime
 ; LOCALAPPDATA\Voxprint\shared\runtimes\py3.14-torch2.11-cu130 (Python 3.14, PyTorch 2.11.0+cu130,
 ; torchaudio, torchcodec, the CTranslate2 CUDA 12 libraries), the shared ffmpeg, and the shared models folder.
-; It links the runtime as the runtime sub-folder of the program folder. The AI models are downloaded as the last
-; step into LOCALAPPDATA\Voxprint\models (one copy for every Voxprint program). shared\manifest.json
+; It links the runtime as the runtime sub-folder of the program folder. VOXPrint MDL downloads the AI models
+; as the last step into LOCALAPPDATA\Voxprint\models (one copy for every Voxprint program). shared\manifest.json
 ; records which programs use each resource.
 ; Program folder: Program Files\VOXPrint AI Suite\Movie Dubber. Launchers: voxprint-movie-dubber.exe (window)
 ; and voxprint-movie-dubber-cli.exe (console, same entry point as the headless CLI).
@@ -248,6 +248,7 @@ Source: "{#PayloadDir}\ffmpeg\*"; DestDir: "{tmp}\payload\ffmpeg"; Flags: dontco
 #endif
 ; the program
 Source: "..\main.py"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\mdl.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "launchers\voxprint-movie-dubber.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "launchers\voxprint-movie-dubber-cli.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\BUILD.json"; DestDir: "{app}"; Flags: ignoreversion
@@ -441,9 +442,8 @@ begin
   RemoveDir(ExpandConstant('{app}\runtime'));
 end;
 
-{ The [Run] entry ignores a non-zero exit, so a partial model download used to look successful.
-  This step runs unless /SKIPMODELS=1, writes a report, and stops setup when a required model is missing.
-  The models task fetches anonymously. A Hugging Face token is not passed. }
+{ The models task runs voxprint-mdl (enqueue, then status --wait) unless SKIPMODELS is 1.
+  A Hugging Face token is cleared in the command file. The app does not download. }
 function SameDir(const A, B: String): Boolean;
 begin
   Result := CompareText(RemoveBackslash(A), RemoveBackslash(B)) = 0;
@@ -556,11 +556,19 @@ begin
   if not ShouldFetchModels then
     Exit;
   Report := ExpandConstant('{%TEMP}\VoxprintMovieDubber-models.txt');
-  Params := '"' + ExpandConstant('{app}\main.py') + '" --fetch-models --report "' + Report + '"';
-  Page := CreateOutputProgressPage('AI models', 'Downloading the AI models (this can take a while)...');
+  Params := ExpandConstant('{%TEMP}\VoxprintMovieDubber-mdl.cmd');
+  SaveStringToFile(Params,
+    '@echo off' + #13#10 +
+    'set HF_TOKEN=' + #13#10 +
+    'set HUGGINGFACE_HUB_TOKEN=' + #13#10 +
+    '"' + ExpandConstant('{#Py}') + '" -m voxprint_common.mdl enqueue --app movie-dubber --manifest "' + ExpandConstant('{app}\mdl.json') + '" > "' + Report + '" 2>&1' + #13#10 +
+    'if errorlevel 1 exit /b %errorlevel%' + #13#10 +
+    '"' + ExpandConstant('{#Py}') + '" -m voxprint_common.mdl --json status --wait --manifest "' + ExpandConstant('{app}\mdl.json') + '" >> "' + Report + '" 2>&1' + #13#10 +
+    'exit /b %errorlevel%' + #13#10, False);
+  Page := CreateOutputProgressPage('AI models', 'VOXPrint MDL is downloading the models for this computer...');
   Page.Show;
   try
-    if not Exec(ExpandConstant('{#Py}'), Params, ExpandConstant('{app}'), SW_SHOWNORMAL, ewWaitUntilTerminated, Rc) then
+    if not Exec(Params, '', ExpandConstant('{app}'), SW_SHOWNORMAL, ewWaitUntilTerminated, Rc) then
       Rc := -1;
   finally
     Page.Hide;
@@ -571,7 +579,7 @@ begin
   if Rc <> 0 then
   begin
     if Body = '' then
-      Body := 'The model download failed and wrote no report. Run the setup again, or download the models later from the program.';
+      Body := 'VOXPrint MDL failed and wrote no report. Run the setup again, or use Manage models in the program.';
     RaiseException(Body);
   end;
 end;

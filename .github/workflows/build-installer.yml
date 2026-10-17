@@ -227,8 +227,7 @@ jobs:
           $manifest = Get-Content "$shared\manifest.json" -Raw | ConvertFrom-Json
           if ($manifest.schema -ne 1) { throw "manifest schema is $($manifest.schema)" }
           $pyId = if ($flavor -eq "cpu") { "python-3.14-cpu" } else { "python-3.14" }
-          $torchId = if ($flavor -eq "cpu") { "torch-2.11.0-cpu" } else { "torch-2.11.0-cu130" }
-          foreach ($id in @($pyId, $torchId, "ctranslate2-cu12", "ffmpeg-8", "models")) {
+          foreach ($id in @($pyId, "ffmpeg-8")) {
             $row = $manifest.components.$id
             if (-not $row) { throw "manifest has no $id" }
             foreach ($field in @("kind", "version", "path", "sha256", "installed_at", "refs")) {
@@ -236,7 +235,10 @@ jobs:
             }
             if (@($row.refs) -notcontains "movie-dubber") { throw "$id is not referenced by movie-dubber" }
           }
-          if ($manifest.components.models.kind -ne "model") { throw "models component kind is $($manifest.components.models.kind)" }
+          foreach ($prop in $manifest.components.PSObject.Properties) {
+            $path = [string]$prop.Value.path
+            if ($path.TrimEnd('\','/') -match '[\\/]models$') { throw "the models directory must not be a component ($($prop.Name))" }
+          }
           "manifest components: " + (($manifest.components.PSObject.Properties.Name) -join ", ")
           & "$app\runtime\Scripts\python.exe" -c "import torch; print('torch', torch.__version__); assert torch.__version__.startswith('2.11.0')"
           if ($LASTEXITCODE -ne 0) { throw "the runtime does not have the pinned PyTorch 2.11.0" }
@@ -319,7 +321,13 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $env:VOXPRINT_DUBBER_HOME = "C:\vmd-data"
-          & "$env:VMD_APP\runtime\Scripts\python.exe" "$env:VMD_APP\main.py" --fetch-models --models sep
+          $py = "$env:VMD_APP\runtime\Scripts\python.exe"
+          $manifest = "$env:VMD_APP\mdl.json"
+          Remove-Item Env:HF_TOKEN -ErrorAction SilentlyContinue
+          Remove-Item Env:HUGGINGFACE_HUB_TOKEN -ErrorAction SilentlyContinue
+          & $py -m voxprint_common.mdl enqueue --app movie-dubber --manifest $manifest --model sep
+          if ($LASTEXITCODE -ne 0) { throw "MDL enqueue failed" }
+          & $py -m voxprint_common.mdl --json status --wait --manifest $manifest
           if ($LASTEXITCODE -ne 0) { throw "model download failed" }
 
       - name: Diagnostics on the runner (CPU, short run); the report is kept as an artifact

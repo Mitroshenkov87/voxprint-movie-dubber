@@ -1,6 +1,7 @@
 """Progress dialog for the shared-component check that runs before the window opens."""
 from __future__ import annotations
 
+import subprocess
 from typing import Any
 
 from PySide6.QtWidgets import QApplication, QProgressDialog
@@ -8,7 +9,6 @@ from PySide6.QtWidgets import QApplication, QProgressDialog
 from dubber import models as model_registry
 from dubber.appinfo import APP_DISPLAY_NAME
 from dubber.i18n import tr
-from dubber.infra.model_store import ModelUnavailable
 from dubber.infra.shared_deps import Report, live_selftest, missing_optional_models
 
 
@@ -27,9 +27,10 @@ def startup_repair_dialog(report: Report) -> tuple[str, str] | None:
 
 
 def fetch_optional_with_dialog() -> list[str]:
-    """Try the speaker models again and return the keys that are still missing.
+    """Ask VOXPrint MDL for the speaker models and return the keys still missing.
 
-    The dialog is not modal. A failure leaves the window open.
+    The dialog is not modal. A failure leaves the window open. This does not
+    download inside the process.
     """
     app = QApplication.instance()
     dialog = QProgressDialog("Checking multi-voice models...", "", 0, 0)
@@ -39,15 +40,16 @@ def fetch_optional_with_dialog() -> list[str]:
     dialog.setModal(False)
     dialog.show()
     try:
-        for key in model_registry.OPTIONAL_MODELS:
-            spec = model_registry.SPECS[key]
-            dialog.setLabelText(key)
-            if app is not None:
-                app.processEvents()
-            try:
-                model_registry.ensure(spec.repo)
-            except (ModelUnavailable, OSError):
-                continue
+        ids = [model_registry.mdl_id(key) for key in model_registry.OPTIONAL_MODELS]
+        env = model_registry.mdl_env()
+        dialog.setLabelText("voxprint-mdl enqueue --app movie-dubber")
+        if app is not None:
+            app.processEvents()
+        subprocess.run(model_registry.mdl_argv("enqueue", model_ids=ids), env=env, check=False)
+        dialog.setLabelText("voxprint-mdl status --wait")
+        if app is not None:
+            app.processEvents()
+        subprocess.run(model_registry.mdl_argv("status", "--wait"), env=env, check=False)
     finally:
         dialog.close()
     return missing_optional_models()
@@ -70,6 +72,8 @@ def ensure_with_dialog() -> Report:
 
     def progress(event: dict[str, Any]) -> None:
         nonlocal shown
+        if str(event.get("resource") or "") == "models":
+            return
         status = str(event.get("status") or "")
         message = str(event.get("message") or "Checking shared components...")
         if status in {"repairing", "failed"} or shown:

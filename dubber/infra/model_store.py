@@ -1,52 +1,52 @@
-"""Shared model store: one plain folder per model, a per-model OS lock while downloading, SHA-256 manifests, a users file.
+"""Shared model store: locate a model that VOXPrint MDL has already fetched.
 
-Spec agreed with Voxprint AI Audiobook Builder (its ``infra/model_downloader.py`` ``ModelLock`` / ``sweep_stale_locks`` are copied
-here); change locations only in :mod:`dubber.paths`.
+Downloads belong to ``voxprint-mdl``. This module does not fetch, verify-by-redownload,
+or call ensure_ready. That helper downloads inside the process, so the app never calls it.
 
-* Layout: ``<models>/<owner>--<name>/`` - plain files, not the Hugging Face cache.  A download goes into ``<name>.partial`` (kept
-  between runs, so the next run resumes) and is renamed after the check; a half-downloaded model is never used.
-* Lock: empty file ``<models>/.<owner>--<name>.lock``, ``msvcrt.locking(LK_NBLCK, 1 byte)`` / ``fcntl.flock(LOCK_EX|LOCK_NB)``,
-  held for the whole download and removed after it.  :func:`sweep_stale_locks` deletes unheld leftovers.
-* Manifest: ``model_manifest.json`` next to this file: pinned revision + size + SHA-256 per file.  A model without a manifest entry
-  is checked structurally (weights, and a config file unless the model is checkpoint-only).
-* Users: ``<models>/.users.json`` ``{"audiobook-builder": true, "movie-dubber": true}`` - the installer adds our key.
-  Unknown keys and other programs' entries are kept. Who may delete a model folder is the install ledger plus that
-  file: a folder goes only when this app recorded it and no other program still uses the store. The models directory
-  itself stays while another program's weights are inside it.
-* Watchdog: while a download runs, the size of the ``.partial`` folder is reported every few seconds; no progress for
-  ``STALL_SECONDS`` gives up the attempt (the data stays and the next attempt resumes).
+* Layout: ``<models>/<owner>--<name>/`` holds the files an engine opens. MDL stores
+  the bytes at ``<models>/blobs/<sha256>``. :func:`link_blobs` hardlinks (then
+  symlinks, then copies) those blobs into the named folder.
+* Manifest: ``mdl.json`` at the repository root. :func:`load_manifest` turns it
+  back into ``{repo: {revision, license, files}}``.
+* Users: ``<models>/.users.json``. The installer adds ``movie-dubber``. Unknown keys and
+  other programs' entries stay. A folder is deleted only when this app recorded it and
+  no other program still uses the store. The models directory itself is not a manifest ref.
+* :class:`ModelLock` is the voice-library lock. It is not a model download.
 """
 from __future__ import annotations
 
+import fnmatch
 import json
-import logging
 import os
+import re
+import shutil
 import sys
-import threading
 import time
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+
+try:
+    import fcntl
+except ImportError:  # Windows
+    fcntl = None  # type: ignore[assignment]
+try:
+    import msvcrt
+except ImportError:  # Linux and macOS
+    msvcrt = None  # type: ignore[assignment]
 
 from dubber import paths
 from dubber.infra import model_guard
 from voxprint_common.hashing import sha256_file as file_digest
 
-log = logging.getLogger("dubber.models")
-
 USER_KEY = "movie-dubber"
 USERS_FILE = ".users.json"
-MANIFEST_PATH = Path(__file__).with_name("model_manifest.json")
-STALL_SECONDS = 180.0
-WATCH_INTERVAL = 5.0
+MANIFEST_PATH = Path(__file__).resolve().parents[2] / "mdl.json"
 DEFAULT_WEIGHTS = ("*.safetensors", "*.bin")
 CONFIG_NAMES = ("config.json", "config.yaml", "params.json")
-DOWNLOAD_ATTEMPTS = 4
-RETRY_BACKOFF_S = (1.0, 2.0, 4.0)
 
 
 class ModelUnavailable(RuntimeError):
-    """The model is missing and cannot be fetched (downloads off, gated, network error, stalled)."""
+    """The model is not on disk. VOXPrint MDL is what fetches it."""
 
 
 def models_root() -> Path:
@@ -61,7 +61,7 @@ def folder_name(repo: str) -> str:
 
 def local_dir_for(repo: str, root: Optional[Path] = None, weights: Sequence[str] = DEFAULT_WEIGHTS,
                   require_config: bool = True) -> Path:
-    """``Qwen/X`` -> ``<models>/Qwen--X``; with a user-chosen folder a model complete only in the default folder is used there."""
+    """``Qwen/X`` -> ``<models>/Qwen--X``; a model complete only in the default folder is used from there."""
     name = folder_name(repo)
     if root is not None:
         return Path(root) / name
@@ -84,19 +84,47 @@ def verify_structure(path: Path, weights: Sequence[str] = DEFAULT_WEIGHTS, requi
     return any((path / n).exists() for n in CONFIG_NAMES)
 
 
-# ---------------------------------------------------------------------------------------------- manifest (size + SHA-256)
 def load_manifest(path: Optional[Path] = None) -> Dict[str, Any]:
-    """Load pinned models from ``model_manifest.json``, or return an empty dict when the file is missing, unreadable, or not schema 1."""
+    """Load pinned models as ``{repo: {revision, license, files}}``.
+
+    ``mdl.json`` (schema 1) is the file on disk. A document whose ``models`` value is
+    already that dict is returned unchanged. An unreadable file or another schema
+    yields an empty dict.
+    """
     try:
         data = json.loads(Path(path or MANIFEST_PATH).read_text(encoding="utf-8"))
-        return data.get("models", {}) if isinstance(data, dict) and data.get("schema") == 1 else {}
     except (OSError, ValueError):
         return {}
+    if not isinstance(data, dict) or data.get("schema") != 1:
+        return {}
+    models = data.get("models", {})
+    if isinstance(models, dict):
+        return models
+    if not isinstance(models, list):
+        return {}
+    out: Dict[str, Any] = {}
+    for row in models:
+        if not isinstance(row, dict):
+            continue
+        repo = row.get("repo")
+        if not isinstance(repo, str) or not repo:
+            continue
+        files: Dict[str, Dict[str, Any]] = {}
+        for item in row.get("files") or []:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("path")
+            if not isinstance(name, str) or not name:
+                continue
+            files[name] = {"size": int(item["size"]), "sha256": str(item["sha256"])}
+        out[repo] = {"revision": row.get("version") or row.get("revision"), "license": row.get("license"), "files": files}
+    return out
 
 
 def pinned_revision(repo: str) -> Optional[str]:
     """Return the pinned revision for ``repo``, or None when the manifest has no entry."""
-    return (load_manifest().get(repo) or {}).get("revision")
+    revision = (load_manifest().get(repo) or {}).get("revision")
+    return str(revision) if revision else None
 
 
 def sha256_file(path: Path, bufsize: int = 1 << 20) -> str:
@@ -111,9 +139,7 @@ def _checked(name: str) -> bool:
 
 def manifest_bad_files(folder: Path, repo: str, patterns: Optional[Iterable[str]] = None, manifest: Optional[Dict[str, Any]] = None,
                        full_hash: bool = True) -> Optional[List[str]]:
-    """Missing / wrong files of ``folder`` against the manifest (size first, then SHA-256); None = no manifest entry."""
-    import fnmatch
-
+    """Missing or wrong files of ``folder`` against the manifest (size first, then SHA-256). None means no entry."""
     entry = (manifest if manifest is not None else load_manifest()).get(repo)
     if not entry:
         return None
@@ -134,7 +160,7 @@ def manifest_bad_files(folder: Path, repo: str, patterns: Optional[Iterable[str]
 
 
 def write_verified_marker(folder: Path, repo: str) -> None:
-    """``.verified`` = the hashes were checked once (later starts only compare sizes, hashing 4 GB on every start is slow)."""
+    """``.verified`` records that the hashes were checked, so later starts only compare sizes."""
     try:
         (Path(folder) / ".verified").write_text(json.dumps({"repo": repo, "revision": pinned_revision(repo), "at": time.time()}),
                                                 encoding="utf-8")
@@ -144,16 +170,110 @@ def write_verified_marker(folder: Path, repo: str) -> None:
 
 def is_ready(folder: Path, repo: str, weights: Sequence[str] = DEFAULT_WEIGHTS, patterns: Optional[Iterable[str]] = None,
              require_config: bool = True) -> bool:
-    """Return whether the folder has the expected weights and matches the manifest, hashing files only when ``.verified`` is absent."""
+    """Return whether the folder has the expected weights and matches the manifest.
+
+    Files are hashed only when ``.verified`` is absent. A blob MDL stored under its
+    SHA-256 name is treated as already checked once :func:`link_blobs` writes the marker.
+    """
     if not verify_structure(folder, weights, require_config):
         return False
     bad = manifest_bad_files(folder, repo, patterns, full_hash=not (folder / ".verified").exists())
     return not bad
 
 
-# ---------------------------------------------------------------------------------------------- one download per model (copied)
+def folder_bytes(path: Path) -> int:
+    """Return the total size in bytes of the files under ``path``."""
+    total = 0
+    for base, _dirs, files in os.walk(path):
+        for name in files:
+            try:
+                total += os.path.getsize(os.path.join(base, name))
+            except OSError:
+                pass
+    return total
+
+
+def _blob_roots(root: Path) -> List[Path]:
+    found: List[Path] = []
+    for base in (root, paths.default_models_dir()):
+        blob = base / "blobs"
+        if blob not in found:
+            found.append(blob)
+    return found
+
+
+def _place(src: Path, dest: Path) -> None:
+    """Put ``src`` at ``dest``: hardlink, then symlink, then copy."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.link(src, dest)
+        return
+    except OSError:
+        pass
+    try:
+        os.symlink(src, dest)
+        return
+    except OSError:
+        pass
+    shutil.copy2(src, dest)
+
+
+def link_blobs(repo: str, weights: Sequence[str] = DEFAULT_WEIGHTS, patterns: Optional[Iterable[str]] = None,
+               require_config: bool = True, root: Optional[Path] = None) -> Optional[Path]:
+    """Link MDL blobs for ``repo`` into ``<models>/owner--name`` when every file is present.
+
+    A size match against the manifest is enough. The blob file name is the SHA-256,
+    which MDL checked when it stored the file. Nothing is downloaded.
+    """
+    entry = load_manifest().get(repo)
+    if not entry:
+        return None
+    target_root = Path(root) if root is not None else models_root()
+    target = target_root / folder_name(repo)
+    pats = list(patterns or [])
+    needed: List[Tuple[str, int, str]] = []
+    for name, meta in entry.get("files", {}).items():
+        if not _checked(name) or (pats and not any(fnmatch.fnmatch(name, p) for p in pats)):
+            continue
+        digest = str(meta.get("sha256") or "")
+        if ".." in name.split("/") or re.fullmatch(r"[0-9a-fA-F]{64}", digest) is None:
+            return None
+        needed.append((name, int(meta["size"]), digest))
+    if not needed:
+        return None
+    sources: List[Tuple[str, Path]] = []
+    for name, size, digest in needed:
+        found: Optional[Path] = None
+        for blob_root in _blob_roots(target_root):
+            candidate = blob_root / digest
+            try:
+                if candidate.is_file() and candidate.stat().st_size == size:
+                    found = candidate
+                    break
+            except OSError:
+                continue
+        if found is None:
+            return None
+        sources.append((name, found))
+    for name, src in sources:
+        dest = target / Path(*name.split("/"))
+        try:
+            if dest.is_file() and dest.stat().st_size == src.stat().st_size:
+                continue
+            if dest.exists():
+                return None
+        except OSError:
+            return None
+        _place(src, dest)
+    write_verified_marker(target, repo)
+    if is_ready(target, repo, weights, patterns, require_config):
+        return target
+    return None
+
+
+# ---------------------------------------------------------------------------------------------- voice-library lock
 class ModelLock:
-    """Cross-process lock for one model folder (an OS file lock: it disappears with a crashed process, so it is never stale)."""
+    """Cross-process lock (an OS file lock). The voice library uses it; model downloads do not."""
 
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
@@ -166,19 +286,20 @@ class ModelLock:
             try:
                 fh = open(self.path, "a+b")
             except OSError:
-                # Windows: a lock file held by another thread of this process raises PermissionError on open - it is taken.
                 continue
             try:
                 if sys.platform == "win32":
-                    import msvcrt
-
+                    if msvcrt is None:
+                        fh.close()
+                        return False
                     fh.seek(0)
                     msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
                 else:
-                    import fcntl
-
+                    if fcntl is None:
+                        fh.close()
+                        return False
                     fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    st = os.fstat(fh.fileno())        # the previous holder may have unlinked the file right after release
+                    st = os.fstat(fh.fileno())
                     try:
                         cur = os.stat(self.path)
                         same = (cur.st_ino, cur.st_dev) == (st.st_ino, st.st_dev)
@@ -211,13 +332,10 @@ class ModelLock:
                 pass
         try:
             if sys.platform == "win32":
-                import msvcrt
-
-                fh.seek(0)
-                msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                import fcntl
-
+                if msvcrt is not None:
+                    fh.seek(0)
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+            elif fcntl is not None:
                 fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
         except OSError:
             pass
@@ -226,52 +344,11 @@ class ModelLock:
         if remove and os.name == "nt":
             try:
                 self.path.unlink()
-            except OSError:                    # PermissionError: another process opened it meanwhile (it waits for the model)
+            except OSError:
                 pass
 
-    def acquire(self, on_wait: Callable[[float], None] = lambda s: None, poll: float = 0.5, timeout: Optional[float] = None) -> None:
-        """Wait until this instance holds the per-model file lock. Raises TimeoutError when another process still holds it after ``timeout`` seconds."""
-        t0 = time.monotonic()
-        while not self.try_acquire():
-            waited = time.monotonic() - t0
-            if timeout is not None and waited > timeout:
-                raise TimeoutError(f"{self.path.name} is held by another process")
-            on_wait(waited)
-            time.sleep(poll)
 
-
-def lock_path(repo: str, root: Optional[Path] = None) -> Path:
-    """Return ``<models>/.<owner>--<name>.lock`` for ``repo``."""
-    return (Path(root) if root else models_root()) / f".{folder_name(repo)}.lock"
-
-
-def sweep_stale_locks(root: Optional[Path] = None) -> int:
-    """Delete the empty ``.<model>.lock`` files no process holds (a crash leftover).  Held locks and non-empty files are kept."""
-    folder = Path(root) if root is not None else models_root()
-    try:
-        candidates = [p for p in folder.glob(".*.lock") if p.is_file()]
-    except OSError:
-        return 0
-    removed = 0
-    for p in candidates:
-        try:
-            if p.stat().st_size:
-                continue
-        except OSError:
-            continue
-        lock = ModelLock(p)
-        try:
-            if not lock.try_acquire():
-                continue
-        except PermissionError:
-            continue
-        lock.release(remove=True)
-        if not p.exists():
-            removed += 1
-    return removed
-
-
-# ---------------------------------------------------------------------------------------------- users (reference count)
+# ---------------------------------------------------------------------------------------------- users
 def _users_path(root: Optional[Path] = None) -> Path:
     return (Path(root) if root else models_root()) / USERS_FILE
 
@@ -306,150 +383,3 @@ def unregister_user(key: str = USER_KEY, root: Optional[Path] = None) -> List[st
     base = Path(root) if root is not None else models_root()
     document = model_guard.update_users(base, lambda current: model_guard.without_user(current, key))
     return [name for name in model_guard.active_users(document) if name != key]
-
-
-# ---------------------------------------------------------------------------------------------- download
-def _dir_size(p: Path) -> int:
-    total = 0
-    for base, _dirs, files in os.walk(p):
-        for f in files:
-            try:
-                total += os.path.getsize(os.path.join(base, f))
-            except OSError:
-                pass
-    return total
-
-
-@dataclass
-class EnsureInfo:
-    """Folder of a complete model, whether it was already present or just downloaded, and the download time in seconds."""
-    path: Path
-    source: str                 # "present" | "downloaded"
-    download_s: float = 0.0
-
-
-Downloader = Callable[[str, Path, Optional[str], Optional[List[str]], Optional[str]], None]
-
-
-def hf_download(repo: str, dest: Path, revision: Optional[str], patterns: Optional[List[str]], token: Optional[str]) -> None:
-    """Plain files into ``dest`` (``huggingface_hub`` resumes partial files that are already there).
-
-    TODO: fetching moves to voxprint-mdl later. Until then the download is anonymous:
-    ``token`` is ignored and ``token=False`` is sent, so a Hugging Face token in the environment is not used.
-    """
-    del token
-    # Optional at import time: a partial install has no huggingface_hub yet.
-    from huggingface_hub import snapshot_download
-
-    kw: Dict[str, Any] = dict(repo_id=repo, local_dir=str(dest), token=False)
-    if revision:
-        kw["revision"] = revision
-    if patterns:
-        kw["allow_patterns"] = list(patterns)
-    snapshot_download(**kw)
-
-
-def _watched(func: Callable[[], None], part: Path, size_gb: float, log_fn: Callable[[str], None], repo: str,
-             stall_s: float) -> None:
-    """Run ``func`` in a thread; report progress; give up when the folder does not grow for ``stall_s`` seconds."""
-    err: List[BaseException] = []
-    done = threading.Event()
-
-    def target() -> None:
-        try:
-            func()
-        except BaseException as exc:  # noqa: BLE001
-            err.append(exc)
-        finally:
-            done.set()
-
-    threading.Thread(target=target, daemon=True, name=f"download-{repo}").start()
-    last_size, last_change = -1, time.monotonic()
-    while not done.wait(WATCH_INTERVAL):
-        size = _dir_size(part)
-        if size != last_size:
-            last_size, last_change = size, time.monotonic()
-        log_fn(f"downloading {repo}: {size / 1024 ** 3:.2f}" + (f" / ~{size_gb:.1f}" if size_gb else "") + " GB")
-        if time.monotonic() - last_change > stall_s:
-            raise ModelUnavailable(f"download of {repo} stalled (no data for {stall_s:.0f} s); run it again to resume")
-    if err:
-        raise err[0]
-
-
-def _transient_download_error(exc: BaseException) -> bool:
-    """True for a DNS or CDN blip that is worth retrying. A stall or a checksum error is not.
-
-    ``getaddrinfo`` failures showed up on the first 4090 install and aborted the model fetch.
-    """
-    if isinstance(exc, ModelUnavailable):
-        return False
-    text = " ".join(str(exc).split()).lower()
-    name = type(exc).__name__.lower()
-    markers = ("getaddrinfo", "name or service not known", "temporary failure in name resolution",
-               "nodename nor servname", "connection reset", "connection aborted", "timed out",
-               "timeout", "429", "502", "503", "504")
-    if any(marker in text or marker in name for marker in markers):
-        return True
-    return isinstance(exc, (ConnectionError, TimeoutError))
-
-
-def ensure_model(repo: str, *, allow_download: bool = True, token: Optional[str] = None, patterns: Optional[Sequence[str]] = None,
-                 weights: Sequence[str] = DEFAULT_WEIGHTS, gated: bool = False, size_gb: float = 0.0,
-                 log_fn: Callable[[str], None] = lambda m: None, downloader: Optional[Downloader] = None,
-                 root: Optional[Path] = None, stall_s: float = STALL_SECONDS, require_config: bool = True) -> EnsureInfo:
-    """Return the folder of a complete model, downloading it (under the per-model lock) when allowed."""
-    target = local_dir_for(repo, root, weights, require_config)
-    if is_ready(target, repo, weights, patterns, require_config):
-        return EnsureInfo(target, "present")
-    if not allow_download:
-        raise ModelUnavailable(f"{repo} is not on this computer and downloading is switched off")
-    # Anonymous on purpose. HF_TOKEN and HUGGINGFACE_HUB_TOKEN are not read.
-    if gated and not token:
-        raise ModelUnavailable(f"{repo} is a gated model and cannot be fetched anonymously")
-    target = (Path(root) if root else models_root()) / folder_name(repo)
-    lock = ModelLock(lock_path(repo, target.parent))
-    lock.acquire(lambda s: log_fn(f"waiting for another program downloading {repo} ({s:.0f} s)") if int(s) % 10 == 0 else None)
-    done = False
-    try:
-        if is_ready(target, repo, weights, patterns, require_config):            # the other process finished it meanwhile
-            done = True
-            return EnsureInfo(target, "present")
-        part = target.with_name(target.name + ".partial")
-        part.mkdir(parents=True, exist_ok=True)
-        dl = downloader or hf_download
-        t0 = time.time()
-        for attempt in range(DOWNLOAD_ATTEMPTS):
-            try:
-                _watched(lambda: dl(repo, part, pinned_revision(repo), list(patterns) if patterns else None, None), part, size_gb,
-                         log_fn, repo, stall_s)
-                break
-            except ModelUnavailable:
-                raise
-            except Exception as exc:  # noqa: BLE001
-                if attempt + 1 >= DOWNLOAD_ATTEMPTS or not _transient_download_error(exc):
-                    raise ModelUnavailable(
-                        f"download of {repo} failed: {type(exc).__name__}: {' '.join(str(exc).split())[:200]}") from exc
-                wait = RETRY_BACKOFF_S[min(attempt, len(RETRY_BACKOFF_S) - 1)]
-                log_fn(f"download of {repo} hit a network error ({type(exc).__name__}); retrying in {wait:.0f} s")
-                time.sleep(wait)
-        log_fn(f"verifying {repo} (checksums)")
-        if not verify_structure(part, weights, require_config):
-            raise ModelUnavailable(f"{repo}: the download finished but the folder looks incomplete ({part})")
-        bad = manifest_bad_files(part, repo, patterns)
-        if bad:
-            for name in bad:                                     # broken files go; the next run downloads them again
-                (part / name).unlink(missing_ok=True)
-            raise ModelUnavailable(f"{repo}: checksum mismatch in {', '.join(bad[:4])}; run again to re-download them")
-        if bad is not None:
-            write_verified_marker(part, repo)
-        # The download above moves to voxprint-mdl. That caller must still publish through this hook.
-        try:
-            model_guard.publish_download(part, target)
-        except OSError as exc:
-            raise ModelUnavailable(f"{repo}: could not rename {part.name} ({exc})") from exc
-        done = True
-        return EnsureInfo(target, "downloaded", round(time.time() - t0, 1))
-    finally:
-        lock.release(remove=True)
-        if not done:
-            log.info("model %s not finished; the .partial folder is kept for resuming", repo)

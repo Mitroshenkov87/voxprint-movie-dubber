@@ -21,7 +21,7 @@ from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtWidgets import (QApplication, QFileDialog, QHBoxLayout, QLabel, QMenu, QMessageBox, QPushButton, QStackedWidget,
                                QVBoxLayout, QWidget)
 
-from dubber import i18n, paths, platform_win, settings
+from dubber import i18n, models, paths, platform_win, settings
 from dubber.appinfo import APP_DISPLAY_NAME, resource_dir, version_label
 from dubber.core import audio, media, review, voices, vxdub
 from dubber.core.project import Project, Voice
@@ -86,6 +86,7 @@ class MainWindow(QWidget):
         self.retranslate()
         self._update_steps()
         self._fit()
+        QTimer.singleShot(0, self._refresh_model_notice)
         if autorun:
             QTimer.singleShot(500, lambda: self.open_diagnostics(True))
 
@@ -122,6 +123,16 @@ class MainWindow(QWidget):
         self.lbl_tagline.setObjectName("subtitle")
         self.lbl_tagline.setWordWrap(True)
         body.addWidget(self.lbl_tagline)
+        notice = QHBoxLayout()
+        self.lbl_models = QLabel()
+        self.lbl_models.setWordWrap(True)
+        self.lbl_models.hide()
+        self.btn_models = QPushButton()
+        self.btn_models.clicked.connect(self.manage_models)
+        self.btn_models.hide()
+        notice.addWidget(self.lbl_models, 1)
+        notice.addWidget(self.btn_models)
+        body.addLayout(notice)
         optional = QHBoxLayout()
         self.lbl_optional = QLabel()
         self.lbl_optional.setObjectName("subtitle")
@@ -208,6 +219,7 @@ class MainWindow(QWidget):
         if icon.is_file():
             self.setWindowIcon(QIcon(str(icon)))
         self.lbl_tagline.setText(tr("ui.tagline"))
+        self._refresh_model_notice()
         self._refresh_optional_banner()
         self.btn_file.setText(tr("vxdub.file"))
         self.act_open.setText(tr("vxdub.open"))
@@ -222,6 +234,30 @@ class MainWindow(QWidget):
         self._update_steps()
         self._refresh_plan()
         self.lbl_footer.setText(f"{tr('ui.footer_main')}  ·  {version_label()}")
+
+    def _refresh_model_notice(self) -> None:
+        """Show a non-modal notice when a required model is not on disk. This does not download."""
+        try:
+            missing = models.missing_required()
+        except Exception:  # noqa: BLE001 - the window must open even when the inventory cannot be read
+            missing = []
+        show = bool(missing)
+        self.lbl_models.setVisible(show)
+        self.btn_models.setVisible(show)
+        if show:
+            self.lbl_models.setText(tr("models.notice"))
+            self.btn_models.setText(tr("models.manage"))
+
+    def manage_models(self) -> None:
+        """Open the VOXPrint MDL window for this app."""
+        try:
+            models.launch_mdl()
+        except OSError:
+            QMessageBox.warning(
+                self,
+                tr("models.manage"),
+                tr("models.gui_failed", command="voxprint-mdl --gui --app movie-dubber"),
+            )
 
     def _language_menu(self) -> None:
         menu = QMenu(self)

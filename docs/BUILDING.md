@@ -26,7 +26,7 @@ index, so the pin follows the newest official pair: torch 2.11.0+cu130 and torch
 `%LOCALAPPDATA%\Voxprint\shared\runtimes\py3.14-torch2.11-cu130` (see [SHARED-RESOURCES.md](SHARED-RESOURCES.md)). A folder
 for that version is reused. A different Python or torch line gets its own directory, and a shared runtime is never upgraded
 in place. `<install folder>\runtime` is a junction to its `env`. `shared\manifest.json` counts the programs using each
-resource. The last setup step downloads the AI models (`main.py --fetch-models`) into `shared\models`. `/SKIPMODELS=1`
+resource. The last setup step asks VOXPrint MDL (`voxprint-mdl enqueue`, then `status --wait`) to download the AI models into the shared models folder. `/SKIPMODELS=1`
 skips that download and is only for CI.
 
 ## Full (offline) installer
