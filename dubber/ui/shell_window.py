@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 from PySide6.QtCore import QEvent, QObject, QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QDropEvent
 from PySide6.QtWidgets import QFileDialog, QPushButton, QVBoxLayout, QWidget
 
 from dubber import i18n, paths, settings
@@ -65,20 +65,20 @@ class _VideoPick(QObject):
         if kind == QEvent.Type.MouseButtonRelease:
             self._owner.browse()
             return True
-        if kind == QEvent.Type.DragEnter:
-            mime = event.mimeData()  # type: ignore[attr-defined]
-            if mime.hasUrls():
-                event.acceptProposedAction()  # type: ignore[attr-defined]
-                return True
-            return False
-        if kind == QEvent.Type.Drop:
-            urls = event.mimeData().urls()  # type: ignore[attr-defined]
+        if kind == QEvent.Type.DragEnter or kind == QEvent.Type.Drop:
+            dropped = cast(QDropEvent, event)
+            if kind == QEvent.Type.DragEnter:
+                if dropped.mimeData().hasUrls():
+                    dropped.acceptProposedAction()
+                    return True
+                return False
+            urls = dropped.mimeData().urls()
             if not urls:
                 return False
             path = urls[0].toLocalFile()
             if path:
                 self._owner.set_video(Path(path))
-            event.acceptProposedAction()  # type: ignore[attr-defined]
+            dropped.acceptProposedAction()
             return True
         return False
 

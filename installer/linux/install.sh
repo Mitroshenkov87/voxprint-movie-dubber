@@ -124,6 +124,10 @@ else
   DATA_HOME="$USER_HOME/.local/share"
 fi
 VX_HOME="$DATA_HOME/voxprint"
+# The provisional voxprint-common pin moves a legacy suite directory to
+# voxprint-ai-suite on the first import. The runtime this script creates
+# stays under the legacy directory, so pin the home for every child process.
+export VOXPRINT_HOME="$VX_HOME"
 SHARED="$VX_HOME/shared"
 RT="$SHARED/runtimes/$RUNTIME_VERSION"
 ENV_DIR="$RT/env"
@@ -153,6 +157,7 @@ as_user() {
       USER="$TARGET_USER" \
       LOGNAME="$TARGET_USER" \
       PATH="$PATH" \
+      VOXPRINT_HOME="$VX_HOME" \
       PYTHONUTF8=1 \
       UV_PYTHON_INSTALL_DIR="$RT/python" \
       UV_PYTHON_PREFERENCE=only-managed \
@@ -255,6 +260,7 @@ write_launcher() {
 APP="$APP_DIR"
 DATA="\${XDG_DATA_HOME:-\$HOME/.local/share}"
 PY="\$DATA/voxprint/shared/runtimes/$RUNTIME_VERSION/env/bin/python"
+export VOXPRINT_HOME="\$DATA/voxprint"
 if [ ! -x "\$PY" ]; then
   echo "$DISPLAY_NAME could not find the shared Python runtime: \$PY" >&2
   exit 1
