@@ -143,10 +143,20 @@ def resolve_role(role: str) -> str:
 
 
 def model_label_key(model_id: str) -> str:
-    """Return the catalog key for a registry id. ``off`` is not a model."""
+    """Return the visible name for a registry id.
+
+    ``off`` is a catalog key. A model uses the plain ``display_name`` from
+    ``mdl.json``. The placeholder role table stays in code, not in this name.
+
+    Args:
+        model_id: A registry id, or ``off``.
+    """
     if model_id == "off":
         return "model.off"
-    return "model." + model_id.replace("-", "_")
+    for found_id, title in registry_entries():
+        if found_id == model_id and title:
+            return title
+    return model_id
 
 
 def dub_settings() -> Settings:
@@ -419,6 +429,7 @@ def dub_presets(settings: Settings | None = None) -> PresetFile:
         (
             _option("keep", "shell.voice.keep", _voice("actor", 50, False)),
             _option("neutral", "shell.voice.neutral", _voice("neutral", 0, False)),
+            _option("pick", "shell.voice.custom", _voice("actor", 50, True)),
         ),
         "keep",
     )

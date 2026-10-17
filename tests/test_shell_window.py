@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtWidgets import QApplication, QPushButton, QSpinBox, QWidget
+from PySide6.QtWidgets import QApplication, QComboBox, QPushButton, QSpinBox, QWidget
 
 from dubber import i18n
 from dubber.ui.shell_window import ShellWindow
@@ -73,11 +73,13 @@ def test_russian_catalog_names_the_dub_button(tmp_path, monkeypatch):
     neutral = window.view.root.findChild(QPushButton, "chip-voices-neutral")
     best = window.view.root.findChild(QPushButton, "chip-quality-best")
     expert = window.view.root.findChild(QPushButton, "expertToggle")
-    assert balanced is not None and balanced.text() == "Баланс"
-    assert best is not None and best.text() == "Лучшее"
-    assert keep is not None and keep.text() == "Голоса актёров"
-    assert neutral is not None and neutral.text() == "Нейтральные"
-    assert expert is not None and expert.text() == "Эксперт"
+    assert balanced is not None and balanced.text() == "Сбалансированно"
+    assert best is not None and best.text() == "Лучшее качество"
+    assert keep is not None and keep.text() == "Оставить голоса актёров"
+    assert neutral is not None and neutral.text() == "Нейтральные голоса"
+    assert expert is not None and expert.text() == "Режим эксперта"
+    custom = window.view.root.findChild(QPushButton, "chip-voices-pick")
+    assert custom is not None and custom.text() == "Свой выбор"
     drop = window.view.root.findChild(QWidget, "fileDrop")
     assert drop is not None and "видео" in drop.text().lower()
     window.close()
@@ -107,6 +109,67 @@ def test_review_wizard_keeps_characters_lines_and_the_player(tmp_path, monkeypat
     note = window.view.root.findChild(QWidget, "simpleNote")
     assert note is not None and "Prepare the film first" in note.text()
     wizard.close()
+    window.close()
+
+
+def test_empty_history_strip_is_hidden_and_video_region_is_only_a_hook(tmp_path, monkeypatch):
+    window = _window(tmp_path, monkeypatch, "en")
+    window.show()
+    QApplication.processEvents()
+    strip = window.view.root.findChild(QWidget, "historyStrip")
+    assert strip is not None and not strip.isVisible() and strip.height() == 0
+    assert window._video_result is None
+    window.close()
+
+
+def test_custom_voices_wait_until_prepare_then_save_a_library_voice(tmp_path, monkeypatch):
+    from dubber.core.project import Line, Project, Speaker, Voice
+
+    window = _window(tmp_path, monkeypatch, "ru")
+    window.show()
+    QApplication.processEvents()
+    assert window.shell.get("dub.multi_voice") is False
+    dialog = window._open_voice_cast()
+    QApplication.processEvents()
+    assert window.shell.get("dub.multi_voice") is True
+    wait = dialog.findChild(QWidget, "voiceCastWait")
+    prepare = dialog.findChild(QPushButton, "voiceCastPrepare")
+    assert wait is not None and wait.text() == "Голоса можно назначить после подготовки"
+    assert prepare is not None and prepare.isVisible()
+    folder = tmp_path / "proj"
+    source = tmp_path / "film.mkv"
+    source.write_bytes(b"x")
+    for folder_name, title in (("maria", "Maria"), ("ivan", "Ivan")):
+        voice_dir = tmp_path / "home" / "voices" / folder_name
+        voice_dir.mkdir(parents=True)
+        (voice_dir / "adapter_model.safetensors").write_bytes(b"x")
+        (voice_dir / "adapter_config.json").write_text("{}", encoding="utf-8")
+        (voice_dir / "voice.json").write_text(
+            '{"name": "%s", "language": "ru"}' % title,
+            encoding="utf-8",
+        )
+    project = Project.create(folder, source)
+    project.speakers = [Speaker("S1", "Анна", voice=Voice("library", "maria"), seconds=4)]
+    project.lines = [Line(1, 0.0, 1.0, text="Hello", speaker="S1")]
+    project.stages["translation"] = {"done": True}
+    project.settings["multi_voice"] = True
+    project.save()
+    studio = window._ensure_studio(sync_file=False, push=False)
+    studio.project = project
+    dialog.reload()
+    QApplication.processEvents()
+    assert not prepare.isVisible()
+    name = dialog.findChild(QWidget, "voiceName-S1")
+    picker = dialog.findChild(QComboBox, "voicePick-S1")
+    listen = dialog.findChild(QPushButton, "voiceListen-S1")
+    assert name is not None and name.text() == "Анна"
+    assert picker is not None and "Maria" in picker.currentText()
+    assert listen is not None and listen.text() == "Прослушать"
+    ivan = next(index for index in range(picker.count()) if "Ivan" in picker.itemText(index))
+    picker.setCurrentIndex(ivan)
+    assert project.speaker("S1").voice.kind == "library"
+    assert project.speaker("S1").voice.id == "ivan"
+    dialog.close()
     window.close()
 
 

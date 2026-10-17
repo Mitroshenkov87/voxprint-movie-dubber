@@ -11,7 +11,7 @@ The wizard steps are Film, Characters, Lines, and Dub. The Dub step is the playe
 | Choose a video (button, click, or drop; mkv, mp4, avi, mov, webm, m4v, ts, m2ts) | Main screen drop target. The Review wizard Film step has the same chooser. |
 | Dub language: Russian, English, or German | Language chips on the main screen, the Expert language field, and the Film step combo. One language per film, as before. |
 | Quality: Fast, Balanced, Best quality | Quality chips. Expert shows the concrete speech, separation, and batch values. |
-| Voices: Keep actor voices or Neutral voices | Voices chips. Expert actor-likeness and multi-voice fields share that state. |
+| Voices: Keep actor voices, Neutral voices, or Custom | Voices chips. Custom opens a dialog: after Prepare, each character gets a library voice and Listen. Before Prepare it asks to prepare. The same multi-voice flag and per-character voice are what the Characters step and Expert use. Likeness stays in Expert. |
 | Actor likeness, default 50% | Expert field shows 50%. The project still stores 0 to 1. Film step slider when one voice is used. Each character card has its own slider. |
 | Audiobook narrator voice (Warm, Clear, Low) | Hidden. That row belongs to the audio surface and is not a film voice. Character voices stay on the Characters step and in Expert. |
 | Different voices for different characters | Expert multi-voice field and the Film step checkbox. |
@@ -27,6 +27,7 @@ The wizard steps are Film, Characters, Lines, and Dub. The Dub step is the playe
 | Show the finished file, open its folder | History Open and Show folder. Film step Show the file. Dub step Show the file. |
 | Open, Save, and Save As for a .vxdub project | Overflow menu: Open…, Save, Save As…. The wizard File menu has the same three actions. A project file passed on the command line opens here. |
 | Video moved: ask for the file and check it is the same one | Open project, same dialogs as before. |
+| Video preview on the main screen | Video preview on main screen: shell video result region (Yitro), pending |
 
 ## Characters
 
@@ -124,4 +125,4 @@ The commands still run as `voxprint-movie-dubber-cli`. The rows below say where 
 
 The main screen result area is still the audio player from `surface_for("movie-dubber")`: waveform bars and a chapters label. The film player with play, pause, and seek is the existing player on the Dub step.
 
-**NEEDS DECISION** for Components: a result region on the audio surface that shows the chosen video and, after a dub, that video with the new audio, with play, pause, and seek, using the full file path. This app does not draw that region.
+Video preview on main screen: shell video result region (Yitro), pending. `ShellWindow._bind_video_result` looks for a widget named `videoResult` and does not draw one. The existing player stays on the Dub step until that region is in the pinned shell.

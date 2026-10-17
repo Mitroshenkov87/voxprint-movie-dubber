@@ -535,7 +535,7 @@ def test_common_pin_is_the_provisional_shell_commit():
     req = (root / "requirements.txt").read_text(encoding="utf-8")
     pin = (
         "voxprint-common[ui] @ git+https://github.com/Mitroshenkov87/voxprint-common@"
-        "f4e95ccfa25780abaf50412cb095a7843725102a"
+        "0d1e30de68cc49549a2a94cb3695e5601c17e7db"
     )
     assert pin in req
     assert "voxprint-common==0.1.*" not in req

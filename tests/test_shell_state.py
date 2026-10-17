@@ -139,3 +139,10 @@ def test_engine_mapping_uses_resolved_roles(tmp_path, monkeypatch):
     assert apply_engine(layout)["separation"] == "roformer"
     assert apply_engine(layout)["tts_model"] == "tts_1_7b"
     assert apply_project(layout)["actor_weight"] == 0.5
+    layout.choose("voices", "pick")
+    assert layout.get("dub.multi_voice") is True
+    assert apply_project(layout)["multi_voice"] is True
+    assert apply_project(layout)["actor_weight"] == 0.5
+    labels = [item.label_key for item in dub_settings().get("dub.tts_model").choices]
+    assert "Qwen3-TTS 1.7B Base (voice cloning)" in labels
+    assert all("placeholder" not in label.lower() and "заглушка" not in label.lower() for label in labels)

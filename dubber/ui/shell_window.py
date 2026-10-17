@@ -26,7 +26,9 @@ from dubber.ui import dialogs
 from dubber.ui.feature_wizard import FeatureWizard
 from dubber.ui.jobs import PipelineThread
 from dubber.ui.setup_progress import ensure_with_dialog, startup_repair_dialog
+from dubber.ui.pages import voice_from_key
 from dubber.ui.shell_state import apply_engine, apply_project, build_layout, dub_settings
+from dubber.ui.voice_cast import VoiceCastDialog, current_voice_key
 from dubber.ui.window import MainWindow
 from voxprint_common.i18n import add_catalogs
 from voxprint_common.i18n import set_language as set_shell_language
@@ -44,6 +46,8 @@ from voxprint_common.ui.variants import (
 )
 
 VIDEO_EXTS = {".mkv", ".mp4", ".avi", ".mov", ".webm", ".m4v", ".ts", ".m2ts"}
+# Object name of the optional video result region. Components adds it in the Yitro tag.
+VIDEO_RESULT_NAME = "videoResult"
 
 
 class _VideoPick(QObject):
@@ -117,6 +121,8 @@ class ShellWindow(QWidget):
         self._outputs: dict[str, Path] = {}
         self._source: Path | None = None
         self._fitted = False
+        self._cast: VoiceCastDialog | None = None
+        self._video_result: QWidget | None = None
         self.diag_dialog: dialogs.DiagnosticsDialog | None = None
         self.expert = ExpertMode()
         self.shell: SimpleLayout = build_layout(state_dir() / "movie-dubber")
@@ -127,8 +133,10 @@ class ShellWindow(QWidget):
             on_generate=self._started,
             on_command=self._command,
             on_history=self._history,
+            on_refresh=self._settle_screen,
             surface=surface_for("movie-dubber"),
         )
+        self._settle_screen()
         self.setObjectName("shell")
         self.setWindowTitle(APP_DISPLAY_NAME)
         self.setMinimumSize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
@@ -139,6 +147,7 @@ class ShellWindow(QWidget):
         self._install_video_pick()
         self._hide_narrator_voice()
         self._add_menu()
+        self._watch_custom_voices()
         self._stop_expert = self.expert.subscribe(self._set_expert)
         self._set_expert(self.expert.enabled())
         self._apply_saved_language()
@@ -410,6 +419,124 @@ class ShellWindow(QWidget):
             return
         if action == "show_folder":
             self._reveal(path)
+
+    def _watch_custom_voices(self) -> None:
+        """Open character voices when the Custom chip is chosen."""
+        chip = self.view.root.findChild(QPushButton, "chip-voices-pick")
+        if chip is not None:
+            chip.clicked.connect(self._open_voice_cast)
+
+    def _open_voice_cast(self) -> VoiceCastDialog:
+        """Choose Custom voices and show the character list.
+
+        The shell has no inline panel under a chip row, so this is a dialog.
+
+        Returns:
+            The dialog.
+        """
+        if self.shell.presets.get("voices") != "pick":
+            self.shell.choose("voices", "pick")
+            self.view.refresh()
+        if self._cast is None:
+            self._cast = VoiceCastDialog(self)
+        self._cast.reload()
+        self._cast.show()
+        self._cast.raise_()
+        return self._cast
+
+    def cast_prepared(self) -> bool:
+        """Return whether the open film has been prepared."""
+        studio = self._studio
+        return studio is not None and studio._prepared()
+
+    def cast_characters(self) -> list[tuple[str, str, str]]:
+        """Return each character's id, name, and library voice key."""
+        studio = self._studio
+        project = None if studio is None else studio.project
+        if project is None:
+            return []
+        people = sorted(project.speakers, key=lambda speaker: -speaker.seconds)
+        return [
+            (speaker.id, speaker.name or speaker.id, current_voice_key(speaker.voice))
+            for speaker in people
+        ]
+
+    def cast_prepare(self) -> None:
+        """Run Prepare, then fill the character list."""
+        studio = self._ensure_studio()
+        if studio.project is None:
+            self.view.set_note(tr("shell.need_file"))
+            return
+        if studio.job is not None and studio.job.isRunning():
+            return
+        studio.prepare()
+        if studio.job is None:
+            return
+        studio.job.done.connect(self._cast_finished)
+
+    def _cast_finished(self, ok: bool, message: str) -> None:
+        if not ok:
+            self.view.set_note(tr("run.failed", error=message))
+        if self._cast is not None and self._cast.isVisible():
+            self._cast.reload()
+
+    def cast_listen(self, sid: str) -> None:
+        """Play the sample for one character.
+
+        Args:
+            sid: Speaker id.
+        """
+        studio = self._ensure_studio(sync_file=False, push=False)
+        studio.listen(sid)
+
+    def cast_assign(self, sid: str, key: str) -> None:
+        """Save one character's library voice on the shared project.
+
+        Args:
+            sid: Speaker id.
+            key: Combo value, ``library:<id>``.
+        """
+        studio = self._ensure_studio(sync_file=False, push=False)
+        project = studio.project
+        speaker = None if project is None else project.speaker(sid)
+        if project is None or speaker is None:
+            return
+        speaker.voice = voice_from_key(key)
+        project.settings["multi_voice"] = True
+        project.save()
+        if self.shell.get("dub.multi_voice") is not True:
+            self.shell.set_value("dub.multi_voice", True)
+        studio.chars.load(project)
+
+    def _settle_screen(self) -> None:
+        """Hide an empty history strip and remember a future video region."""
+        if not hasattr(self, "view"):
+            return
+        self._settle_history()
+        self._bind_video_result()
+
+    def _settle_history(self) -> None:
+        """Show the history strip only when a finished dub is in it.
+
+        The shell keeps a 104 px strip even when it is empty. An empty strip
+        is a blank band, so it stays hidden until there is something to show.
+        """
+        strip = self.view.root.findChild(QWidget, "historyStrip")
+        if strip is None:
+            return
+        if self.shell.history:
+            strip.setFixedHeight(104)
+            strip.show()
+            return
+        strip.hide()
+        strip.setFixedHeight(0)
+
+    def _bind_video_result(self) -> None:
+        """Remember the shell video result region when the Yitro tag adds it.
+
+        This app does not draw a preview. The region stays the shell's widget.
+        """
+        self._video_result = self.view.root.findChild(QWidget, VIDEO_RESULT_NAME)
 
     def _set_expert(self, enabled: bool) -> None:
         """Open or close the side panel, then mark likeness as a percent.
