@@ -479,7 +479,7 @@ if "$PY" -c "from voxprint_common.runtime_manifest import cpu_onnxruntime_confli
   as_user "$UV" pip uninstall --python "$PY" --quiet onnxruntime
   retry "Installing onnxruntime-gpu" as_user "$UV" pip install --python "$PY" --quiet "onnxruntime-gpu==1.30.0"
 fi
-"$PY" -c "import voxprint_common; from voxprint_common.runtime_manifest import cpu_onnxruntime_conflicts; assert voxprint_common.__version__ == '0.2.4', voxprint_common.__version__; raise SystemExit('The CPU package onnxruntime is installed. The shared runtime must not contain it.' if cpu_onnxruntime_conflicts() else 0)"
+"$PY" -c "import voxprint_common; from voxprint_common.runtime_manifest import cpu_onnxruntime_conflicts; assert voxprint_common.__version__ == '0.2.5', voxprint_common.__version__; raise SystemExit('The CPU package onnxruntime is installed. The shared runtime must not contain it.' if cpu_onnxruntime_conflicts() else 0)"
 "$PY" -c "import torch, transformers, PySide6, faster_whisper, ctranslate2; print('torch', torch.__version__, '- CUDA available:', torch.cuda.is_available())"
 date -u +%Y-%m-%dT%H:%M:%SZ > "$RT/.install-complete"
 "$PY" - "$RT/runtime-key.json" "$TV" <<'PYEOF'
@@ -505,7 +505,7 @@ else
 fi
 ff_sha="$(sha256sum "$FF_DIR/ffmpeg" | awk '{ print $1 }')"
 add_ref --id python-3.14 --kind runtime --version "$RUNTIME_VERSION" --path "$RT"
-# torch and CTranslate2 live in that runtime directory. voxprint-common 0.2.4
+# torch and CTranslate2 live in that runtime directory. voxprint-common 0.2.5
 # refuses a second component on a path another component already uses.
 add_ref --id ffmpeg-8 --kind tool --version "$FFMPEG_VERSION" --path "$FF_DIR" --sha256 "$ff_sha"
 # The models directory is not a component. VOXPrint MDL records one ref per file.
