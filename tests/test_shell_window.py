@@ -68,6 +68,33 @@ def test_russian_catalog_names_the_dub_button(tmp_path, monkeypatch):
     window.close()
 
 
+def test_review_wizard_keeps_characters_lines_and_the_player(tmp_path, monkeypatch):
+    window = _window(tmp_path, monkeypatch, "en")
+    window.show()
+    QApplication.processEvents()
+    overflow = window.view.root.findChild(QPushButton, "overflow")
+    assert overflow is not None and overflow.menu() is not None
+    labels = [action.text() for action in overflow.menu().actions()]
+    assert "Characters" in labels
+    assert "Lines" in labels
+    assert "Player" in labels
+    assert "Check and repair" in labels
+    window._open_review(1)
+    QApplication.processEvents()
+    wizard = window._wizard
+    studio = window._studio
+    assert wizard is not None and wizard.isVisible()
+    assert studio is not None
+    assert studio.chars.sld_one.maximum() == 100
+    assert studio.lines.table.columnCount() == 6
+    assert studio.player.btn_play.text()
+    assert studio.stack.currentIndex() == 0
+    note = window.view.root.findChild(QWidget, "simpleNote")
+    assert note is not None and "Prepare the film first" in note.text()
+    wizard.close()
+    window.close()
+
+
 def test_window_source_does_not_name_model_ids():
     text = (Path(__file__).resolve().parents[1] / "dubber" / "ui" / "shell_window.py").read_text(encoding="utf-8")
     for token in ("qwen3-tts", "roformer", "mdl.json", "tts_0_6b", "tts_1_7b"):

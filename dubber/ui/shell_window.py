@@ -2,9 +2,9 @@
 
 Simple mode is the video, the language, Quality, Voices, and Dub. Expert mode
 adds the side panel. Both read one settings state. The screen is
-``surface_for("movie-dubber")`` from voxprint-common. Manage models opens
-VOXPrint MDL. The older four-step window stays in :mod:`dubber.ui.window` for
-the checks that still build it, and nothing in this window opens it.
+``surface_for("movie-dubber")`` from voxprint-common. The overflow menu opens
+the existing film, character, line, and player steps. Manage models opens
+VOXPrint MDL.
 """
 from __future__ import annotations
 
@@ -14,18 +14,20 @@ from typing import Any, Callable, cast
 
 from PySide6.QtCore import QEvent, QObject, QUrl
 from PySide6.QtGui import QDesktopServices, QDropEvent
-from PySide6.QtWidgets import QFileDialog, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFileDialog, QMessageBox, QPushButton, QVBoxLayout, QWidget
 
 from dubber import i18n, paths, settings
 from dubber.appinfo import APP_DISPLAY_NAME
-from dubber.core import voices, vxdub
 from dubber.core.project import Project
 from dubber.i18n import tr
 from dubber.models import launch_mdl
 from dubber.pipeline.stages import MOCK_CFG, ORDER
 from dubber.ui import dialogs
+from dubber.ui.feature_wizard import FeatureWizard
 from dubber.ui.jobs import PipelineThread
+from dubber.ui.setup_progress import ensure_with_dialog, startup_repair_dialog
 from dubber.ui.shell_state import apply_engine, apply_project, build_layout, dub_settings
+from dubber.ui.window import MainWindow
 from voxprint_common.i18n import add_catalogs
 from voxprint_common.i18n import set_language as set_shell_language
 from voxprint_common.paths import state_dir
@@ -107,6 +109,9 @@ class ShellWindow(QWidget):
         self._options_hook = options_hook
         self.project: Project | None = None
         self.job: PipelineThread | None = None
+        self._studio: MainWindow | None = None
+        self._wizard: FeatureWizard | None = None
+        self._optional_missing: list[str] = []
         self._run_id = 0
         self._eta: int | None = None
         self._outputs: dict[str, Path] = {}
@@ -132,7 +137,7 @@ class ShellWindow(QWidget):
         body.setContentsMargins(0, 0, 0, 0)
         body.addWidget(self.view.root)
         self._install_video_pick()
-        self._add_diagnostics()
+        self._add_menu()
         self._stop_expert = self.expert.subscribe(self.view.set_expert)
         self.view.set_expert(self.expert.enabled())
         self._apply_saved_language()
@@ -171,28 +176,32 @@ class ShellWindow(QWidget):
         Args:
             missing: Registry keys that are not on disk. The ids are not shown.
         """
+        self._optional_missing = list(missing)
         if missing:
             self.view.set_note(tr("shell.models_missing"))
+        if self._studio is not None:
+            self._studio.show_optional_models(list(missing))
 
     def open_vxdub(self, path: Path) -> bool:
-        """Open a saved dub and show its video.
+        """Open a saved dub in the review wizard and show its video.
 
         Args:
             path: A ``.vxdub`` file.
 
         Returns:
-            True when the video is on screen.
+            True when the project opened.
         """
-        try:
-            project, _document = vxdub.open_project(path, self._projects_root(), self._ask_video)
-        except vxdub.VxdubError as exc:
-            self.view.set_note(tr("vxdub.open_failed", error=str(exc)))
-            return False
-        self.project = project
-        source = project.source
-        if source.is_file():
-            self.set_video(source)
-        return source.is_file()
+        studio = self._ensure_studio(sync_file=False, push=False)
+        opened = studio.open_vxdub(path)
+        self.project = studio.project
+        if opened and studio.project is not None and studio.project.source.is_file():
+            self._source = studio.project.source.resolve()
+            self.view.set_note("")
+            self.view.set_prompt_text(str(self._source))
+            self.view.refresh(prompt=True)
+            if self._wizard is not None:
+                self._wizard.open_step(0)
+        return opened
 
     def open_diagnostics(self, start: bool = False) -> None:
         """Show the diagnostics dialog.
@@ -230,6 +239,8 @@ class ShellWindow(QWidget):
 
     def closeEvent(self, event) -> None:  # noqa: N802
         """Stop a running dub and remember the window size."""
+        if self._wizard is not None:
+            self._wizard.close()
         self._stop_job()
         if self.job is not None and self.job.isRunning():
             self.job.wait(30000)
@@ -247,15 +258,125 @@ class ShellWindow(QWidget):
         self._picker = _VideoPick(self)
         drop.installEventFilter(self._picker)
 
-    def _add_diagnostics(self) -> None:
+    def _add_menu(self) -> None:
         overflow = self.view.root.findChild(QPushButton, "overflow")
         menu = None if overflow is None else overflow.menu()
         if menu is None:
             return
+        menu.addAction(tr("step.film"), lambda: self._open_review(0))
+        menu.addAction(tr("step.characters"), lambda: self._open_review(1))
+        menu.addAction(tr("step.lines"), lambda: self._open_review(2))
+        menu.addAction(tr("shell.menu_player"), lambda: self._open_review(3))
+        menu.addAction(tr("vxdub.open"), self._open_project_file)
+        menu.addAction(tr("vxdub.save"), self._save_project)
+        menu.addAction(tr("vxdub.save_as"), self._save_project_as)
+        menu.addAction(tr("shell.menu_repair"), self._repair_shared)
         menu.addAction(tr("card.diag"), lambda: self.open_diagnostics(False))
         cancel = self.view.root.findChild(QPushButton, "cancel")
         if cancel is not None:
             cancel.clicked.connect(self._stop_job)
+
+    def _ensure_studio(self, *, sync_file: bool = True, push: bool = True) -> MainWindow:
+        """Return the four-step window, creating it on the first call.
+
+        Args:
+            sync_file: Open the film chosen on the main screen.
+            push: Copy the shared settings onto that film.
+        """
+        if self._studio is None:
+            self._studio = MainWindow(cfg=self._cfg(), options_hook=self._options_hook)
+            if self._optional_missing:
+                self._studio.show_optional_models(list(self._optional_missing))
+            self._wizard = FeatureWizard(self, self._studio)
+        if sync_file:
+            self._sync_studio_file()
+        if push:
+            self._push_shared_settings(self._studio)
+        self.project = self._studio.project
+        return self._studio
+
+    def _sync_studio_file(self) -> None:
+        studio = self._studio
+        source = self._source
+        if studio is None or source is None:
+            return
+        if studio.job is not None and studio.job.isRunning():
+            return
+        project = studio.project
+        if project is not None and project.source.resolve() == source.resolve():
+            return
+        studio.set_source(source)
+
+    def _push_shared_settings(self, studio: MainWindow) -> None:
+        """Copy the main-screen settings onto the open film.
+
+        A subtitle file chosen in the wizard stays. The shell only stores
+        automatic or none.
+
+        Args:
+            studio: The four-step window.
+        """
+        project = studio.project
+        if project is None or (studio.job is not None and studio.job.isRunning()):
+            return
+        values = apply_project(self.shell)
+        current = project.settings.get("subtitle_choice")
+        if isinstance(current, str) and current not in {"auto", "none"}:
+            values["subtitle_choice"] = current
+        project.settings.update(values)
+        project.save()
+        studio.film.load(project)
+        cfg = self._cfg()
+        cfg.update(apply_engine(self.shell))
+        studio._cfg = cfg
+        self._remember()
+
+    def _open_review(self, index: int) -> None:
+        """Open the review wizard on a step.
+
+        Characters, lines, and the player stay on the film step until the
+        film has been prepared, which is the same rule as the old step buttons.
+
+        Args:
+            index: 0 film, 1 characters, 2 lines, 3 player.
+        """
+        studio = self._ensure_studio()
+        if index > 0 and not studio._prepared():
+            self.view.set_note(tr("shell.prepare_first"))
+            index = 0
+        if self._wizard is not None:
+            self._wizard.open_step(index)
+
+    def _open_project_file(self) -> None:
+        studio = self._ensure_studio(sync_file=False, push=False)
+        studio.choose_vxdub()
+        self.project = studio.project
+        if studio.project is not None and studio.project.source.is_file():
+            self._source = studio.project.source.resolve()
+            self.view.set_prompt_text(str(self._source))
+            self.view.refresh(prompt=True)
+        if self._wizard is not None:
+            self._wizard.open_step(0)
+
+    def _save_project(self) -> None:
+        studio = self._ensure_studio()
+        if studio.save_vxdub():
+            self.view.set_note(tr("vxdub.saved", name=studio.vxdub_path.name if studio.vxdub_path else ""))
+
+    def _save_project_as(self) -> None:
+        studio = self._ensure_studio()
+        studio.save_vxdub_as()
+        self.project = studio.project
+
+    def _repair_shared(self) -> None:
+        """Check the shared runtime and models, and repair what can be repaired."""
+        report = ensure_with_dialog()
+        if report.exit_code == 0:
+            self.view.set_note(tr("shell.repair_ok"))
+            return
+        dialog = startup_repair_dialog(report)
+        title, body = dialog if dialog is not None else (tr("models.repair_title"), report.message or "")
+        QMessageBox.critical(self, title, body or report.message or "")
 
     def _apply_saved_language(self) -> None:
         saved = str(settings.load().get("dub_target_lang") or "")
@@ -310,25 +431,25 @@ class ShellWindow(QWidget):
             self.shell.block(tr("shell.need_file"))
             self.view.refresh()
             return
+        studio = self._ensure_studio()
+        if studio.project is None:
+            self.shell.block(tr("shell.need_file"))
+            self.view.refresh()
+            return
+        if not studio.dub_all() or studio.job is None:
+            self.shell.block(tr("shell.dubbing"))
+            self.view.refresh()
+            return
+        self.job = studio.job
+        self.project = studio.project
         self._run_id += 1
         run_id = self._run_id
         self._eta = None
-        try:
-            self.project = self._open_project(path)
-            self._remember()
-            cfg = self._cfg()
-            cfg.update(apply_engine(self.shell))
-            self.job = PipelineThread(self.project.folder, cfg, "mux")
-        except OSError as exc:
-            self.shell.block(tr("shell.failed", error=str(exc)))
-            self.view.refresh()
-            return
         self.job.stage.connect(lambda key, status, message, token=run_id: self._on_stage(token, key, status, message))
         self.job.progress.connect(lambda frac, eta, token=run_id: self._on_progress(token, frac, eta))
         self.job.done.connect(lambda ok, message, token=run_id: self._on_done(token, ok, message))
         self.shell.progress(0, 100, tr("shell.dubbing"))
         self.view.refresh()
-        self.job.start()
 
     def _on_stage(self, run_id: int, key: str, status: str, message: str) -> None:
         if run_id != self._run_id or self.shell.phase is not Phase.BUSY:
@@ -371,30 +492,10 @@ class ShellWindow(QWidget):
         self.view.refresh()
 
     def _stop_job(self) -> None:
+        if self._studio is not None:
+            self._studio.cancel_job()
         if self.job is not None and self.job.isRunning():
             self.job.cancel()
-
-    def _open_project(self, source: Path) -> Project:
-        folder = Project.folder_for(source, self._projects_root())
-        values = apply_project(self.shell)
-        raw_voice = values["single_voice"]
-        if not isinstance(raw_voice, dict):
-            raise TypeError("single voice is not a map")
-        single = dict(raw_voice)
-        if single.get("kind") == "library" and not single.get("id"):
-            voice = voices.default_single_voice(str(values["target_lang"]))
-            if voice is not None:
-                single["id"] = voice.id
-            else:
-                single["kind"] = "clone"
-        values["single_voice"] = single
-        if (folder / "project.json").is_file():
-            project = Project(folder)
-            project.settings.update(values)
-            project.settings["source"] = str(source.resolve())
-            project.save()
-            return project
-        return Project.create(folder, source, **values)
 
     def _remember(self) -> None:
         settings.save(
@@ -461,11 +562,6 @@ class ShellWindow(QWidget):
     def _projects_root(self) -> Path:
         custom = str(settings.load().get("projects_dir") or "").strip()
         return Path(custom) if custom else paths.projects_dir()
-
-    def _ask_video(self, saved: str) -> Path | None:
-        del saved
-        picked, _selected = QFileDialog.getOpenFileName(self, tr("vxdub.moved_title"), "", tr("shell.browse_filter"))
-        return Path(picked) if picked else None
 
 
 def _mix_level(value: object) -> float:
