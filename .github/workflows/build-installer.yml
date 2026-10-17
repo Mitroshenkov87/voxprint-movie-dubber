@@ -12,15 +12,35 @@
 # The shared runtime, ffmpeg and that models folder are removed on uninstall only when movie-dubber was the last reference.
 # The audit job runs first. The installer is not built when ruff, mypy, bandit (high), gitleaks, or an
 # un-allowlisted pip-audit high/critical finding fails that job. Vulture and radon do not fail it.
+# Triggers: workflow_dispatch, a v* tag, a push to build/**, or a pull request. The build jobs run for a
+# pull request only when it carries the build-installers label (the labeled event must be that label;
+# a synchronize event must already have it). pull_request, not pull_request_target, so a fork PR
+# cannot read secrets. The release job runs only on tags.
 name: Build installers
 on:
   workflow_dispatch:
   push:
     tags: ["v*"]
+    branches: ["build/**"]
+  pull_request:
+    types: [labeled, synchronize]
 permissions:
   contents: write
+# One group per ref. A newer pull request or build/** push cancels the run it replaces.
+# A tag push or a manual run is left to finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/build/')) }}
 jobs:
   audit:
+    # linux and installer need this job, so they run only when this gate passes.
+    # An if on those jobs would replace the default "needs succeeded" check.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || startsWith(github.ref, 'refs/tags/')
+      || startsWith(github.ref, 'refs/heads/build/')
+      || (github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'build-installers')
+      || (github.event_name == 'pull_request' && github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'build-installers'))
     uses: ./.github/workflows/audit.yml
   linux:
     needs: audit

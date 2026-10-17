@@ -67,8 +67,11 @@ The window, About, `--version`, the installer and the GitHub release title show 
 Headless commands for other programs are documented in [CLI.md](CLI.md).
 
 ## GitHub Actions
-`.github/workflows/build-installer.yml` (manual run or a `v*` tag) builds both installers on free `windows-latest` runners (a matrix
+`.github/workflows/build-installer.yml` builds both installers on free `windows-latest` runners (a matrix
 of `online` and `full`), installs each silently (online with the CPU build of PyTorch, full with its own cu130 runtime and no
-downloads), runs the installed program and the tests, uninstalls it and uploads the installers as artifacts. A `v*` tag then
-publishes both on one pre-release; the release job checks every `.sha256` file and appends a table of file names, sizes and
-SHA-256 to the release notes (`docs/release-notes/<tag>.md`).
+downloads), runs the installed program and the tests, uninstalls it and uploads the installers as artifacts. The workflow runs
+on a manual dispatch or a `v*` tag. To build installers on a PR, add the build-installers label or push to build/<name>.
+Adding that label starts the build; later pushes to the same pull request build again while the label is still there.
+A push to `build/<name>` builds that branch. Fork pull requests use the `pull_request` event, so they do not receive secrets.
+A `v*` tag then publishes both on one pre-release; the release job runs only on tags. It checks every `.sha256` file and
+appends a table of file names, sizes and SHA-256 to the release notes (`docs/release-notes/<tag>.md`).
