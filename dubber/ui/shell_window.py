@@ -12,22 +12,34 @@ import os
 from pathlib import Path
 from typing import Any, Callable, cast
 
-from PySide6.QtCore import QEvent, QObject, QUrl
-from PySide6.QtGui import QDesktopServices, QDropEvent
-from PySide6.QtWidgets import QFileDialog, QMessageBox, QPushButton, QSpinBox, QVBoxLayout, QWidget
+from PySide6.QtCore import QEvent, QObject, QSize, Qt, QUrl
+from PySide6.QtGui import QDesktopServices, QDropEvent, QPixmap
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QLabel,
+    QMenu,
+    QMessageBox,
+    QPushButton,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
+)
 
 from dubber import i18n, paths, settings
 from dubber.appinfo import APP_DISPLAY_NAME
+from dubber.core.media import poster_frame
 from dubber.core.project import Project
 from dubber.i18n import tr
 from dubber.models import launch_mdl
 from dubber.pipeline.stages import MOCK_CFG, ORDER
 from dubber.ui import dialogs
+from dubber.ui.dub_queue import DubQueue, QueueItem
 from dubber.ui.feature_wizard import FeatureWizard
 from dubber.ui.jobs import PipelineThread
-from dubber.ui.setup_progress import ensure_with_dialog, startup_repair_dialog
 from dubber.ui.pages import speaker_number, voice_from_key
-from dubber.ui.shell_state import apply_engine, apply_project, build_layout, dub_settings
+from dubber.ui.queue_dialog import QueueDialog
+from dubber.ui.setup_progress import ensure_with_dialog, startup_repair_dialog
+from dubber.ui.shell_state import apply_engine, apply_project, build_layout, dub_settings, stop_stage
 from dubber.ui.voice_cast import VoiceCastDialog, current_voice_key
 from dubber.ui.window import MainWindow
 from voxprint_common.i18n import add_catalogs
@@ -120,13 +132,32 @@ class ShellWindow(QWidget):
         self._eta: int | None = None
         self._outputs: dict[str, Path] = {}
         self._source: Path | None = None
+        self._picker: _VideoPick | None = None
         self._fitted = False
         self._cast: VoiceCastDialog | None = None
+        self._queue_dialog: QueueDialog | None = None
         self._video_result: QWidget | None = None
+        self._user_cancelled = False
+        self._closing = False
         self.diag_dialog: dialogs.DiagnosticsDialog | None = None
         self.expert = ExpertMode()
         self.shell: SimpleLayout = build_layout(state_dir() / "movie-dubber")
+        self._queue = DubQueue(state_dir() / "movie-dubber" / "dub-queue.json")
         self.settings_model = dub_settings()
+        self.setObjectName("shell")
+        self.setWindowTitle(APP_DISPLAY_NAME)
+        self.setMinimumSize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
+        self.setStyleSheet(build_shell_style(False))
+        self._body = QVBoxLayout(self)
+        self._body.setContentsMargins(0, 0, 0, 0)
+        self._mount_view()
+        self._stop_expert = self.expert.subscribe(self._set_expert)
+        self._apply_saved_language()
+        if autorun:
+            self.open_diagnostics(True)
+
+    def _mount_view(self) -> None:
+        """Build the shared screen and the controls this app adds to it."""
         self.view = SimpleWidget(
             self.shell,
             self.settings_model,
@@ -137,22 +168,16 @@ class ShellWindow(QWidget):
             surface=surface_for("movie-dubber"),
         )
         self._settle_screen()
-        self.setObjectName("shell")
-        self.setWindowTitle(APP_DISPLAY_NAME)
-        self.setMinimumSize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
-        self.setStyleSheet(build_shell_style(False))
-        body = QVBoxLayout(self)
-        body.setContentsMargins(0, 0, 0, 0)
-        body.addWidget(self.view.root)
+        self._body.addWidget(self.view.root)
         self._install_video_pick()
         self._hide_narrator_voice()
         self._add_menu()
         self._watch_custom_voices()
-        self._stop_expert = self.expert.subscribe(self._set_expert)
         self._set_expert(self.expert.enabled())
-        self._apply_saved_language()
-        if autorun:
-            self.open_diagnostics(True)
+        if self._source is not None:
+            self.view.set_prompt_text(str(self._source))
+            self.view.refresh(prompt=True)
+            self._show_poster(self._source)
 
     def set_video(self, path: Path) -> None:
         """Show ``path`` as the chosen video.
@@ -164,10 +189,16 @@ class ShellWindow(QWidget):
             self.view.set_note(tr("shell.need_file"))
             return
         chosen = path.resolve()
+        if self._pipeline_running():
+            self._queue.add(chosen)
+            self.view.set_note(tr("shell.queue.added", name=chosen.name))
+            self._refresh_queue()
+            return
         self._source = chosen
         self.view.set_note("")
         self.view.set_prompt_text(str(chosen))
         self.view.refresh(prompt=True)
+        self._show_poster(chosen)
 
     def browse(self) -> None:
         """Ask for a video file."""
@@ -249,6 +280,7 @@ class ShellWindow(QWidget):
 
     def closeEvent(self, event) -> None:  # noqa: N802
         """Stop a running dub and remember the window size."""
+        self._closing = True
         if self._wizard is not None:
             self._wizard.close()
         self._stop_job()
@@ -265,6 +297,8 @@ class ShellWindow(QWidget):
         drop = self.view.root.findChild(QWidget, "fileDrop")
         if drop is None:
             return
+        if self._picker is not None:
+            self._picker.deleteLater()
         self._picker = _VideoPick(self)
         drop.installEventFilter(self._picker)
 
@@ -282,9 +316,188 @@ class ShellWindow(QWidget):
         menu.addAction(tr("vxdub.save_as"), self._save_project_as)
         menu.addAction(tr("shell.menu_repair"), self._repair_shared)
         menu.addAction(tr("card.diag"), lambda: self.open_diagnostics(False))
+        queue = menu.addAction(self._queue_title(), self.open_queue)
+        queue.setData("queue")
+        self._add_language_menu(menu)
         cancel = self.view.root.findChild(QPushButton, "cancel")
         if cancel is not None:
             cancel.clicked.connect(self._stop_job)
+
+    def _add_language_menu(self, menu: QMenu) -> None:
+        """Add the interface language choices to the More menu.
+
+        Args:
+            menu: The overflow menu.
+        """
+        languages = menu.addMenu(tr("shell.ui_language"))
+        languages.setObjectName("uiLanguageMenu")
+        for code in i18n.LANGS:
+            action = languages.addAction(i18n.LANG_NAMES[code])
+            action.setCheckable(True)
+            action.setChecked(code == i18n.current())
+            action.triggered.connect(lambda _checked=False, chosen=code: self.set_ui_language(chosen))
+
+    def set_ui_language(self, code: str) -> bool:
+        """Switch the main screen to ``code`` and rebuild it in that language.
+
+        The shared screen paints its words when it is built. Rebuilding applies
+        the language at once. The review wizard, when it is open, follows.
+
+        Args:
+            code: ``en`` or ``ru``.
+
+        Returns:
+            True when the screen was rebuilt.
+        """
+        if code not in i18n.LANGS or code == i18n.current():
+            return False
+        i18n.set_language(code)
+        set_shell_language(code)
+        add_catalogs(i18n.locales_dir())
+        old = self.view.root
+        self._body.removeWidget(old)
+        old.setParent(None)
+        old.deleteLater()
+        self._mount_view()
+        if self._studio is not None:
+            self._studio.set_language(code)
+        if self._cast is not None:
+            self._cast.reload()
+        if self._queue_dialog is not None:
+            self._queue_dialog.reload()
+        return True
+
+    def queue_rows(self) -> tuple[QueueItem, ...]:
+        """Return the saved film queue."""
+        return self._queue.items()
+
+    def queue_add(self) -> None:
+        """Ask for one or more films and append them."""
+        picked, _selected = QFileDialog.getOpenFileNames(
+            self,
+            tr("shell.queue.add"),
+            str(self._projects_root()),
+            tr("shell.browse_filter"),
+        )
+        if picked:
+            self.add_films([Path(path) for path in picked])
+
+    def queue_remove(self, film: str) -> None:
+        """Drop a waiting film. The film that is dubbing stays until Cancel.
+
+        Args:
+            film: The stored path.
+        """
+        self._queue.remove(film)
+        self._refresh_queue()
+
+    def queue_cancel(self) -> None:
+        """Stop the film that is dubbing. The films still waiting stay waiting."""
+        if self._pipeline_running():
+            self._user_cancelled = True
+            self._stop_job()
+            return
+        if self._queue.running() is None:
+            return
+        self._queue.finish("cancelled")
+        if self.shell.phase is Phase.BUSY:
+            self.shell.cancel()
+        self.view.set_note(tr("shell.queue.cancelled_note"))
+        self.view.refresh()
+        self._refresh_queue()
+
+    def add_films(self, paths: list[Path]) -> None:
+        """Append films and start the first one when nothing is dubbing.
+
+        Args:
+            paths: Video files. Other files are skipped.
+        """
+        for path in paths:
+            if path.suffix.lower() not in VIDEO_EXTS or not path.is_file():
+                continue
+            self._queue.add(path)
+        if self._pipeline_running() or self.shell.phase is Phase.BUSY:
+            waiting = self._queue.waiting()
+            if waiting:
+                self.view.set_note(tr("shell.queue.waiting", n=waiting))
+            self._refresh_queue()
+            return
+        nxt = self._queue.begin_next()
+        if nxt is None:
+            self._refresh_queue()
+            return
+        self._start_queued(Path(nxt))
+        waiting = self._queue.waiting()
+        if waiting:
+            self.view.set_note(tr("shell.queue.waiting", n=waiting))
+        self._refresh_queue()
+
+    def open_queue(self) -> QueueDialog:
+        """Show the film queue.
+
+        Returns:
+            The dialog.
+        """
+        if self._queue_dialog is None:
+            self._queue_dialog = QueueDialog(self)
+        self._queue_dialog.reload()
+        self._queue_dialog.show()
+        self._queue_dialog.raise_()
+        return self._queue_dialog
+
+    def _queue_title(self) -> str:
+        waiting = self._queue.waiting()
+        title = tr("shell.queue")
+        if waiting:
+            return f"{title} ({waiting})"
+        return title
+
+    def _refresh_queue(self) -> None:
+        menu = self._overflow_menu()
+        if menu is not None:
+            for action in menu.actions():
+                if action.data() == "queue":
+                    action.setText(self._queue_title())
+        if self._queue_dialog is not None and self._queue_dialog.isVisible():
+            self._queue_dialog.reload()
+
+    def _overflow_menu(self) -> QMenu | None:
+        if not hasattr(self, "view"):
+            return None
+        overflow = self.view.root.findChild(QPushButton, "overflow")
+        if overflow is None:
+            return None
+        menu = overflow.menu()
+        return menu if isinstance(menu, QMenu) else None
+
+    def _pipeline_running(self) -> bool:
+        if self.job is not None and self.job.isRunning():
+            return True
+        studio = self._studio
+        return studio is not None and studio.job is not None and studio.job.isRunning()
+
+    def _start_queued(self, path: Path) -> None:
+        """Dub ``path``. The queue has already marked it running.
+
+        Args:
+            path: The next film.
+        """
+        if self._closing:
+            return
+        self._source = path
+        self.view.set_prompt_text(str(path))
+        self._show_poster(path)
+        if self.shell.phase is not Phase.BUSY:
+            if not self.shell.generate():
+                self._queue.finish("failed")
+                self.view.refresh()
+                return
+        self.view.set_note("")
+        self.view.refresh()
+        if not self._launch_pipeline():
+            nxt = self._queue.complete("failed")
+            if nxt is not None:
+                self._start_queued(Path(nxt))
 
     def _ensure_studio(self, *, sync_file: bool = True, push: bool = True) -> MainWindow:
         """Return the four-step window, creating it on the first call.
@@ -552,9 +765,76 @@ class ShellWindow(QWidget):
     def _bind_video_result(self) -> None:
         """Remember the shell video result region when the Yitro tag adds it.
 
-        This app does not draw a preview. The region stays the shell's widget.
+        The preview goes on that widget. Until it exists, a still frame is
+        shown on the empty page. This app does not add a player.
         """
         self._video_result = self.view.root.findChild(QWidget, VIDEO_RESULT_NAME)
+
+    def _show_poster(self, film: Path) -> None:
+        """Show one still from ``film`` before the dub starts.
+
+        Args:
+            film: The chosen video.
+        """
+        target = self._poster_label()
+        if target is None:
+            return
+        dest = state_dir() / "movie-dubber" / "poster.jpg"
+        if not poster_frame(film, 1.0, dest):
+            target.hide()
+            return
+        pixmap = QPixmap(str(dest))
+        if pixmap.isNull():
+            target.hide()
+            return
+        size = target.size()
+        if size.width() < 2 or size.height() < 2:
+            size = QSize(640, 360)
+        target.setPixmap(
+            pixmap.scaled(
+                size,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
+        target.show()
+
+    def _poster_label(self) -> QLabel | None:
+        """Return where the still frame is drawn.
+
+        The shell region wins when it is present. Otherwise the still sits on
+        the empty page, above the hint.
+        """
+        region = self._video_result
+        if isinstance(region, QLabel):
+            return region
+        if region is not None:
+            found = region.findChild(QLabel, "posterFrame")
+            if isinstance(found, QLabel):
+                return found
+            label = QLabel(region)
+            label.setObjectName("posterFrame")
+            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout = region.layout()
+            if layout is not None:
+                layout.addWidget(label)
+            return label
+        hint = self.view.root.findChild(QLabel, "emptyHint")
+        page = None if hint is None else hint.parentWidget()
+        if page is None:
+            return None
+        found = page.findChild(QLabel, "posterFrame")
+        if isinstance(found, QLabel):
+            return found
+        label = QLabel(page)
+        label.setObjectName("posterFrame")
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        label.setMinimumHeight(180)
+        label.hide()
+        layout = page.layout()
+        if layout is not None and hint is not None:
+            layout.insertWidget(max(0, layout.indexOf(hint)), label)
+        return label
 
     def _set_expert(self, enabled: bool) -> None:
         """Open or close the side panel, then mark likeness as a percent.
@@ -608,15 +888,34 @@ class ShellWindow(QWidget):
             self.shell.block(tr("shell.need_file"))
             self.view.refresh()
             return
+        if not self._queue.activate(path):
+            self._queue.add(path)
+            self.shell.cancel()
+            self.view.set_note(tr("shell.queue.added", name=path.name))
+            self.view.refresh()
+            self._refresh_queue()
+            return
+        self._show_poster(path)
+        if not self._launch_pipeline():
+            nxt = self._queue.complete("failed")
+            if nxt is not None:
+                self._start_queued(Path(nxt))
+
+    def _launch_pipeline(self) -> bool:
+        """Start the pipeline for the chosen film.
+
+        Returns:
+            True when a job is running.
+        """
         studio = self._ensure_studio()
         if studio.project is None:
             self.shell.block(tr("shell.need_file"))
             self.view.refresh()
-            return
-        if not studio.dub_all() or studio.job is None:
+            return False
+        if not studio.dub_all(stop_stage(self.shell)) or studio.job is None:
             self.shell.block(tr("shell.dubbing"))
             self.view.refresh()
-            return
+            return False
         self.job = studio.job
         self.project = studio.project
         self._run_id += 1
@@ -627,6 +926,11 @@ class ShellWindow(QWidget):
         self.job.done.connect(lambda ok, message, token=run_id: self._on_done(token, ok, message))
         self.shell.progress(0, 100, tr("shell.dubbing"))
         self.view.refresh()
+        waiting = self._queue.waiting()
+        if waiting:
+            self.view.set_note(tr("shell.queue.waiting", n=waiting))
+        self._refresh_queue()
+        return True
 
     def _on_stage(self, run_id: int, key: str, status: str, message: str) -> None:
         if run_id != self._run_id or self.shell.phase is not Phase.BUSY:
@@ -656,9 +960,26 @@ class ShellWindow(QWidget):
     def _on_done(self, run_id: int, ok: bool, message: str) -> None:
         if run_id != self._run_id or self.shell.phase is not Phase.BUSY:
             return
+        cancelled = self._user_cancelled
+        self._user_cancelled = False
+        status = "cancelled" if cancelled else "done" if ok else "failed"
+        nxt = self._queue.complete(status)
+        if self._closing:
+            return
+        if cancelled:
+            self.shell.cancel()
+            self.view.set_note(tr("shell.queue.cancelled_note"))
+            self.view.refresh()
+            self._refresh_queue()
+            return
         if not ok:
+            if nxt is not None:
+                self.shell.cancel()
+                self._start_queued(Path(nxt))
+                return
             self.shell.block(tr("shell.failed", error=message))
             self.view.refresh()
+            self._refresh_queue()
             return
         out = Path(message) if message else None
         item_id = f"dub-{run_id}"
@@ -667,8 +988,13 @@ class ShellWindow(QWidget):
         self.shell.finish(item_id)
         self.view.set_note(tr("shell.done", name=out.name if out is not None else ""))
         self.view.refresh()
+        self._refresh_queue()
+        if nxt is not None:
+            self._start_queued(Path(nxt))
 
     def _stop_job(self) -> None:
+        if self._pipeline_running():
+            self._user_cancelled = True
         if self._studio is not None:
             self._studio.cancel_job()
         if self.job is not None and self.job.isRunning():

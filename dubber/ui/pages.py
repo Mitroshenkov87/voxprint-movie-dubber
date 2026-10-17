@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QFrame, 
 from dubber.core import actor_voice, media, script, subtitles, voices
 from dubber.core.project import Project, Speaker, Voice
 from dubber.i18n import tr
+from dubber.ui.voice_label import library_voice_label
 
 TARGET_LANGS = ("ru", "en", "de")
 
@@ -92,11 +93,10 @@ def fmt_eta(seconds: float) -> str:
 
 
 def voice_items() -> List[tuple]:
-    """(Voice, label) choices: a clone from the film, then the voices of the shared Voxprint voice library (read-only)."""
+    """Return a clone of the film, then each library voice by its display name."""
     out = [(Voice("clone", ""), tr("voice.clone"))]
     for v in voices.list_library():
-        extra = ", ".join(x for x in (v.language, v.gender) if x)
-        out.append((Voice("library", v.id), tr("voice.library", name=v.name) + (f" ({extra})" if extra else "")))
+        out.append((Voice("library", v.id), library_voice_label(v)))
     return out
 
 

@@ -20,6 +20,7 @@ from voxprint_common.ui.simple_image import SimpleLayout
 from voxprint_common.ui.variants import state_names, surface_for
 
 from dubber.appinfo import resource_dir
+from dubber.pipeline.stages import ORDER
 
 # Placeholder role -> current mdl.json id. Model Forge replaces this map.
 PLACEHOLDER_ROLES: dict[str, str] = {
@@ -328,6 +329,21 @@ def dub_settings() -> Settings:
                 ),
             ),
             SettingSpec(
+                "dub.source_lang",
+                "setting.dub.source_lang",
+                "setting.dub.source_lang.help",
+                SettingType.ENUM,
+                "auto",
+                expert=True,
+                group="words",
+                choices=(
+                    Choice("auto", "setting.dub.source_lang.auto"),
+                    Choice("en", "setting.dub.source_lang.en"),
+                    Choice("ru", "setting.dub.source_lang.ru"),
+                    Choice("de", "setting.dub.source_lang.de"),
+                ),
+            ),
+            SettingSpec(
                 "dub.output_format",
                 "setting.dub.output",
                 "setting.dub.output.help",
@@ -339,6 +355,16 @@ def dub_settings() -> Settings:
                     Choice("mkv", "setting.dub.output.mkv"),
                     Choice("mp4", "setting.dub.output.mp4"),
                 ),
+            ),
+            SettingSpec(
+                "dub.until",
+                "setting.dub.until",
+                "setting.dub.until.help",
+                SettingType.ENUM,
+                "mux",
+                expert=True,
+                group="output",
+                choices=tuple(Choice(stage, f"stage.{stage}") for stage in ORDER),
             ),
             SettingSpec(
                 "dub.device",
@@ -511,6 +537,7 @@ def apply_project(layout: SimpleLayout) -> dict[str, object]:
     weight = _as_int(layout.get("dub.actor_weight")) / 100.0
     return {
         "target_lang": str(layout.get("dub.target_lang")),
+        "source_lang": str(layout.get("dub.source_lang")),
         "multi_voice": bool(layout.get("dub.multi_voice")),
         "actor_weight": weight,
         "original_volume": _as_float(layout.get("dub.mix_original")),
@@ -525,6 +552,20 @@ def apply_project(layout: SimpleLayout) -> dict[str, object]:
             "actor_weight": weight,
         },
     }
+
+
+def stop_stage(layout: SimpleLayout) -> str:
+    """Return the last pipeline stage selected in Expert mode.
+
+    An unknown value runs through the finished film.
+
+    Args:
+        layout: Screen state after presets and any hand edits.
+    """
+    stage = str(layout.get("dub.until"))
+    if stage not in ORDER:
+        return "mux"
+    return stage
 
 
 def apply_engine(layout: SimpleLayout) -> dict[str, object]:

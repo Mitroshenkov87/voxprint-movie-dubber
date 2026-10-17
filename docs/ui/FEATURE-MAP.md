@@ -27,7 +27,7 @@ The wizard steps are Film, Characters, Lines, and Dub. The Dub step is the playe
 | Show the finished file, open its folder | History Open and Show folder. Film step Show the file. Dub step Show the file. |
 | Open, Save, and Save As for a .vxdub project | Overflow menu: Open…, Save, Save As…. The wizard File menu has the same three actions. A project file passed on the command line opens here. |
 | Video moved: ask for the file and check it is the same one | Open project, same dialogs as before. |
-| Video preview on the main screen | Video preview on main screen: shell video result region (Yitro), pending |
+| Video preview on the main screen | Before the dub, a still frame of the film. When the shell has a `videoResult` region it is drawn there. Until that region ships, the still is shown on the empty page. The window does not add its own player. |
 
 ## Characters
 
@@ -71,7 +71,7 @@ The wizard steps are Film, Characters, Lines, and Dub. The Dub step is the playe
 | Job log | Dub step log. |
 | One running dub at a time, with cancel | Main screen Cancel, Film step Cancel, and Dub step Cancel. |
 | MDL download queue | Overflow menu, Manage models (`voxprint-mdl --gui --app movie-dubber`). |
-| A waiting list of several films | **NEEDS DECISION.** The old window ran one pipeline job. |
+| A waiting list of several films | More menu, Queue, and a note on the main screen while films are waiting. Add several films. One dubs at a time. Cancel stops the film that is running and leaves the rest waiting. Remove drops a film that is not running. The list is stored in the app state. |
 
 ## Settings, models, and startup
 
@@ -86,7 +86,7 @@ The wizard steps are Film, Characters, Lines, and Dub. The Dub step is the playe
 | Splash screen and the loading easter egg | Unchanged, before the main screen. |
 | GPU and driver minimum, then close | Unchanged, before the main screen. |
 | Version, build, and codename | Settings dialog and the wizard footer. |
-| Interface language menu | Wizard gear menu. **NEEDS DECISION** for changing the main screen language without opening the window again. The main screen uses the language it was opened with. |
+| Interface language menu | More menu, Interface language. The main screen switches at once. The wizard gear menu still switches the review window. |
 | Thermal pause on a long job | Unchanged. There was no control for it. |
 | Songs and musical inserts kept in the original language | Unchanged pipeline behavior. There was no separate control. |
 
@@ -110,10 +110,10 @@ The commands still run as `voxprint-movie-dubber-cli`. The rows below say where 
 | `--no-download` | Diagnostics dialog never downloads. |
 | `--target` | Diagnostics use the language chosen on the main screen. |
 | `--out` for a diagnostics report | **NEEDS DECISION.** The dialog writes the report to the Desktop and can open that folder. |
-| `--skip`, `--tts-modes`, `--cpu-tts`, `--cpu-sep`, `--clip`, `--asr-repo` | **NEEDS DECISION.** Diagnostic flags with no window control. The command still accepts them. |
+| `--skip`, `--tts-modes`, `--cpu-tts`, `--cpu-sep`, `--clip`, `--asr-repo` | Command line only. These diagnostic flags have no window control. The command still accepts them. |
 | `--tts-model` | Settings TTS model, which the diagnostics dialog reads. |
 | `--models`, `--report` on fetch-models | **NEEDS DECISION.** Manage models is the window. The flags stay on the command. |
-| `--languages`, `--source-lang`, `--target-lang`, `--stages` | Target language is the Language chips. Source stays automatic unless a project already has one. Stage selection stays on the command. **NEEDS DECISION** for picking a source language or a last stage in the window. |
+| `--languages`, `--source-lang`, `--target-lang`, `--stages` | Target language is the Language chips. Source language and the last stage are Expert fields on the shared settings state. The command still accepts the flags. |
 | `--worker` | **NEEDS DECISION.** Internal worker process. |
 | `--register-models-user`, `--unregister-models-user` | **NEEDS DECISION.** Installer and uninstaller. |
 | `--register-runtime-user`, `--unregister-runtime-user` | **NEEDS DECISION.** Installer and uninstaller. |
@@ -125,4 +125,4 @@ The commands still run as `voxprint-movie-dubber-cli`. The rows below say where 
 
 The main screen result area is still the audio player from `surface_for("movie-dubber")`: waveform bars and a chapters label. The film player with play, pause, and seek is the existing player on the Dub step.
 
-Video preview on main screen: shell video result region (Yitro), pending. `ShellWindow._bind_video_result` looks for a widget named `videoResult` and does not draw one. The existing player stays on the Dub step until that region is in the pinned shell.
+Before a dub, the main screen shows a poster frame of the chosen film. `ShellWindow._bind_video_result` looks for a widget named `videoResult`. When that region is present the still is drawn there. Until the Yitro tag adds it, the still is a label on the empty page. The window does not ship its own player. Play, pause, and seek stay on the Dub step.

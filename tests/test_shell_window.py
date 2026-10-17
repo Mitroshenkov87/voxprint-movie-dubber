@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtWidgets import QApplication, QComboBox, QPushButton, QSpinBox, QWidget
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QPushButton, QSpinBox, QWidget
 
 from dubber import i18n
 from dubber.ui.shell_window import ShellWindow
@@ -186,7 +187,7 @@ def test_custom_voices_wait_until_prepare_then_save_a_library_voice(tmp_path, mo
     assert excerpt is not None and excerpt.text() == "Прослушать отрывок"
     assert library is not None and library.text() == "Прослушать голос"
     assert dialog.findChild(QPushButton, "voiceListen-S1") is None
-    assert picker is not None and picker.currentText() == "Maria (рус.)"
+    assert picker is not None and picker.currentText() == "Мариа (рус.)"
     assert "Библиотека" not in picker.currentText()
     assert "Ann" not in name.text()
     assert hint is not None and hint.text() == "Послушайте отрывок каждого голоса из фильма и выберите для него голос озвучки."
@@ -208,6 +209,133 @@ def test_custom_voices_wait_until_prepare_then_save_a_library_voice(tmp_path, mo
     assert project.speaker("S1").voice.id == "ivan"
     dialog.close()
     window.close()
+
+
+def test_more_menu_switches_the_interface_language(tmp_path, monkeypatch):
+    window = _window(tmp_path, monkeypatch, "ru")
+    window.show()
+    QApplication.processEvents()
+    overflow = window.view.root.findChild(QPushButton, "overflow")
+    assert overflow is not None and overflow.menu() is not None
+    labels = [action.text() for action in overflow.menu().actions()]
+    assert "Язык интерфейса" in labels
+    assert "Очередь" in labels
+    button = window.view.root.findChild(QPushButton, "generate")
+    assert button is not None and button.text() == "Дублировать"
+    window.shell.set_value("dub.source_lang", "de")
+    assert window.set_ui_language("en")
+    QApplication.processEvents()
+    button = window.view.root.findChild(QPushButton, "generate")
+    overflow = window.view.root.findChild(QPushButton, "overflow")
+    assert button is not None and button.text() == "Dub"
+    assert overflow is not None and overflow.text().startswith("More")
+    assert window.shell.get("dub.source_lang") == "de"
+    labels = [action.text() for action in overflow.menu().actions()]
+    assert "Interface language" in labels
+    window.close()
+
+
+def test_queue_runs_one_film_and_cancel_leaves_the_rest(tmp_path, monkeypatch):
+    window = _window(tmp_path, monkeypatch, "en")
+    window.show()
+    QApplication.processEvents()
+    launched: list[Path] = []
+    monkeypatch.setattr(window, "_launch_pipeline", lambda: launched.append(Path(window._source)) or True)
+    first = tmp_path / "one.mkv"
+    second = tmp_path / "two.mkv"
+    first.write_bytes(b"a")
+    second.write_bytes(b"b")
+    window.add_films([first, second])
+    assert launched == [first.resolve()]
+    assert window._queue.running() == str(first.resolve())
+    assert window._queue.waiting() == 1
+    note = window.view.root.findChild(QWidget, "simpleNote")
+    assert note is not None and "1" in note.text()
+    dialog = window.open_queue()
+    QApplication.processEvents()
+    assert dialog.findChild(QWidget, "queueTitle") is not None
+    removes = [button for button in dialog.findChildren(QPushButton, "queueRemove") if button.isEnabled()]
+    assert len(removes) == 1
+    window.queue_cancel()
+    assert window._queue.running() is None
+    assert launched == [first.resolve()]
+    assert window._queue.waiting() == 1
+    window.queue_remove(str(second.resolve()))
+    assert window._queue.waiting() == 0
+    assert note is not None
+    window.close()
+    again = ShellWindow()
+    assert again._queue.running() is None
+    assert again._queue.waiting() == 0
+    again.close()
+
+
+def test_queue_is_still_there_after_the_window_closes(tmp_path, monkeypatch):
+    window = _window(tmp_path, monkeypatch, "en")
+    monkeypatch.setattr(window, "_launch_pipeline", lambda: True)
+    film = tmp_path / "queued.mkv"
+    film.write_bytes(b"a")
+    window.add_films([film])
+    assert window._queue.running() == str(film.resolve())
+    window.close()
+    again = ShellWindow()
+    assert again._queue.running() == str(film.resolve())
+    again.close()
+
+
+def test_source_language_and_stop_stage_are_expert_fields(tmp_path, monkeypatch):
+    window = _window(tmp_path, monkeypatch, "en")
+    window.show()
+    QApplication.processEvents()
+    assert window.view.root.findChild(QWidget, "dub.source_lang") is None
+    assert window.view.root.findChild(QWidget, "dub.until") is None
+    window.expert.set_enabled(True)
+    QApplication.processEvents()
+    source = window.view.root.findChild(QComboBox, "dub.source_lang")
+    until = window.view.root.findChild(QComboBox, "dub.until")
+    assert source is not None and source.currentData() == "auto"
+    assert until is not None and until.currentData() == "mux"
+    source.setCurrentIndex(source.findData("en"))
+    until.setCurrentIndex(until.findData("translation"))
+    QApplication.processEvents()
+    assert window.shell.get("dub.source_lang") == "en"
+    assert window.shell.get("dub.until") == "translation"
+    window.close()
+
+
+def test_poster_uses_the_shell_region_or_a_still(tmp_path, monkeypatch):
+    def _still(_src, _at_s, dest):
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        image = QImage(8, 8, QImage.Format.Format_RGB32)
+        image.fill(0xFF225588)
+        return image.save(str(dest), "JPG")
+
+    monkeypatch.setattr("dubber.ui.shell_window.poster_frame", _still)
+    window = _window(tmp_path, monkeypatch, "en")
+    window.show()
+    QApplication.processEvents()
+    film = tmp_path / "clip.mkv"
+    film.write_bytes(b"x")
+    window.set_video(film)
+    QApplication.processEvents()
+    poster = window.view.root.findChild(QLabel, "posterFrame")
+    assert window._video_result is None
+    assert poster is not None and poster.isVisible() and poster.pixmap() is not None and not poster.pixmap().isNull()
+    window.close()
+
+    region_window = _window(tmp_path, monkeypatch, "en")
+    region_window.show()
+    QApplication.processEvents()
+    region = QLabel(region_window.view.root)
+    region.setObjectName("videoResult")
+    region.resize(320, 180)
+    region_window._bind_video_result()
+    region_window.set_video(film)
+    QApplication.processEvents()
+    assert region_window._video_result is region
+    assert region.pixmap() is not None and not region.pixmap().isNull()
+    assert region_window.view.root.findChild(QLabel, "posterFrame") is None
+    region_window.close()
 
 
 def test_window_source_does_not_name_model_ids():

@@ -6,7 +6,6 @@ and the other tuning stay in Expert mode.
 """
 from __future__ import annotations
 
-import json
 from typing import Protocol, cast
 
 from PySide6.QtCore import Qt
@@ -25,9 +24,9 @@ from PySide6.QtWidgets import (
 
 from dubber.core import voices
 from dubber.core.project import Voice
-from dubber.core.voices import LibraryVoice
-from dubber.i18n import current, tr
+from dubber.i18n import tr
 from dubber.ui.pages import fill_voice_combo, voice_key
+from dubber.ui.voice_label import library_voice_label
 from voxprint_common.ui.theme import (
     CONTROL_BORDER,
     PRIMARY,
@@ -285,23 +284,6 @@ class VoiceCastDialog(QDialog):
         target.setAutoFillBackground(True)
 
 
-def library_voice_label(voice: LibraryVoice) -> str:
-    """Return a plain name, in the interface language when the library has one.
-
-    A stored name such as ``Мария`` wins over the folder name. The language,
-    when the voice has one, is the short catalog label, for example ``рус.``.
-
-    Args:
-        voice: One installed library voice.
-    """
-    info = _voice_info(voice)
-    name = _localized_name(info, voice.name)
-    tongue = _language_label(voice.language)
-    if tongue:
-        return f"{name} ({tongue})"
-    return name
-
-
 def current_voice_key(voice: Voice) -> str:
     """Return the combo value for ``voice`` when it is a library voice."""
     if voice.kind != "library" or not voice.id:
@@ -355,58 +337,6 @@ def _library_items() -> list[tuple[Voice, str]]:
         (Voice("library", voice.id), library_voice_label(voice))
         for voice in voices.list_library()
     ]
-
-
-def _voice_info(voice: LibraryVoice) -> dict[str, object]:
-    try:
-        loaded = json.loads((voice.path / "voice.json").read_text(encoding="utf-8-sig"))
-    except (OSError, ValueError):
-        return {}
-    return loaded if isinstance(loaded, dict) else {}
-
-
-def _localized_name(info: dict[str, object], fallback: str) -> str:
-    lang = current()
-    for key in ("display_names", "names"):
-        found = _pick_lang(info.get(key), lang)
-        if found:
-            return found
-    stored = info.get("name")
-    if isinstance(stored, dict):
-        found = _pick_lang(stored, lang)
-        if found:
-            return found
-    display = info.get("display_name")
-    if isinstance(display, dict):
-        found = _pick_lang(display, lang)
-        if found:
-            return found
-    if isinstance(display, str) and display.strip():
-        return display.strip()
-    if isinstance(stored, str) and stored.strip():
-        return stored.strip()
-    return fallback
-
-
-def _pick_lang(value: object, lang: str) -> str:
-    if not isinstance(value, dict):
-        return ""
-    for candidate in (lang, lang[:2]):
-        text = value.get(candidate)
-        if isinstance(text, str) and text.strip():
-            return text.strip()
-    return ""
-
-
-def _language_label(code: str) -> str:
-    token = (code or "").lower().replace("_", "-").split("-")[0]
-    if not token:
-        return ""
-    key = f"shell.voice.lang.{token}"
-    label = tr(key)
-    if label == key:
-        return token
-    return label
 
 
 def _voice_from_key(key: str) -> Voice:

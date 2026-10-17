@@ -645,15 +645,20 @@ class MainWindow(QWidget):
         self._film_changed()
         self.run_pipeline("prepare", PREPARE_UNTIL)
 
-    def dub_all(self) -> bool:
-        """The main action: the whole pipeline with the current (preset) Options, ending with the dubbed file next to the film."""
+    def dub_all(self, until: str = "mux") -> bool:
+        """Run the pipeline with the current options and stop after ``until``.
+
+        Args:
+            until: Last stage. A name that is not a stage runs through mux.
+        """
         if self.project is None:
             self.film.lbl_prepare.setText(tr("ui.start_need_file"))
             return False
         self._film_changed()
         self.apply_auto(self.project)
         self.project.save()
-        return self.run_pipeline("auto", "mux")
+        last = until if until in S.ORDER else "mux"
+        return self.run_pipeline("auto", last)
 
     # ------------------------------------------------------------------ characters / lines
     def _chars_changed(self, what: str) -> None:

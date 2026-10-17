@@ -12,6 +12,7 @@ from dubber.ui.shell_state import (
     dub_settings,
     registry_ids,
     resolve_role,
+    stop_stage,
 )
 from voxprint_common.ui.expert import ExpertMode
 from voxprint_common.ui.presets import PresetMatch
@@ -146,3 +147,24 @@ def test_engine_mapping_uses_resolved_roles(tmp_path, monkeypatch):
     labels = [item.label_key for item in dub_settings().get("dub.tts_model").choices]
     assert "Qwen3-TTS 1.7B Base (voice cloning)" in labels
     assert all("placeholder" not in label.lower() and "заглушка" not in label.lower() for label in labels)
+
+
+def test_source_language_and_stop_stage_stay_in_the_shared_state(tmp_path, monkeypatch):
+    layout = _layout(tmp_path, monkeypatch)
+    specs = dub_settings()
+    source = specs.get("dub.source_lang")
+    until = specs.get("dub.until")
+    assert source is not None and source.expert is True and source.default == "auto"
+    assert until is not None and until.expert is True and until.default == "mux"
+    assert layout.get("dub.source_lang") == "auto"
+    assert stop_stage(layout) == "mux"
+    assert layout.preset_status("quality").kind is PresetMatch.EXACT
+    layout.set_value("dub.source_lang", "en")
+    layout.set_value("dub.until", "translation")
+    assert apply_project(layout)["source_lang"] == "en"
+    assert stop_stage(layout) == "translation"
+    assert layout.preset_status("quality").kind is PresetMatch.EXACT
+    restored = build_layout(tmp_path / "state")
+    assert restored.get("dub.source_lang") == "en"
+    assert restored.get("dub.until") == "translation"
+    assert stop_stage(restored) == "translation"
