@@ -319,8 +319,6 @@
  "shell.mdl_failed": "VOXPrint MDL could not be opened.",
  "shell.models_missing": "Some optional models are not installed. Manage models opens VOXPrint MDL.",
  "shell.need_file": "Choose a video first.",
- "shell.need_result": "Dub a video first.",
- "shell.play": "Play",
  "shell.quality": "Quality",
  "shell.quality.balanced": "Balanced",
  "shell.quality.best": "Best quality",
@@ -331,5 +329,5 @@
  "shell.voice.neutral": "Neutral voices",
  "simple.action.dub": "Dub",
  "simple.drop.video": "Choose a video",
- "simple.empty.video": "The dubbed video will show up here."
+ "simple.empty.audio": "The dubbed audio will show up here."
 }

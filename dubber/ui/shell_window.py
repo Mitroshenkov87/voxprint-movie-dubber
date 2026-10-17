@@ -1,7 +1,8 @@
-"""The movie window on the shared video screen.
+"""The movie window on the shared audio screen.
 
 Simple mode is the video, the language, Quality, Voices, and Dub. Expert mode
-adds the side panel. Both read one settings state. Manage models opens
+adds the side panel. Both read one settings state. The screen is
+``surface_for("movie-dubber")`` from voxprint-common. Manage models opens
 VOXPrint MDL. The older four-step window stays in :mod:`dubber.ui.window` for
 the checks that still build it, and nothing in this window opens it.
 """
@@ -24,13 +25,7 @@ from dubber.models import launch_mdl
 from dubber.pipeline.stages import MOCK_CFG, ORDER
 from dubber.ui import dialogs
 from dubber.ui.jobs import PipelineThread
-from dubber.ui.shell_state import (
-    DUB_SURFACE,
-    apply_engine,
-    apply_project,
-    build_layout,
-    dub_settings,
-)
+from dubber.ui.shell_state import apply_engine, apply_project, build_layout, dub_settings
 from voxprint_common.i18n import add_catalogs
 from voxprint_common.i18n import set_language as set_shell_language
 from voxprint_common.paths import state_dir
@@ -38,7 +33,13 @@ from voxprint_common.suite_settings import set_window_geometry, window_geometry
 from voxprint_common.ui.expert import ExpertMode
 from voxprint_common.ui.simple_image import Phase, SimpleLayout, SimpleWidget
 from voxprint_common.ui.theme import build_shell_style, build_style
-from voxprint_common.ui.variants import WINDOW_HEIGHT, WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH, WINDOW_WIDTH
+from voxprint_common.ui.variants import (
+    WINDOW_HEIGHT,
+    WINDOW_MIN_HEIGHT,
+    WINDOW_MIN_WIDTH,
+    WINDOW_WIDTH,
+    surface_for,
+)
 
 VIDEO_EXTS = {".mkv", ".mp4", ".avi", ".mov", ".webm", ".m4v", ".ts", ".m2ts"}
 
@@ -84,7 +85,7 @@ class _VideoPick(QObject):
 
 
 class ShellWindow(QWidget):
-    """Simple video screen. Expert mode only opens the side panel."""
+    """Simple audio screen. Expert mode only opens the side panel."""
 
     def __init__(
         self,
@@ -109,6 +110,7 @@ class ShellWindow(QWidget):
         self._run_id = 0
         self._eta: int | None = None
         self._outputs: dict[str, Path] = {}
+        self._source: Path | None = None
         self._fitted = False
         self.diag_dialog: dialogs.DiagnosticsDialog | None = None
         self.expert = ExpertMode()
@@ -120,7 +122,7 @@ class ShellWindow(QWidget):
             on_generate=self._started,
             on_command=self._command,
             on_history=self._history,
-            surface=DUB_SURFACE,
+            surface=surface_for("movie-dubber"),
         )
         self.setObjectName("shell")
         self.setWindowTitle(APP_DISPLAY_NAME)
@@ -130,7 +132,6 @@ class ShellWindow(QWidget):
         body.setContentsMargins(0, 0, 0, 0)
         body.addWidget(self.view.root)
         self._install_video_pick()
-        self._add_play()
         self._add_diagnostics()
         self._stop_expert = self.expert.subscribe(self.view.set_expert)
         self.view.set_expert(self.expert.enabled())
@@ -147,8 +148,10 @@ class ShellWindow(QWidget):
         if path.suffix.lower() not in VIDEO_EXTS or not path.is_file():
             self.view.set_note(tr("shell.need_file"))
             return
+        chosen = path.resolve()
+        self._source = chosen
         self.view.set_note("")
-        self.view.set_prompt_text(str(path.resolve()))
+        self.view.set_prompt_text(str(chosen))
         self.view.refresh(prompt=True)
 
     def browse(self) -> None:
@@ -244,17 +247,6 @@ class ShellWindow(QWidget):
         self._picker = _VideoPick(self)
         drop.installEventFilter(self._picker)
 
-    def _add_play(self) -> None:
-        button = QPushButton(tr("shell.play"))
-        button.setObjectName("playResult")
-        button.setAutoDefault(False)
-        button.setMinimumHeight(34)
-        button.clicked.connect(self._play)
-        bar = self.view.root.findChild(QWidget, "actionBar")
-        if bar is None or bar.layout() is None:
-            return
-        bar.layout().insertWidget(0, button)
-
     def _add_diagnostics(self) -> None:
         overflow = self.view.root.findChild(QPushButton, "overflow")
         menu = None if overflow is None else overflow.menu()
@@ -297,9 +289,24 @@ class ShellWindow(QWidget):
         if action == "show_folder":
             self._reveal(path)
 
+    def _restore_source(self) -> Path | None:
+        """Put the chosen film back into the prompt.
+
+        Dub appends the shell voice label to the prompt. That combo is a
+        placeholder on the audio surface. The film path stays on this window.
+
+        Returns:
+            The film, or None when none is chosen.
+        """
+        path = self._source
+        if path is None or not path.is_file() or path.suffix.lower() not in VIDEO_EXTS:
+            return None
+        self.shell.set_prompt(str(path))
+        return path
+
     def _started(self) -> None:
-        path = Path(self.shell.prompt.strip())
-        if not path.is_file() or path.suffix.lower() not in VIDEO_EXTS:
+        path = self._restore_source()
+        if path is None:
             self.shell.block(tr("shell.need_file"))
             self.view.refresh()
             return
@@ -420,13 +427,6 @@ class ShellWindow(QWidget):
     def _open_settings(self) -> None:
         dialogs.SettingsDialog(self).exec()
 
-    def _play(self) -> None:
-        path = self._current_output()
-        if path is None:
-            self.view.set_note(tr("shell.need_result"))
-            return
-        self._open_file(path)
-
     def _open_folder(self) -> None:
         path = self._current_output() or self._video_path()
         if path is None:
@@ -443,6 +443,8 @@ class ShellWindow(QWidget):
         return None
 
     def _video_path(self) -> Path | None:
+        if self._source is not None and self._source.is_file():
+            return self._source
         text = self.shell.prompt.strip()
         if not text:
             return None

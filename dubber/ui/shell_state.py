@@ -17,7 +17,7 @@ from voxprint_common.mdl.catalog import load_manifest
 from voxprint_common.ui.presets import PresetFile, PresetGroup, PresetOption
 from voxprint_common.ui.settings import Choice, SettingSpec, Settings, SettingType
 from voxprint_common.ui.simple_image import SimpleLayout
-from voxprint_common.ui.variants import AppSurface, InputKind, ResultKind, VariantId
+from voxprint_common.ui.variants import state_names, surface_for
 
 from dubber.appinfo import resource_dir
 
@@ -32,18 +32,6 @@ PLACEHOLDER_ROLES: dict[str, str] = {
 }
 
 _FORGE: dict[str, str] = {}
-
-DUB_SURFACE = AppSurface(
-    "movie-dubber",
-    VariantId.VIDEO,
-    InputKind.FILE,
-    ResultKind.PLAYER,
-    "simple.action.dub",
-    "simple.empty.video",
-    "simple.drop.video",
-    "video",
-    "simple.drop.video",
-)
 
 _QUALITY_ORDER = (
     "dub.tts_model",
@@ -448,19 +436,24 @@ def dub_presets(settings: Settings | None = None) -> PresetFile:
 
 
 def build_layout(state_dir: Path | None) -> SimpleLayout:
-    """Build the video screen state. ``state_dir`` None keeps it in memory.
+    """Build the dub screen state. ``state_dir`` None keeps it in memory.
+
+    The widget uses :func:`surface_for` ``movie-dubber``. That surface is the
+    audio variant, so the files are ``audio-settings.json`` and
+    ``audio-history.json``.
 
     Args:
         state_dir: App state directory, or None for a memory-only state.
     """
     settings = dub_settings()
+    settings_file, history_file = state_names(surface_for("movie-dubber"))
     return SimpleLayout(
         presets=dub_presets(settings),
         settings=settings,
         state_dir=state_dir,
         gate=DubReview(),
-        state_name="video-settings.json",
-        history_name="video-history.json",
+        state_name=settings_file,
+        history_name=history_file,
     )
 
 

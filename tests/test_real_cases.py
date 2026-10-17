@@ -534,7 +534,7 @@ def test_common_pin_is_the_provisional_shell_commit():
     root = Path(__file__).resolve().parents[1]
     req = (root / "requirements.txt").read_text(encoding="utf-8")
     pin = (
-        "voxprint-common @ git+https://github.com/Mitroshenkov87/voxprint-common@"
+        "voxprint-common[ui] @ git+https://github.com/Mitroshenkov87/voxprint-common@"
         "f4e95ccfa25780abaf50412cb095a7843725102a"
     )
     assert pin in req

@@ -319,8 +319,6 @@
  "shell.mdl_failed": "Не удалось открыть VOXPrint MDL.",
  "shell.models_missing": "Некоторые необязательные модели не установлены. «Модели» открывает VOXPrint MDL.",
  "shell.need_file": "Сначала выберите видео.",
- "shell.need_result": "Сначала озвучьте видео.",
- "shell.play": "Воспроизвести",
  "shell.quality": "Качество",
  "shell.quality.balanced": "Сбалансировано",
  "shell.quality.best": "Лучшее качество",
@@ -331,5 +329,5 @@
  "shell.voice.neutral": "Нейтральные голоса",
  "simple.action.dub": "Дублировать",
  "simple.drop.video": "Выберите видео",
- "simple.empty.video": "Здесь появится озвученное видео."
+ "simple.empty.audio": "Здесь появится озвучка."
 }

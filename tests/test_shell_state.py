@@ -1,6 +1,8 @@
 """Shared settings state for the simple screen: presets, custom, reset, and Expert mode."""
 from __future__ import annotations
 
+from pathlib import Path
+
 from dubber.ui.shell_state import (
     apply_engine,
     apply_project,
@@ -13,12 +15,31 @@ from dubber.ui.shell_state import (
 )
 from voxprint_common.ui.expert import ExpertMode
 from voxprint_common.ui.presets import PresetMatch
+from voxprint_common.ui.variants import InputKind, ResultKind, VariantId, state_names, surface_for
 
 
 def _layout(tmp_path, monkeypatch):
     monkeypatch.setenv("VOXPRINT_HOME", str(tmp_path / "home"))
     clear_model_forge()
     return build_layout(tmp_path / "state")
+
+
+def test_layout_uses_the_library_audio_surface(tmp_path, monkeypatch):
+    surface = surface_for("movie-dubber")
+    assert surface.variant is VariantId.AUDIO
+    assert surface.input_kind is InputKind.MEDIA_VOICE
+    assert surface.result_kind is ResultKind.PLAYER
+    settings_name, history_name = state_names(surface)
+    assert (settings_name, history_name) == ("audio-settings.json", "audio-history.json")
+    layout = _layout(tmp_path, monkeypatch)
+    layout.choose("language", "en")
+    state = tmp_path / "state"
+    assert (state / "audio-settings.json").is_file()
+    assert not (state / "video-settings.json").exists()
+    source = (Path(__file__).resolve().parents[1] / "dubber" / "ui" / "shell_state.py").read_text(encoding="utf-8")
+    window = (Path(__file__).resolve().parents[1] / "dubber" / "ui" / "shell_window.py").read_text(encoding="utf-8")
+    assert "AppSurface(" not in source
+    assert "AppSurface(" not in window
 
 
 def test_balanced_is_the_default_and_fast_writes_concrete_values(tmp_path, monkeypatch):

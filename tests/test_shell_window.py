@@ -1,4 +1,4 @@
-"""The shared video screen: Dub, Expert mode, and no model ids in the window."""
+"""The shared audio screen: Dub, Expert mode, and no model ids in the window."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QApplication, QPushButton, QWidget
 from dubber import i18n
 from dubber.ui.shell_window import ShellWindow
 from voxprint_common.i18n import reset as reset_shell
+from voxprint_common.ui.variants import surface_for
 
 
 def _window(tmp_path, monkeypatch, lang: str):
@@ -38,6 +39,23 @@ def test_simple_screen_dubs_in_plain_words_and_expert_keeps_values(tmp_path, mon
     window.expert.set_enabled(False)
     assert window.shell.get("dub.tts_size") == "small"
     assert window.shell.get("dub.actor_weight") == 0.5
+    window.close()
+
+
+def test_audio_surface_keeps_the_film_path(tmp_path, monkeypatch):
+    window = _window(tmp_path, monkeypatch, "en")
+    window.show()
+    QApplication.processEvents()
+    assert window.view._surface == surface_for("movie-dubber")
+    assert window.view.root.findChild(QWidget, "voicePicker") is not None
+    assert window.view.root.findChild(QWidget, "player") is not None
+    assert window.view.root.findChild(QPushButton, "playResult") is None
+    film = tmp_path / "clip.mkv"
+    film.write_bytes(b"x")
+    window.set_video(film)
+    window.shell.set_prompt(f"{film.resolve()} · Warm")
+    assert window._restore_source() == film.resolve()
+    assert window.shell.prompt == str(film.resolve())
     window.close()
 
 
