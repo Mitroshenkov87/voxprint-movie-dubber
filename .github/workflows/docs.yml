@@ -22,8 +22,7 @@ jobs:
           python-version: "3.14"
       - name: Install documentation dependencies
         run: |
-          python installer/fetch_common_wheel.py --dest /tmp/voxprint-common-wheel
-          python -m pip install /tmp/voxprint-common-wheel/voxprint_common-0.2.4-py3-none-any.whl
+          python -m pip install "voxprint-common @ git+https://github.com/Mitroshenkov87/voxprint-common@f4e95ccfa25780abaf50412cb095a7843725102a"
           python -m pip install -r docs/requirements.txt
       - name: Command-line reference is generated
         run: python tools/gen_cli_docs.py --check

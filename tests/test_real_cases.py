@@ -530,17 +530,16 @@ def test_driver_cuda_is_read_from_new_nvidia_smi_headers():
     assert "UMD" in src
 
 
-def test_common_pin_is_the_0_2_4_wheel():
+def test_common_pin_is_the_provisional_shell_commit():
     root = Path(__file__).resolve().parents[1]
     req = (root / "requirements.txt").read_text(encoding="utf-8")
     pin = (
-        "voxprint-common @ https://github.com/Mitroshenkov87/voxprint-common/releases/download/"
-        "v0.2.4/voxprint_common-0.2.4-py3-none-any.whl "
-        "--hash=sha256:3051bc64700964705bf5cee5182829d1311560a38a9f7436195f26481e4fa239"
+        "voxprint-common @ git+https://github.com/Mitroshenkov87/voxprint-common@"
+        "f4e95ccfa25780abaf50412cb095a7843725102a"
     )
     assert pin in req
     assert "voxprint-common==0.1.*" not in req
-    assert "git+https://github.com/Mitroshenkov87/voxprint-common" not in req
+    assert "releases/download/v0.2.4" not in req
     fetcher = (root / "installer" / "fetch_common_wheel.py").read_text(encoding="utf-8")
     assert "3051bc64700964705bf5cee5182829d1311560a38a9f7436195f26481e4fa239" in fetcher
     assert "voxprint_common-0.2.4-py3-none-any.whl" in fetcher

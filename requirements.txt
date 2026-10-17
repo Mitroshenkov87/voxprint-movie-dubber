@@ -2,10 +2,11 @@
 # torch and torchaudio are installed separately so that the matching CUDA build is picked:
 #     uv pip install torch torchaudio --torch-backend=auto
 
-# Shared suite library, voxprint-common 0.2.4 "Malkhut" (VOXPrint MDL).
-# The package is not on PyPI. The line is the release wheel and its sha256.
-# installer/fetch_common_wheel.py vendors that same wheel for the offline installer.
-voxprint-common @ https://github.com/Mitroshenkov87/voxprint-common/releases/download/v0.2.4/voxprint_common-0.2.4-py3-none-any.whl --hash=sha256:3051bc64700964705bf5cee5182829d1311560a38a9f7436195f26481e4fa239
+# Shared suite library. Provisional pin of voxprint-common f4e95cc (SimpleLayout).
+# The package version stays 0.2.4. Replace this line with the published UI tag
+# when Components cuts it. installer/fetch_common_wheel.py still vendors the
+# v0.2.4 wheel for the offline installer. A networked pip install follows this pin.
+voxprint-common @ git+https://github.com/Mitroshenkov87/voxprint-common@f4e95ccfa25780abaf50412cb095a7843725102a
 
 PySide6>=6.7
 psutil>=5.9
