@@ -13,7 +13,7 @@ The wizard steps are Film, Characters, Lines, and Dub. The Dub step is the playe
 | Quality: Fast, Balanced, Best quality | Quality chips. Expert shows the concrete speech, separation, and batch values. |
 | Voices: Keep actor voices, Neutral voices, or Custom | Voices chips. Custom opens a dialog titled Choose voices, on the shell theme. After Prepare, each row is a diarization speaker (Voice 1, Voice 2), a film excerpt, a library voice, and a preview of that library voice. Before Prepare it asks to prepare. The same multi-voice flag and per-speaker voice are what the Characters step and Expert use. Likeness stays in Expert. |
 | Actor likeness, default 50% | Expert field shows 50%. The project still stores 0 to 1. Film step slider when one voice is used. Each character card has its own slider. |
-| Audiobook narrator voice (Warm, Clear, Low) | Hidden. That row belongs to the audio surface and is not a film voice. Character voices stay on the Characters step and in Expert. |
+| Audiobook narrator voice (Warm, Clear, Low) | Omitted. `surface_for("movie-dubber")` sets `voice_picker=False`, so the shell leaves that row out. Character voices stay on the Characters step and in Expert. |
 | Different voices for different characters | Expert multi-voice field and the Film step checkbox. |
 | Profanity: as in the original, or soften | Expert field and the Film step combo. Softened lines stay highlighted on the Lines step. |
 | Original voices under the dub | Original background chips on the main screen: Quieter, As in the original, or Louder. They write the mix value (0.05, 0.15, 0.45). Expert shows that same number. The Film step slider and the Dub step slider stay. |
@@ -28,7 +28,7 @@ The wizard steps are Film, Characters, Lines, and Dub. The Dub step is the playe
 | Show the finished file, open its folder | History Open and Show folder. Film step Show the file. Dub step Show the file. |
 | Open, Save, and Save As for a .vxdub project | Overflow menu: Open…, Save, Save As…. The wizard File menu has the same three actions. A project file passed on the command line opens here. |
 | Video moved: ask for the file and check it is the same one | Open project, same dialogs as before. |
-| Video preview on the main screen | Before the dub, a still frame of the film. When the shell has a `videoResult` region it is drawn there. Until that region ships, the still is shown on the empty page. The window does not add its own player. |
+| Video preview on the main screen | Before the dub, a still frame of the film on the shell `videoResult` / `videoPoster` region. The window does not add its own player. |
 
 ## Characters
 
@@ -126,4 +126,4 @@ The commands still run as `voxprint-movie-dubber-cli`. The rows below say where 
 
 The main screen result area is still the audio player from `surface_for("movie-dubber")`: waveform bars and a chapters label. The film player with play, pause, and seek is the existing player on the Dub step.
 
-Before a dub, the main screen shows a poster frame of the chosen film. `ShellWindow._bind_video_result` looks for a widget named `videoResult`. When that region is present the still is drawn there. Until the Yitro tag adds it, the still is a label on the empty page. The window does not ship its own player. Play, pause, and seek stay on the Dub step.
+Before a dub, the main screen shows a poster frame of the chosen film on the shell `videoResult` region (`videoPoster`). The window does not ship its own player. Play, pause, and seek stay on the Dub step.

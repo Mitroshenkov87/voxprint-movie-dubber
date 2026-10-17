@@ -22,7 +22,6 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
-    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -60,8 +59,6 @@ from voxprint_common.ui.variants import (
 )
 
 VIDEO_EXTS = {".mkv", ".mp4", ".avi", ".mov", ".webm", ".m4v", ".ts", ".m2ts"}
-# Object name of the optional video result region. Components adds it in the Yitro tag.
-VIDEO_RESULT_NAME = "videoResult"
 
 
 def _row_index(box: QVBoxLayout, label: QLabel) -> int:
@@ -201,7 +198,6 @@ class ShellWindow(QWidget):
         self._fitted = False
         self._cast: VoiceCastDialog | None = None
         self._queue_dialog: QueueDialog | None = None
-        self._video_result: QWidget | None = None
         self._user_cancelled = False
         self._closing = False
         self._rows_wired = False
@@ -238,7 +234,6 @@ class ShellWindow(QWidget):
         self._settle_screen()
         self._body.addWidget(self.view.root)
         self._install_video_pick()
-        self._hide_narrator_voice()
         self._add_menu()
         self._watch_custom_voices()
         self._set_expert(self.expert.enabled())
@@ -818,11 +813,10 @@ class ShellWindow(QWidget):
         studio.chars.load(project)
 
     def _settle_screen(self) -> None:
-        """Hide an empty history strip, line up the chips, and remember a video region."""
+        """Hide an empty history strip and line up the chips."""
         if not hasattr(self, "view"):
             return
         self._settle_history()
-        self._bind_video_result()
         self._watch_row_fonts()
         self._align_preset_labels()
         self._place_burn_note()
@@ -867,7 +861,6 @@ class ShellWindow(QWidget):
                 width = max(width, label.sizeHint().width(), advance + 4)
             for label in labels:
                 label.setFixedWidth(width)
-            self._fit_chip_text()
             host = labels[0].parentWidget()
             box = None if host is None else host.layout()
             if box is not None:
@@ -875,19 +868,6 @@ class ShellWindow(QWidget):
         finally:
             self._aligning = False
 
-    def _fit_chip_text(self) -> None:
-        """Keep each chip at least as wide as its label."""
-        for button in self.view.root.findChildren(QPushButton):
-            name = button.objectName()
-            if not name.startswith("chip-"):
-                continue
-            text = button.text()
-            if not text:
-                continue
-            advance = QFontMetrics(button.font()).horizontalAdvance(text)
-            needed = advance + 28
-            if button.minimumWidth() < needed:
-                button.setMinimumWidth(needed)
 
     def _place_burn_note(self) -> None:
         """Put a short note under the subtitle chips. Burning re-encodes the picture."""
@@ -943,30 +923,20 @@ class ShellWindow(QWidget):
         strip.hide()
         strip.setFixedHeight(0)
 
-    def _bind_video_result(self) -> None:
-        """Remember the shell video result region when the Yitro tag adds it.
-
-        The preview goes on that widget. Until it exists, a still frame is
-        shown on the empty page. This app does not add a player.
-        """
-        self._video_result = self.view.root.findChild(QWidget, VIDEO_RESULT_NAME)
-
     def _show_poster(self, film: Path) -> None:
-        """Show one still from ``film`` before the dub starts.
+        """Show one still from ``film`` on the shell ``videoResult`` poster.
 
         Args:
             film: The chosen video.
         """
-        target = self._poster_label()
+        target = self.view.root.findChild(QLabel, "videoPoster")
         if target is None:
             return
         dest = state_dir() / "movie-dubber" / "poster.jpg"
         if not poster_frame(film, 1.0, dest):
-            target.hide()
             return
         pixmap = QPixmap(str(dest))
         if pixmap.isNull():
-            target.hide()
             return
         size = target.size()
         if size.width() < 2 or size.height() < 2:
@@ -980,78 +950,18 @@ class ShellWindow(QWidget):
         )
         target.show()
 
-    def _poster_label(self) -> QLabel | None:
-        """Return where the still frame is drawn.
-
-        The shell region wins when it is present. Otherwise the still sits on
-        the empty page, above the hint.
-        """
-        region = self._video_result
-        if isinstance(region, QLabel):
-            return region
-        if region is not None:
-            found = region.findChild(QLabel, "posterFrame")
-            if isinstance(found, QLabel):
-                return found
-            label = QLabel(region)
-            label.setObjectName("posterFrame")
-            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout = region.layout()
-            if layout is not None:
-                layout.addWidget(label)
-            return label
-        hint = self.view.root.findChild(QLabel, "emptyHint")
-        page = None if hint is None else hint.parentWidget()
-        if page is None:
-            return None
-        found = page.findChild(QLabel, "posterFrame")
-        if isinstance(found, QLabel):
-            return found
-        label = QLabel(page)
-        label.setObjectName("posterFrame")
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        label.setMinimumHeight(180)
-        label.hide()
-        layout = page.layout()
-        if layout is not None and hint is not None:
-            layout.insertWidget(max(0, layout.indexOf(hint)), label)
-        return label
-
     def _set_expert(self, enabled: bool) -> None:
-        """Open or close the side panel, then mark likeness as a percent.
+        """Open or close the side panel, then set mix decimals.
 
         Args:
             enabled: True shows the expert settings beside the result.
         """
         self.view.set_expert(enabled)
-        self._show_likeness_percent()
         self._show_mix_steps()
         combo = self.view.root.findChild(QComboBox, "dub.subtitles")
         if combo is not None:
             combo.currentIndexChanged.connect(self._sync_burn_note)
         self._sync_burn_note()
-
-    def _hide_narrator_voice(self) -> None:
-        """Hide the audiobook narrator row on the audio surface.
-
-        The shell always adds a Warm, Clear, or Low combo for this surface
-        and has no switch to leave it out. Film voices are the Voices chips,
-        the Characters step, and the Expert likeness field.
-        """
-        for name in ("voiceLabel", "voicePicker"):
-            widget = self.view.root.findChild(QWidget, name)
-            if widget is not None:
-                widget.hide()
-
-    def _show_likeness_percent(self) -> None:
-        """Draw the likeness number with a percent sign.
-
-        The shell integer field has no unit. The project still stores the
-        share from 0 to 1.
-        """
-        spin = self.view.root.findChild(QSpinBox, "dub.actor_weight")
-        if spin is not None:
-            spin.setSuffix("%")
 
     def _show_mix_steps(self) -> None:
         """Show the background level in hundredths.
@@ -1073,8 +983,7 @@ class ShellWindow(QWidget):
     def _restore_source(self) -> Path | None:
         """Put the chosen film back into the prompt.
 
-        Dub appends the shell voice label to the prompt even when that combo
-        is hidden. The film path stays on this window.
+        The film path stays on this window.
 
         Returns:
             The film, or None when none is chosen.

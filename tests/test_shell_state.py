@@ -119,9 +119,10 @@ def test_model_choices_come_from_the_mdl_registry(tmp_path, monkeypatch):
     choices = {item.value for item in dub_settings().get("dub.tts_model").choices}
     assert set(ids) <= choices
     assert all("/" not in value and "\\" not in value for value in choices)
-    assert resolve_role("tts") == "qwen3-tts"
-    bind_model_forge({"tts": "not-published-yet"})
-    assert resolve_role("tts") == "qwen3-tts"
+    assert resolve_role("tts.1_7b") == "qwen3-tts"
+    assert resolve_role("tts.0_6b") == "qwen3-tts"
+    bind_model_forge({"tts.1_7b": "not-published-yet"})
+    assert resolve_role("tts.1_7b") == "qwen3-tts"
     bind_model_forge({"separation.best": "roformer"})
     assert resolve_role("separation.best") == "roformer"
     clear_model_forge()

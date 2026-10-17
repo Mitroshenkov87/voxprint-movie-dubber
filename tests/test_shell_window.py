@@ -59,10 +59,9 @@ def test_audio_surface_keeps_the_film_path(tmp_path, monkeypatch):
     window.show()
     QApplication.processEvents()
     assert window.view._surface == surface_for("movie-dubber")
-    voice = window.view.root.findChild(QWidget, "voicePicker")
-    label = window.view.root.findChild(QWidget, "voiceLabel")
-    assert voice is not None and label is not None
-    assert not voice.isVisible() and not label.isVisible()
+    assert window.view.root.findChild(QWidget, "voicePicker") is None
+    assert window.view.root.findChild(QWidget, "voiceLabel") is None
+    assert window.view._surface.voice_picker is False
     assert window.view.root.findChild(QWidget, "player") is not None
     assert window.view.root.findChild(QPushButton, "playResult") is None
     film = tmp_path / "clip.mkv"
@@ -128,7 +127,8 @@ def test_empty_history_strip_is_hidden_and_video_region_is_only_a_hook(tmp_path,
     QApplication.processEvents()
     strip = window.view.root.findChild(QWidget, "historyStrip")
     assert strip is not None and not strip.isVisible() and strip.height() == 0
-    assert window._video_result is None
+    assert window.view.root.findChild(QWidget, "videoResult") is not None
+    assert window.view.root.findChild(QLabel, "videoPoster") is not None
     window.close()
 
 
@@ -327,24 +327,11 @@ def test_poster_uses_the_shell_region_or_a_still(tmp_path, monkeypatch):
     film.write_bytes(b"x")
     window.set_video(film)
     QApplication.processEvents()
-    poster = window.view.root.findChild(QLabel, "posterFrame")
-    assert window._video_result is None
+    region = window.view.root.findChild(QWidget, "videoResult")
+    poster = window.view.root.findChild(QLabel, "videoPoster")
+    assert region is not None
     assert poster is not None and poster.isVisible() and poster.pixmap() is not None and not poster.pixmap().isNull()
     window.close()
-
-    region_window = _window(tmp_path, monkeypatch, "en")
-    region_window.show()
-    QApplication.processEvents()
-    region = QLabel(region_window.view.root)
-    region.setObjectName("videoResult")
-    region.resize(320, 180)
-    region_window._bind_video_result()
-    region_window.set_video(film)
-    QApplication.processEvents()
-    assert region_window._video_result is region
-    assert region.pixmap() is not None and not region.pixmap().isNull()
-    assert region_window.view.root.findChild(QLabel, "posterFrame") is None
-    region_window.close()
 
 
 def test_plain_rows_line_up_in_russian_and_burning_notes_the_reencode(tmp_path, monkeypatch):

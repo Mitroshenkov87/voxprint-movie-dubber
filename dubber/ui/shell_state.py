@@ -15,7 +15,7 @@ from pathlib import Path
 
 from voxprint_common.mdl.catalog import load_manifest
 from voxprint_common.ui.presets import PresetFile, PresetGroup, PresetOption
-from voxprint_common.ui.settings import Choice, SettingSpec, Settings, SettingType
+from voxprint_common.ui.settings import UNIT_PERCENT, Choice, SettingSpec, Settings, SettingType
 from voxprint_common.ui.simple_image import SimpleLayout
 from voxprint_common.ui.variants import state_names, surface_for
 
@@ -24,7 +24,8 @@ from dubber.pipeline.stages import ORDER
 
 # Placeholder role -> current mdl.json id. Model Forge replaces this map.
 PLACEHOLDER_ROLES: dict[str, str] = {
-    "tts": "qwen3-tts",
+    "tts.1_7b": "qwen3-tts",
+    "tts.0_6b": "qwen3-tts",
     "asr": "asr",
     "separation": "sep",
     "separation.best": "roformer",
@@ -161,7 +162,7 @@ def model_label_key(model_id: str) -> str:
 
 def dub_settings() -> Settings:
     """Return the descriptors the chips and the expert panel share."""
-    tts = resolve_role("tts")
+    tts = resolve_role("tts.1_7b")
     separation = resolve_role("separation")
     diarization = resolve_role("diarization")
     models = _model_choices()
@@ -201,6 +202,7 @@ def dub_settings() -> Settings:
                 group="voices",
                 minimum=0,
                 maximum=100,
+                suffix_key=UNIT_PERCENT,
             ),
             SettingSpec(
                 "dub.multi_voice",
@@ -439,7 +441,7 @@ def dub_presets(settings: Settings | None = None) -> PresetFile:
         settings: Unused. Present so callers can pass the descriptor list.
     """
     del settings
-    tts = resolve_role("tts")
+    tts = resolve_role("tts.1_7b")
     separate = resolve_role("separation")
     separate_best = resolve_role("separation.best")
     diar = resolve_role("diarization")
