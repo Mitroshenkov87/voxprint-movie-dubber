@@ -435,6 +435,20 @@ for old in "$VX_HOME"/runtime-*; do
 done
 say "[2/5] Creating the Python 3.14 environment"
 retry "Creating the Python 3.14 environment" as_user "$UV" venv "$ENV_DIR" --python 3.14 --allow-existing --quiet
+# Every interpreter in this runtime must keep the suite directory where the
+# runtime was created. The provisional library otherwise renames it on import.
+"$PY" - "$VX_HOME" <<'PYEOF'
+import site
+import sys
+from pathlib import Path
+dest = Path(site.getsitepackages()[0]) / "sitecustomize.py"
+home = sys.argv[1]
+dest.write_text(
+    "import os\n"
+    f"os.environ.setdefault('VOXPRINT_HOME', {home!r})\n",
+    encoding="utf-8",
+)
+PYEOF
 read -r TV TA TC < <("$PY" - "$APP_DIR/dubber/infra/runtime_lock.json" <<'PYEOF'
 import json, sys
 lock = json.load(open(sys.argv[1], encoding="utf-8"))
