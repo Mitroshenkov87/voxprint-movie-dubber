@@ -14,7 +14,7 @@ from typing import Any, Callable, cast
 
 from PySide6.QtCore import QEvent, QObject, QUrl
 from PySide6.QtGui import QDesktopServices, QDropEvent
-from PySide6.QtWidgets import QFileDialog, QMessageBox, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFileDialog, QMessageBox, QPushButton, QSpinBox, QVBoxLayout, QWidget
 
 from dubber import i18n, paths, settings
 from dubber.appinfo import APP_DISPLAY_NAME
@@ -137,9 +137,10 @@ class ShellWindow(QWidget):
         body.setContentsMargins(0, 0, 0, 0)
         body.addWidget(self.view.root)
         self._install_video_pick()
+        self._hide_narrator_voice()
         self._add_menu()
-        self._stop_expert = self.expert.subscribe(self.view.set_expert)
-        self.view.set_expert(self.expert.enabled())
+        self._stop_expert = self.expert.subscribe(self._set_expert)
+        self._set_expert(self.expert.enabled())
         self._apply_saved_language()
         if autorun:
             self.open_diagnostics(True)
@@ -410,11 +411,42 @@ class ShellWindow(QWidget):
         if action == "show_folder":
             self._reveal(path)
 
+    def _set_expert(self, enabled: bool) -> None:
+        """Open or close the side panel, then mark likeness as a percent.
+
+        Args:
+            enabled: True shows the expert settings beside the result.
+        """
+        self.view.set_expert(enabled)
+        self._show_likeness_percent()
+
+    def _hide_narrator_voice(self) -> None:
+        """Hide the audiobook narrator row on the audio surface.
+
+        The shell always adds a Warm, Clear, or Low combo for this surface
+        and has no switch to leave it out. Film voices are the Voices chips,
+        the Characters step, and the Expert likeness field.
+        """
+        for name in ("voiceLabel", "voicePicker"):
+            widget = self.view.root.findChild(QWidget, name)
+            if widget is not None:
+                widget.hide()
+
+    def _show_likeness_percent(self) -> None:
+        """Draw the likeness number with a percent sign.
+
+        The shell integer field has no unit. The project still stores the
+        share from 0 to 1.
+        """
+        spin = self.view.root.findChild(QSpinBox, "dub.actor_weight")
+        if spin is not None:
+            spin.setSuffix("%")
+
     def _restore_source(self) -> Path | None:
         """Put the chosen film back into the prompt.
 
-        Dub appends the shell voice label to the prompt. That combo is a
-        placeholder on the audio surface. The film path stays on this window.
+        Dub appends the shell voice label to the prompt even when that combo
+        is hidden. The film path stays on this window.
 
         Returns:
             The film, or None when none is chosen.

@@ -12,7 +12,8 @@ The wizard steps are Film, Characters, Lines, and Dub. The Dub step is the playe
 | Dub language: Russian, English, or German | Language chips on the main screen, the Expert language field, and the Film step combo. One language per film, as before. |
 | Quality: Fast, Balanced, Best quality | Quality chips. Expert shows the concrete speech, separation, and batch values. |
 | Voices: Keep actor voices or Neutral voices | Voices chips. Expert actor-likeness and multi-voice fields share that state. |
-| Actor likeness, default 50% | Expert field Actor likeness. Film step slider when one voice is used. Each character card has its own slider. |
+| Actor likeness, default 50% | Expert field shows 50%. The project still stores 0 to 1. Film step slider when one voice is used. Each character card has its own slider. |
+| Audiobook narrator voice (Warm, Clear, Low) | Hidden. That row belongs to the audio surface and is not a film voice. Character voices stay on the Characters step and in Expert. |
 | Different voices for different characters | Expert multi-voice field and the Film step checkbox. |
 | Profanity: as in the original, or soften | Expert field and the Film step combo. Softened lines stay highlighted on the Lines step. |
 | Original voices under the dub | Expert mix field, the Film step slider, and the Dub step slider. |

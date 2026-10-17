@@ -250,7 +250,7 @@
  "model.roformer": "Best separation (placeholder)",
  "model.sep": "Separation (placeholder)",
  "setting.dub.actor_weight": "Actor likeness",
- "setting.dub.actor_weight.help": "How close the voice stays to the actor. 0.5 is the usual mix.",
+ "setting.dub.actor_weight.help": "How close the voice stays to the actor. 50% is the usual mix.",
  "setting.dub.device": "Graphics card",
  "setting.dub.device.auto": "Automatic",
  "setting.dub.device.cuda": "Use the graphics card",
@@ -332,6 +332,7 @@
  "shell.voice.help": "Keep the actor's voice, or use a neutral voice.",
  "shell.voice.keep": "Keep actor voices",
  "shell.voice.neutral": "Neutral voices",
+ "command.view.toggle_expert_mode": "Expert mode",
  "simple.action.dub": "Dub",
  "simple.drop.video": "Choose a video",
  "simple.empty.audio": "The dubbed audio will show up here."

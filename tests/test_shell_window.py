@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtWidgets import QApplication, QPushButton, QWidget
+from PySide6.QtWidgets import QApplication, QPushButton, QSpinBox, QWidget
 
 from dubber import i18n
 from dubber.ui.shell_window import ShellWindow
@@ -30,15 +30,17 @@ def test_simple_screen_dubs_in_plain_words_and_expert_keeps_values(tmp_path, mon
     panel = window.view.root.findChild(QWidget, "expertPanel")
     assert button is not None and button.text() == "Dub"
     assert panel is not None and not panel.isVisible()
-    assert window.shell.get("dub.actor_weight") == 0.5
+    assert window.shell.get("dub.actor_weight") == 50
     window.shell.choose("quality", "fast")
     window.expert.set_enabled(True)
     QApplication.processEvents()
     assert panel.isVisible()
+    likeness = window.view.root.findChild(QSpinBox, "dub.actor_weight")
+    assert likeness is not None and likeness.value() == 50 and likeness.text() == "50%"
     assert window.shell.get("dub.tts_size") == "small"
     window.expert.set_enabled(False)
     assert window.shell.get("dub.tts_size") == "small"
-    assert window.shell.get("dub.actor_weight") == 0.5
+    assert window.shell.get("dub.actor_weight") == 50
     window.close()
 
 
@@ -47,7 +49,10 @@ def test_audio_surface_keeps_the_film_path(tmp_path, monkeypatch):
     window.show()
     QApplication.processEvents()
     assert window.view._surface == surface_for("movie-dubber")
-    assert window.view.root.findChild(QWidget, "voicePicker") is not None
+    voice = window.view.root.findChild(QWidget, "voicePicker")
+    label = window.view.root.findChild(QWidget, "voiceLabel")
+    assert voice is not None and label is not None
+    assert not voice.isVisible() and not label.isVisible()
     assert window.view.root.findChild(QWidget, "player") is not None
     assert window.view.root.findChild(QPushButton, "playResult") is None
     film = tmp_path / "clip.mkv"
@@ -63,6 +68,16 @@ def test_russian_catalog_names_the_dub_button(tmp_path, monkeypatch):
     window = _window(tmp_path, monkeypatch, "ru")
     button = window.view.root.findChild(QPushButton, "generate")
     assert button is not None and button.text() == "Дублировать"
+    balanced = window.view.root.findChild(QPushButton, "chip-quality-balanced")
+    keep = window.view.root.findChild(QPushButton, "chip-voices-keep")
+    neutral = window.view.root.findChild(QPushButton, "chip-voices-neutral")
+    best = window.view.root.findChild(QPushButton, "chip-quality-best")
+    expert = window.view.root.findChild(QPushButton, "expertToggle")
+    assert balanced is not None and balanced.text() == "Баланс"
+    assert best is not None and best.text() == "Лучшее"
+    assert keep is not None and keep.text() == "Голоса актёров"
+    assert neutral is not None and neutral.text() == "Нейтральные"
+    assert expert is not None and expert.text() == "Эксперт"
     drop = window.view.root.findChild(QWidget, "fileDrop")
     assert drop is not None and "видео" in drop.text().lower()
     window.close()

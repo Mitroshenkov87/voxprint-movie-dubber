@@ -46,7 +46,7 @@ def test_balanced_is_the_default_and_fast_writes_concrete_values(tmp_path, monke
     layout = _layout(tmp_path, monkeypatch)
     status = layout.preset_status("quality")
     assert status is not None and status.kind is PresetMatch.EXACT and status.option_id == "balanced"
-    assert layout.get("dub.actor_weight") == 0.5
+    assert layout.get("dub.actor_weight") == 50
     assert layout.get("dub.voice_style") == "actor"
     before = {key: layout.get(key) for key in ("dub.tts_size", "dub.separation", "dub.tts_batch", "dub.mt_context")}
     layout.choose("quality", "fast")
@@ -56,7 +56,7 @@ def test_balanced_is_the_default_and_fast_writes_concrete_values(tmp_path, monke
     assert layout.get("dub.mt_context") == 0
     assert layout.get("dub.tts_size") != before["dub.tts_size"]
     assert layout.preset_status("quality").kind is PresetMatch.EXACT
-    assert layout.get("dub.actor_weight") == 0.5
+    assert layout.get("dub.actor_weight") == 50
 
 
 def test_close_edit_marks_changes_and_reset_restores_the_preset(tmp_path, monkeypatch):
@@ -70,7 +70,7 @@ def test_close_edit_marks_changes_and_reset_restores_the_preset(tmp_path, monkey
     layout.reset_group("quality")
     assert layout.get("dub.tts_batch") == original
     assert layout.preset_status("quality").kind is PresetMatch.EXACT
-    assert layout.get("dub.actor_weight") == 0.5
+    assert layout.get("dub.actor_weight") == 50
 
 
 def test_far_edit_marks_custom_and_reset_restores_the_stored_preset(tmp_path, monkeypatch):
@@ -94,7 +94,7 @@ def test_expert_mode_switch_keeps_values(tmp_path, monkeypatch):
     layout = _layout(tmp_path, monkeypatch)
     layout.choose("quality", "best")
     layout.choose("voices", "neutral")
-    layout.set_value("dub.actor_weight", 0.8)
+    layout.set_value("dub.actor_weight", 80)
     snap = layout.snapshot()
     mode = ExpertMode()
     assert mode.enabled() is False
@@ -102,7 +102,7 @@ def test_expert_mode_switch_keeps_values(tmp_path, monkeypatch):
     mode.set_enabled(False)
     assert mode.enabled() is False
     assert layout.snapshot() == snap
-    assert layout.get("dub.actor_weight") == 0.8
+    assert layout.get("dub.actor_weight") == 80
     assert layout.preset_status("voices").kind is PresetMatch.MODIFIED
 
 

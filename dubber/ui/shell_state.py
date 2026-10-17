@@ -185,12 +185,12 @@ def dub_settings() -> Settings:
                 "dub.actor_weight",
                 "setting.dub.actor_weight",
                 "setting.dub.actor_weight.help",
-                SettingType.FLOAT,
-                0.5,
+                SettingType.INT,
+                50,
                 expert=True,
                 group="voices",
-                minimum=0.0,
-                maximum=1.0,
+                minimum=0,
+                maximum=100,
             ),
             SettingSpec(
                 "dub.multi_voice",
@@ -417,8 +417,8 @@ def dub_presets(settings: Settings | None = None) -> PresetFile:
         "voices",
         "shell.voice",
         (
-            _option("keep", "shell.voice.keep", _voice("actor", 0.5, False)),
-            _option("neutral", "shell.voice.neutral", _voice("neutral", 0.0, False)),
+            _option("keep", "shell.voice.keep", _voice("actor", 50, False)),
+            _option("neutral", "shell.voice.neutral", _voice("neutral", 0, False)),
         ),
         "keep",
     )
@@ -489,13 +489,15 @@ def apply_project(layout: SimpleLayout) -> dict[str, object]:
     """Return project settings written from the live state.
 
     ``mt_context`` is stored on the project. The translation engine does not
-    read it yet.
+    read it yet. Actor likeness is a percent on the expert panel because the
+    shell has no unit on a number. The project still stores that share from
+    0 to 1.
 
     Args:
         layout: Screen state after presets and any hand edits.
     """
     style = str(layout.get("dub.voice_style"))
-    weight = _as_float(layout.get("dub.actor_weight"))
+    weight = _as_int(layout.get("dub.actor_weight")) / 100.0
     return {
         "target_lang": str(layout.get("dub.target_lang")),
         "multi_voice": bool(layout.get("dub.multi_voice")),
@@ -584,8 +586,8 @@ def _quality(
     return tuple((key, values[key]) for key in _QUALITY_ORDER)
 
 
-def _voice(style: str, weight: float, multi: bool) -> tuple[tuple[str, str | float | bool], ...]:
-    values: dict[str, str | float | bool] = {
+def _voice(style: str, weight: int, multi: bool) -> tuple[tuple[str, str | int | bool], ...]:
+    values: dict[str, str | int | bool] = {
         "dub.voice_style": style,
         "dub.actor_weight": weight,
         "dub.multi_voice": multi,
