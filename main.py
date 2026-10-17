@@ -191,11 +191,11 @@ def main(argv=None) -> int:
     splash = show_splash()                               # the first thing on screen: before the heavy UI imports below
     splash.set_stage(tr("splash.loading_ui"))
     splash.set_progress(0.3)
-    from dubber.ui.window import MainWindow
+    from dubber.ui.shell_window import ShellWindow
 
     splash.set_stage(tr("splash.opening"))
     splash.set_progress(0.8)
-    win = MainWindow(autorun="--diagnose" in argv, options_hook=(lambda o: _apply_cli(o, argv)) if "--diagnose" in argv else None)
+    win = ShellWindow(autorun="--diagnose" in argv, options_hook=(lambda o: _apply_cli(o, argv)) if "--diagnose" in argv else None)
     win.show()
     if ensured.optional_missing:
         win.show_optional_models(list(ensured.optional_missing))

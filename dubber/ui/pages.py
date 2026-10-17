@@ -5,6 +5,7 @@ switches pages.  Every edit is written to the project folder at once, so a close
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -17,6 +18,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QFrame, 
 from dubber.core import actor_voice, media, script, subtitles, voices
 from dubber.core.project import Project, Speaker, Voice
 from dubber.i18n import tr
+from dubber.ui.voice_label import library_voice_label
 
 TARGET_LANGS = ("ru", "en", "de")
 
@@ -27,6 +29,33 @@ def card(primary: bool = False) -> QFrame:
     f.setObjectName("card")
     f.setProperty("primary", "true" if primary else "false")
     return f
+
+
+_GENERIC_NAME = re.compile(r"(?:speaker|voice|голос)\s*\d+", re.IGNORECASE)
+_SPEAKER_ID = re.compile(r"S(\d+)", re.IGNORECASE)
+
+
+def speaker_number(sid: str, fallback: int) -> int:
+    """Return the diarization number in ``S3``, or ``fallback`` when the id has none."""
+    match = _SPEAKER_ID.fullmatch(sid.strip())
+    return int(match.group(1)) if match else fallback
+
+
+def speaker_label(stored: str, sid: str) -> str:
+    """Return ``Voice N`` unless the user has typed a real name.
+
+    Diarization does not know who is speaking. ``Speaker 1``, ``S1``, and a
+    blank name are the same speaker, shown in the current language.
+
+    Args:
+        stored: The name saved on the speaker.
+        sid: Speaker id, such as ``S2``.
+    """
+    text = (stored or "").strip()
+    number = speaker_number(sid, 1)
+    if not text or text == sid or _SPEAKER_ID.fullmatch(text) or _GENERIC_NAME.fullmatch(text):
+        return tr("shell.voice.speaker", n=number)
+    return text
 
 
 def label(obj: str = "", wrap: bool = True) -> QLabel:
@@ -64,11 +93,10 @@ def fmt_eta(seconds: float) -> str:
 
 
 def voice_items() -> List[tuple]:
-    """(Voice, label) choices: a clone from the film, then the voices of the shared Voxprint voice library (read-only)."""
+    """Return a clone of the film, then each library voice by its display name."""
     out = [(Voice("clone", ""), tr("voice.clone"))]
     for v in voices.list_library():
-        extra = ", ".join(x for x in (v.language, v.gender) if x)
-        out.append((Voice("library", v.id), tr("voice.library", name=v.name) + (f" ({extra})" if extra else "")))
+        out.append((Voice("library", v.id), library_voice_label(v)))
     return out
 
 
@@ -553,7 +581,7 @@ class SpeakerCard(QFrame):
         lay = QGridLayout(self)
         lay.setContentsMargins(14, 10, 14, 10)
         self.chk = QCheckBox()
-        self.edt_name = QLineEdit(sp.name or sp.id)
+        self.edt_name = QLineEdit(speaker_label(sp.name, sp.id))
         self.edt_name.editingFinished.connect(lambda: page.rename(self.sid, self.edt_name.text()))
         self.chk_key = QCheckBox(tr("chars.key"))
         self.chk_key.setToolTip(tr("chars.key_tip"))
@@ -897,7 +925,7 @@ class LinesPage(QWidget):
         self.project = p
         self._loading = True
         self.table.setRowCount(len(p.lines))
-        names = {s.id: (s.name or s.id) for s in p.speakers}
+        names = {s.id: speaker_label(s.name, s.id) for s in p.speakers}
         multi = bool(p.settings.get("multi_voice"))
         ro = Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
         for i, ln in enumerate(p.lines):
@@ -950,7 +978,10 @@ class LinesPage(QWidget):
             ln.keep_original = it.checkState() == Qt.CheckState.Checked
         elif col == COL_SPEAKER:
             name = it.text().strip()
-            sid = next((s.id for s in self.project.speakers if name in (s.id, s.name)), None)
+            sid = next(
+                (s.id for s in self.project.speakers if name in (s.id, s.name, speaker_label(s.name, s.id))),
+                None,
+            )
             if sid is None and name:
                 sid = name
             if sid and sid != ln.speaker:

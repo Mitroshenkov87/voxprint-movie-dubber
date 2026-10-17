@@ -140,44 +140,214 @@ def poster_frame(src: Path, at_s: float, dest: Path) -> bool:
     return dest.is_file() and dest.stat().st_size > 0
 
 
-#: audio codecs an MP4 file can hold as they are (others are converted to AAC on an MP4 export; the video is never re-encoded)
+#: audio codecs an MP4 file can hold as they are (others are converted to AAC on an MP4 export)
 MP4_AUDIO = {"aac", "ac3", "eac3", "mp3", "alac"}
 MP4_TEXT_SUBS = {"subrip", "srt", "ass", "ssa", "mov_text", "webvtt", "text"}
 
 
-def mux_dub(src: Path, dub_wav: Path, out: Path, lang: str, title: str) -> int:
-    """Same file + the dub as a new audio track (video stream-copied, never re-encoded).  The dub is AAC (plays on TVs) and becomes
-    the default audio track, the original stays selectable.
+def _subtitle_filter(path: Path) -> str:
+    """Return an ffmpeg ``subtitles`` filter for ``path``.
 
-    MKV (default): every stream of the film is copied.  MP4 (remux only): video + audio + text subtitles (as mov_text); an original
-    audio track whose codec MP4 cannot hold (TrueHD, DTS, FLAC, PCM, Vorbis, ...) is converted to AAC - only that audio; picture-based
-    subtitles and attachments (fonts) are left out because MP4 cannot carry them."""
+    The burned-in option is the one place a dub re-encodes the picture. The
+    filter reads the file itself, so the path is not also mapped as a track.
+
+    Args:
+        path: A subtitle file on disk.
+    """
+    text = Path(path).resolve().as_posix()
+    for char in ("\\", ":", "'", ",", "[", "]", ";"):
+        text = text.replace(char, "\\" + char)
+    return f"subtitles='{text}'"
+
+
+def _mux_tail(
+    args: List[object],
+    info: MediaInfo,
+    *,
+    kept: int,
+    lang3: str,
+    title: str,
+    mp4: bool,
+    burn: bool,
+    map_subs: bool,
+) -> None:
+    """Append the dub-track codec, dispositions, and the MP4 finishing flags."""
+    args += [
+        f"-c:a:{kept}",
+        "aac",
+        f"-b:a:{kept}",
+        "224k",
+        f"-metadata:s:a:{kept}",
+        f"language={lang3}",
+        f"-metadata:s:a:{kept}",
+        f"title={title}",
+    ]
+    for index in range(kept):
+        args += [f"-disposition:a:{index}", "0"]
+    args += [f"-disposition:a:{kept}", "default"]
+    if not mp4:
+        return
+    if map_subs:
+        args += ["-c:s", "mov_text"]
+    args += ["-movflags", "+faststart"]
+    if not burn and info.video_codec.lower() in ("hevc", "h265"):
+        args += ["-tag:v", "hvc1"]  # HEVC in MP4 plays on Apple devices / TVs only with this tag
+
+
+def _mux_copy(src: Path, dub_wav: Path, out: Path, lang: str, title: str) -> int:
+    """Copy the film and add the dub. The picture is not re-encoded."""
     lang3 = {"ru": "rus", "en": "eng", "de": "deu"}.get(lang, lang)
     info = probe(src)
     n_audio = len(info.audio)
     mp4 = Path(out).suffix.lower() == ".mp4"
     if mp4:
-        args = ["-i", src, "-i", dub_wav, "-map", "0:v?", "-map", "0:a?"]
+        args: List[object] = ["-i", src, "-i", dub_wav, "-map", "0:v?", "-map", "0:a?"]
         args += [x for t in info.subtitles if t.codec.lower() in MP4_TEXT_SUBS for x in ("-map", f"0:s:{t.index}")]
         args += ["-map", "1:a:0", "-c", "copy"]
-        for t in info.audio:
-            if t.codec.lower() not in MP4_AUDIO:
-                ch = int(t.channels or 2)
-                args += [f"-c:a:{t.index}", "aac", f"-b:a:{t.index}", f"{min(640, 96 * max(2, ch))}k"]
+        for track in info.audio:
+            if track.codec.lower() not in MP4_AUDIO:
+                channels = int(track.channels or 2)
+                args += [f"-c:a:{track.index}", "aac", f"-b:a:{track.index}", f"{min(640, 96 * max(2, channels))}k"]
     else:
         args = ["-i", src, "-i", dub_wav, "-map", "0", "-map", "1:a:0", "-c", "copy"]
-    args += [f"-c:a:{n_audio}", "aac", f"-b:a:{n_audio}", "224k",
-             f"-metadata:s:a:{n_audio}", f"language={lang3}", f"-metadata:s:a:{n_audio}", f"title={title}"]
-    for i in range(n_audio):
-        args += [f"-disposition:a:{i}", "0"]
-    args += [f"-disposition:a:{n_audio}", "default"]
-    if mp4:
-        args += ["-c:s", "mov_text", "-movflags", "+faststart"]
-        if info.video_codec.lower() in ("hevc", "h265"):
-            args += ["-tag:v", "hvc1"]                       # HEVC in MP4 plays on Apple devices / TVs only with this tag
+    _mux_tail(args, info, kept=n_audio, lang3=lang3, title=title, mp4=mp4, burn=False, map_subs=mp4)
     args.append(out)
     ffmpeg.run(args, timeout=4 * 3600)
     return n_audio
+
+
+def _mux_arranged(
+    src: Path,
+    dub_wav: Path,
+    out: Path,
+    lang: str,
+    title: str,
+    *,
+    keep_original: bool,
+    delivery: str,
+    subtitle_file: Optional[Path],
+) -> int:
+    """Mux one of the plain choices: drop the original, drop subs, add a track, or burn.
+
+    Burning uses the ``subtitles`` filter and re-encodes the picture with mpeg4,
+    the same encoder as a preview clip. Every other choice still copies the picture.
+    """
+    lang3 = {"ru": "rus", "en": "eng", "de": "deu"}.get(lang, lang)
+    info = probe(src)
+    mp4 = Path(out).suffix.lower() == ".mp4"
+    burn = delivery == "burn" and subtitle_file is not None
+    soft = delivery == "track"
+    kept = len(info.audio) if keep_original else 0
+    args: List[object] = ["-i", src, "-i", dub_wav]
+    extra = soft and subtitle_file is not None
+    if extra:
+        args += ["-i", subtitle_file]
+    if keep_original and not mp4 and soft and not burn:
+        args += ["-map", "0", "-map", "1:a:0"]
+        if extra:
+            args += ["-map", "2:s:0"]
+        args += ["-c", "copy"]
+        _mux_tail(args, info, kept=kept, lang3=lang3, title=title, mp4=False, burn=False, map_subs=False)
+        args.append(out)
+        ffmpeg.run(args, timeout=4 * 3600)
+        return kept
+    if burn:
+        args += ["-map", "0:v:0"]
+    else:
+        args += ["-map", "0:v?"]
+    if keep_original:
+        args += ["-map", "0:a?"]
+    mapped_subs = False
+    if soft:
+        if mp4:
+            for track in info.subtitles:
+                if track.codec.lower() in MP4_TEXT_SUBS:
+                    args += ["-map", f"0:s:{track.index}"]
+                    mapped_subs = True
+        else:
+            args += ["-map", "0:s?", "-map", "0:d?", "-map", "0:t?"]
+            mapped_subs = True
+        if extra:
+            args += ["-map", "2:s:0"]
+            mapped_subs = True
+    elif not mp4:
+        args += ["-map", "0:d?", "-map", "0:t?"]
+    args += ["-map", "1:a:0"]
+    if burn and subtitle_file is not None:
+        # mpeg4 needs no GPL build. The preview clip uses the same encoder.
+        args += ["-vf", _subtitle_filter(subtitle_file), "-c:v", "mpeg4", "-q:v", "4", "-c:a", "copy"]
+    else:
+        args += ["-c", "copy"]
+    if keep_original and mp4:
+        for track in info.audio:
+            if track.codec.lower() not in MP4_AUDIO:
+                channels = int(track.channels or 2)
+                args += [f"-c:a:{track.index}", "aac", f"-b:a:{track.index}", f"{min(640, 96 * max(2, channels))}k"]
+    _mux_tail(
+        args,
+        info,
+        kept=kept,
+        lang3=lang3,
+        title=title,
+        mp4=mp4,
+        burn=burn,
+        map_subs=mapped_subs and mp4,
+    )
+    args.append(out)
+    ffmpeg.run(args, timeout=4 * 3600)
+    return kept
+
+
+def mux_dub(
+    src: Path,
+    dub_wav: Path,
+    out: Path,
+    lang: str,
+    title: str,
+    *,
+    keep_original: bool = True,
+    subtitle_delivery: str = "track",
+    subtitle_path: Optional[Path] = None,
+) -> int:
+    """Add the dub as the default audio track.
+
+    The picture is copied, except when ``subtitle_delivery`` is ``burn`` and
+    ``subtitle_path`` exists: that option draws the cues into the picture with
+    the ffmpeg ``subtitles`` filter and re-encodes the video. ``keep_original``
+    leaves the film's audio selectable. ``track`` copies text subtitles and,
+    when ``subtitle_path`` is set, adds that file as one more subtitle track.
+    ``none`` leaves subtitle streams out.
+
+    The default arguments match the older call: original audio stays, text
+    subtitles are copied, and the video is not re-encoded.
+
+    Args:
+        src: The film.
+        dub_wav: The finished dub track.
+        out: The file to write.
+        lang: Dub language (``ru``, ``en``, or ``de``).
+        title: Title of the new audio track.
+        keep_original: When False, the film's audio is not mapped.
+        subtitle_delivery: ``none``, ``track``, or ``burn``.
+        subtitle_path: Dub subtitle file for ``track`` or ``burn``.
+
+    Returns:
+        The output index of the dub audio track.
+    """
+    delivery = subtitle_delivery if subtitle_delivery in ("none", "track", "burn") else "track"
+    ready = Path(subtitle_path) if subtitle_path is not None and Path(subtitle_path).is_file() else None
+    if keep_original and delivery == "track" and ready is None:
+        return _mux_copy(src, dub_wav, out, lang, title)
+    return _mux_arranged(
+        src,
+        dub_wav,
+        out,
+        lang,
+        title,
+        keep_original=keep_original,
+        delivery=delivery,
+        subtitle_file=ready,
+    )
 
 
 def preview_clip(src: Path, start: float, length: float, dub_wav: Path, out: Path) -> Path:
