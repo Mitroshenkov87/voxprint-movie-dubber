@@ -248,6 +248,13 @@ class MainWindow(QWidget):
             self.lbl_models.setText(tr("models.notice"))
             self.btn_models.setText(tr("models.manage"))
 
+    def _show_model_notice(self) -> None:
+        """A stage stopped on a missing model: show the Manage models notice even if the startup check missed it."""
+        self.lbl_models.setVisible(True)
+        self.btn_models.setVisible(True)
+        self.lbl_models.setText(tr("models.notice"))
+        self.btn_models.setText(tr("models.manage"))
+
     def manage_models(self) -> None:
         """Open the VOXPrint MDL window for this app."""
         try:
@@ -791,10 +798,14 @@ class MainWindow(QWidget):
     def _on_done(self, ok: bool, message: str) -> None:
         from dubber.engines.asr import is_cuda_fallback_failure
 
+        from dubber.model_resolver import is_model_missing
+
         kind = self.job_kind
         cuda_stop = (not ok) and is_cuda_fallback_failure(message)
         if cuda_stop:
             message = tr("asr.cuda_fallback")
+        if not ok and is_model_missing(message):
+            self._show_model_notice()
         folder = self.job.result_folder if self.job else None
         self.job_kind = ""
         project = self.project

@@ -163,12 +163,15 @@ def load_whisper(folder: str, device: str):
     return WhisperModel(str(folder), device="cpu", compute_type="int8", cpu_threads=0)
 
 
-def load_whisper_cached(device: str, repo: str, allow_download: bool, log: Callable[[str], None]):
-    """Load (or reuse) the ASR model.  The resident cache keeps it for the next stage and the next clip."""
-    from dubber import models
+def load_whisper_cached(device: str, role: str, allow_download: bool, log: Callable[[str], None]):
+    """Load (or reuse) the ASR model bound to ``role`` (``dubber.model_resolver``).  The resident cache keeps it for the next clip.
+
+    ``allow_download`` and ``log`` are kept for callers; the app never downloads (VOXPrint MDL does)."""
+    del allow_download, log
+    from dubber import model_resolver
     from dubber.infra import resident
 
-    folder, _ = models.ensure(repo, allow_download, log=log)
+    folder = model_resolver.resolve(role)
     resolved = device if device in ("cuda", "cpu") else "cpu"
 
     def build():
@@ -179,10 +182,18 @@ def load_whisper_cached(device: str, repo: str, allow_download: bool, log: Calla
     return build()
 
 
-def transcribe_faster_whisper(wav16: str, language: Optional[str], repo: str, device: str, allow_download: bool,
+def transcribe_faster_whisper(wav16: str, language: Optional[str], role: str, device: str, allow_download: bool,
                               log: Callable[[str], None], requested: Optional[str] = None) -> Dict[str, Any]:
-    """Transcribe a 16 kHz WAV, recover skipped speech, and retry once if punctuation is missing. Raise AsrCudaFallback when an NVIDIA GPU is present but recognition would run on the CPU."""
+    """Transcribe a 16 kHz WAV with the model bound to ``role``, recover skipped speech, and retry once if punctuation is missing.
+
+    Raises:
+        ModelUnavailable: The ASR model is not on disk (checked before any GPU work, so it is not mistaken for a CUDA problem).
+        AsrCudaFallback: An NVIDIA GPU is present but recognition would run on the CPU.
+    """
+    from dubber import model_resolver
     from dubber.infra import cuda_dlls
+
+    model_resolver.resolve(role)
 
     if device == "cuda":
         cuda_dlls.expose()                   # nvidia-cublas-cu12 / nvidia-cudnn-cu12 bin dirs before CTranslate2 loads cublas64_12.dll
@@ -226,7 +237,7 @@ def transcribe_faster_whisper(wav16: str, language: Optional[str], repo: str, de
     ensure_cuda_asr(asked, device)
     if device == "cuda":
         try:
-            return run(load_whisper_cached("cuda", repo, allow_download, log))
+            return run(load_whisper_cached("cuda", role, allow_download, log))
         except AsrCudaFallback:
             raise
         except Exception as exc:  # noqa: BLE001 - missing cuBLAS/cuDNN: do not hide it behind a silent CPU run
@@ -235,4 +246,4 @@ def transcribe_faster_whisper(wav16: str, language: Optional[str], repo: str, de
             if cuda_gpu_present():
                 raise AsrCudaFallback(_FALLBACK_TEXT) from exc
             log(f"ASR on GPU failed ({type(exc).__name__}: {str(exc)[:160]}); no NVIDIA GPU was found, using the CPU")
-    return run(load_whisper_cached("cpu", repo, allow_download, log))
+    return run(load_whisper_cached("cpu", role, allow_download, log))

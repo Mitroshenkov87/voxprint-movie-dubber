@@ -260,9 +260,9 @@ class Runner:
         snap = resources.snapshot(use_torch=False)
         lighter_ok = bool(self.cfg.get("allow_download", True))
         if not lighter_ok:
-            from dubber import models
+            from dubber import model_resolver
 
-            lighter_ok = models.locate(models.SPECS["tts_0_6b"].repo) is not None
+            lighter_ok = model_resolver.locate("tts.0_6b") is not None
         from dubber.infra import vram_tier
 
         tier = vram_tier.resolve(snap.vram_total_gb, str(self.cfg.get("vram_tier") or vram_tier.AUTO))

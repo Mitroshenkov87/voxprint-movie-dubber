@@ -10,6 +10,7 @@
    "display_name": "Qwen3-TTS 1.7B Base (voice cloning)",
    "license": "Apache-2.0",
    "repo": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+   "placeholder": true,
    "files": [
     {
      "path": ".gitattributes",
@@ -168,7 +169,7 @@
      ]
     }
    ],
-   "note": "TODO: Qwen3-TTS is a shared component pinned in Model Forge. voxprint-common 0.2.4 ships a model index that only pins the pyannote mirrors, and plan() does not resolve an index id into file URLs. These entries repeat the Audiobook Builder repository and revision. Switch to a shared-component reference when the index publishes these ids."
+   "note": "TODO: Qwen3-TTS is a shared component pinned in Model Forge. voxprint-common 0.2.4 ships a model index that only pins the pyannote mirrors, and plan() does not resolve an index id into file URLs. These entries repeat the Audiobook Builder repository and revision. Switch to a shared-component reference when the index publishes these ids. Placeholder until Model Forge publishes the suite model for this role; replace this entry in mdl.json only (stage code resolves roles through dubber/model_resolver.py)."
   },
   {
    "id": "qwen3-tts",
@@ -177,6 +178,7 @@
    "display_name": "Qwen3-TTS 0.6B Base (voice cloning)",
    "license": "Apache-2.0",
    "repo": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+   "placeholder": true,
    "files": [
     {
      "path": ".gitattributes",
@@ -335,7 +337,7 @@
      ]
     }
    ],
-   "note": "TODO: Qwen3-TTS is a shared component pinned in Model Forge. voxprint-common 0.2.4 ships a model index that only pins the pyannote mirrors, and plan() does not resolve an index id into file URLs. These entries repeat the Audiobook Builder repository and revision. Switch to a shared-component reference when the index publishes these ids."
+   "note": "TODO: Qwen3-TTS is a shared component pinned in Model Forge. voxprint-common 0.2.4 ships a model index that only pins the pyannote mirrors, and plan() does not resolve an index id into file URLs. These entries repeat the Audiobook Builder repository and revision. Switch to a shared-component reference when the index publishes these ids. Placeholder until Model Forge publishes the suite model for this role; replace this entry in mdl.json only (stage code resolves roles through dubber/model_resolver.py)."
   },
   {
    "id": "qwen3-tts",
@@ -344,6 +346,7 @@
    "display_name": "Qwen3-TTS 0.6B Base (voice cloning)",
    "license": "Apache-2.0",
    "repo": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+   "placeholder": true,
    "files": [
     {
      "path": ".gitattributes",
@@ -502,7 +505,7 @@
      ]
     }
    ],
-   "note": "TODO: Qwen3-TTS is a shared component pinned in Model Forge. voxprint-common 0.2.4 ships a model index that only pins the pyannote mirrors, and plan() does not resolve an index id into file URLs. These entries repeat the Audiobook Builder repository and revision. Switch to a shared-component reference when the index publishes these ids."
+   "note": "TODO: Qwen3-TTS is a shared component pinned in Model Forge. voxprint-common 0.2.4 ships a model index that only pins the pyannote mirrors, and plan() does not resolve an index id into file URLs. These entries repeat the Audiobook Builder repository and revision. Switch to a shared-component reference when the index publishes these ids. Placeholder until Model Forge publishes the suite model for this role; replace this entry in mdl.json only (stage code resolves roles through dubber/model_resolver.py)."
   },
   {
    "id": "asr",
@@ -511,6 +514,7 @@
    "display_name": "faster-whisper large-v3-turbo (CTranslate2)",
    "license": "MIT",
    "repo": "deepdml/faster-whisper-large-v3-turbo-ct2",
+   "placeholder": true,
    "files": [
     {
      "path": "config.json",
@@ -577,7 +581,8 @@
       }
      ]
     }
-   ]
+   ],
+   "note": "Placeholder until Model Forge publishes the suite model for this role; replace this entry in mdl.json only (stage code resolves roles through dubber/model_resolver.py)."
   },
   {
    "id": "sep",
@@ -586,6 +591,7 @@
    "display_name": "TIGER-DnR (dialogue / effects / music separation)",
    "license": "Apache-2.0 (weights), MIT (code)",
    "repo": "JusperLee/TIGER-DnR",
+   "placeholder": true,
    "files": [
     {
      "path": "config.json",
@@ -613,7 +619,8 @@
       }
      ]
     }
-   ]
+   ],
+   "note": "Placeholder until Model Forge publishes the suite model for this role; replace this entry in mdl.json only (stage code resolves roles through dubber/model_resolver.py)."
   },
   {
    "id": "diar",
@@ -622,6 +629,7 @@
    "display_name": "pyannote speaker-diarization community-1",
    "license": "CC-BY-4.0",
    "repo": "Mitroshenkov87/voxprint-pyannote-speaker-diarization-community-1",
+   "placeholder": true,
    "files": [
     {
      "path": "config.yaml",
@@ -719,7 +727,8 @@
      ]
     }
    ],
-   "on_demand": true
+   "on_demand": true,
+   "note": "Placeholder until Model Forge publishes the suite model for this role; replace this entry in mdl.json only (stage code resolves roles through dubber/model_resolver.py)."
   },
   {
    "id": "embed",
@@ -728,6 +737,7 @@
    "display_name": "pyannote speaker embedding",
    "license": "MIT",
    "repo": "Mitroshenkov87/voxprint-pyannote-embedding",
+   "placeholder": true,
    "files": [
     {
      "path": "config.yaml",
@@ -768,7 +778,8 @@
      ]
     }
    ],
-   "on_demand": true
+   "on_demand": true,
+   "note": "Placeholder until Model Forge publishes the suite model for this role; replace this entry in mdl.json only (stage code resolves roles through dubber/model_resolver.py)."
   },
   {
    "id": "roformer",
@@ -777,6 +788,7 @@
    "display_name": "Mel-Band RoFormer (vocals)",
    "license": "MIT",
    "repo": "KimberleyJSN/melbandroformer",
+   "placeholder": true,
    "files": [
     {
      "path": "MelBandRoformer.ckpt",
@@ -791,7 +803,8 @@
       }
      ]
     }
-   ]
+   ],
+   "note": "Placeholder until Model Forge publishes the suite model for this role; replace this entry in mdl.json only (stage code resolves roles through dubber/model_resolver.py)."
   },
   {
    "id": "mt-en-ru",

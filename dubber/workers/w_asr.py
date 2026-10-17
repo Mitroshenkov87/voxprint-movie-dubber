@@ -10,8 +10,7 @@ import json
 import time
 from typing import Any, Dict, List
 
-from dubber import models
-from dubber.workers.common import WorkerContext, read_wav_mono, wer
+from dubber.workers.common import WorkerContext, model_folder, read_wav_mono, wer
 
 
 def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
@@ -23,9 +22,8 @@ def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
     from faster_whisper import WhisperModel
 
     import_s = time.time() - t
-    repo = args.get("repo") or models.SPECS["asr"].repo
     ctx.log("ASR: locating the model")
-    folder, info = models.ensure(repo, args.get("allow_download", True), log=ctx.log)
+    folder, info, repo = model_folder(args.get("repo"), "asr", ctx.log)
     details: List[str] = [f"{'model':<28}: {repo} ({info['source']}" + (f", downloaded in {info['download_s']} s)" if info["download_s"] else ")"),
                           f"{'import faster_whisper':<28}: {import_s:.2f} s"]
     if cuda_dirs:

@@ -268,3 +268,17 @@ def apply_qwen_tts_compat() -> str:
     except Exception:  # noqa: BLE001 - package layout differs: the registry entry above is enough
         pass
     return "applied RoPE compat shim for qwen-tts-hf on this transformers version"
+
+
+def model_folder(override: Optional[str], role: str, log: Any = None) -> "tuple[Path, Dict[str, Any], str]":
+    """Diagnostics: ``(folder, info, label)`` for an explicit repo override (tests use a tiny model) or the folder bound to ``role``.
+
+    Raises:
+        ModelUnavailable: The model is not on disk. Nothing is downloaded.
+    """
+    from dubber import model_resolver, models
+
+    if override:
+        folder, info = models.ensure(override, False, log=log or (lambda _m: None))
+        return folder, dict(info), override
+    return model_resolver.resolve(role), {"source": "present", "download_s": 0.0}, model_resolver.entry(role).repo

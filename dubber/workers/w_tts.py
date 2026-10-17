@@ -22,8 +22,7 @@ import statistics
 import time
 from typing import Any, Dict, List, Tuple
 
-from dubber import models
-from dubber.workers.common import (WorkerContext, apply_qwen_tts_compat, cuda_sync, free_gpu, peak_vram_gb, reserved_vram_gb, reset_peak, torch_device)
+from dubber.workers.common import (WorkerContext, apply_qwen_tts_compat, cuda_sync, model_folder, free_gpu, peak_vram_gb, reserved_vram_gb, reset_peak, torch_device)
 
 MODES = {"standard_sdpa": ("standard", "sdpa"), "standard_fa2": ("standard", "flash_attention_2"),
          "graphs_sdpa": ("graphs", "sdpa"), "graphs_fa2": ("graphs", "flash_attention_2")}
@@ -60,9 +59,8 @@ def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
     if kind == "graphs" and not use_cuda:
         return {"status": "SKIP", "summary": "CUDA Graphs need an NVIDIA GPU with CUDA (none visible to PyTorch)", "metrics": metrics}
     dtype = torch.bfloat16 if use_cuda else torch.float32
-    repo = args.get("model_repo") or models.SPECS["tts_1_7b"].repo
     ctx.log(f"TTS {mode}: locating the model")
-    folder, info = models.ensure(repo, args.get("allow_download", True), log=ctx.log)
+    folder, info, repo = model_folder(args.get("model_repo"), "tts.1_7b", ctx.log)
     metrics["download_s"] = info["download_s"]
     details.append(f"{'model':<28}: {repo} ({info['source']}" + (f", downloaded in {info['download_s']} s)" if info["download_s"] else ")"))
     details.append(f"{'device / dtype':<28}: {device} / {str(dtype).replace('torch.', '')}   attention requested: {attn}   path: {kind}")

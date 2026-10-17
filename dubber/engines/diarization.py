@@ -7,7 +7,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-from dubber import models
+from dubber import model_resolver
 from dubber.core import audio
 from dubber.core.project import Line
 from dubber.core.script import cluster_speakers
@@ -72,8 +72,8 @@ def pyannote_turns(wav16: str, device: str, allow_download: bool, log: Callable[
     """Diarize a 16 kHz WAV with pyannote and return each turn's start, end, and speaker, in seconds. ``num_speakers`` asks for exactly that many when set."""
     import torch
 
-    repo = models.SPECS["diar"].repo
-    folder, _ = models.ensure(repo, allow_download, log=log)
+    del allow_download, log
+    folder = model_resolver.resolve("diarization")
     pipe = load_diar_pipeline(Path(folder))
     if hasattr(pipe, "embedding_batch_size"):
         pipe.embedding_batch_size = 4
@@ -97,8 +97,7 @@ def try_speaker_embeddings(segments: Sequence[np.ndarray], sr: int) -> Optional[
     if not segments:
         return []
     try:
-        spec = models.SPECS["embed"]
-        folder, _ = models.ensure(spec.repo)
+        folder = model_resolver.resolve("embedding")
         model = Model.from_pretrained(str(folder), token=False)
         infer = Inference(model, window="whole")
         out: List[np.ndarray] = []

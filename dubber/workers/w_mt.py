@@ -10,8 +10,8 @@ import json
 import time
 from typing import Any, Dict, List
 
-from dubber import models
-from dubber.workers.common import WorkerContext, cuda_sync, free_gpu, peak_vram_gb, reset_peak, torch_device
+from dubber import model_resolver, models
+from dubber.workers.common import WorkerContext, cuda_sync, free_gpu, model_folder, peak_vram_gb, reset_peak, torch_device
 
 
 def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
@@ -24,7 +24,7 @@ def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
     if spec is None:
         return {"status": "SKIP", "summary": f"no direct Opus-MT tc-big model for {src}->{tgt}"}
     ctx.log(f"translation {src}->{tgt}: locating the model")
-    folder, info = models.ensure(spec.repo, args.get("allow_download", True), log=ctx.log)
+    folder, info, _repo = model_folder(None, model_resolver.translation_role(src, tgt), ctx.log)
     t = time.time()
     import torch
     from transformers import MarianMTModel, MarianTokenizer

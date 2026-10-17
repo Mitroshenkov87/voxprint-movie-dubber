@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 from typing import Callable, List, Optional, Sequence, Tuple
 
-from dubber import models
+from dubber import model_resolver, models
 
 #: target/source length in characters below which a translation is treated as incomplete (ru/de/en are all >= ~0.8 normally)
 MIN_RATIO = 0.5
@@ -115,7 +115,7 @@ class OpusMT:
         spec = models.mt_spec(src, tgt)
         if spec is None:
             raise RuntimeError(f"no Opus-MT model for {src}->{tgt}")
-        folder, _ = models.ensure(spec.repo, allow_download, log=log)
+        folder = model_resolver.resolve(model_resolver.translation_role(src, tgt))
         self.tok = MarianTokenizer.from_pretrained(str(folder))
         self.model = MarianMTModel.from_pretrained(str(folder)).to(device).eval()
         self.device, self.log, self.prefix = device, log, spec.target_token
