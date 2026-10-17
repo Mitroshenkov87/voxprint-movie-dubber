@@ -810,6 +810,10 @@ def _job_code(ok: bool, message: str) -> int:
         return EXIT_OK
     if message.strip().lower() == "cancelled":
         return EXIT_CANCELLED
+    from dubber.model_resolver import is_model_missing
+
+    if is_model_missing(message):
+        return EXIT_MODELS
     return EXIT_JOB
 
 

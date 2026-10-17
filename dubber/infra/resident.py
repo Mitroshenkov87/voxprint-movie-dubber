@@ -43,6 +43,41 @@ def reset() -> None:
         _noted.clear()
 
 
+#: Resident slots each stage reads. Before a stage runs, every other slot is unloaded (:func:`release_for`).
+STAGE_SLOTS: Dict[str, Tuple[str, ...]] = {"separation": ("separation",), "asr": ("asr",), "tts": ("tts",)}
+
+
+def empty_cuda_cache() -> None:
+    """Collect garbage and return cached CUDA blocks to the driver, so the next stage measures real free VRAM."""
+    import gc
+    import sys
+
+    gc.collect()
+    torch = sys.modules.get("torch")          # a stage that never imported torch has nothing on the GPU
+    if torch is None:
+        return
+    try:
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+    except Exception:  # noqa: BLE001 - freeing memory must not fail the stage that follows
+        pass
+
+
+def release_for(stage: str) -> List[str]:
+    """Unload resident models the next ``stage`` does not use, then empty the CUDA cache. Returns the names dropped.
+
+    Separation, ASR and diarization weights would otherwise stay on the card during speech synthesis and keep the
+    TTS batch at one line. A model prefetched for ``stage`` itself stays."""
+    keep = set(STAGE_SLOTS.get(stage, ()))
+    with _lock:
+        dropped = [name for name in list(_slots) if name not in keep]
+        for name in dropped:
+            _discard(name)
+    empty_cuda_cache()
+    return dropped
+
+
 def loaded() -> List[str]:
     """Return the names of models currently held in this process."""
     return list(_slots)

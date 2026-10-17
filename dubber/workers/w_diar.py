@@ -13,7 +13,7 @@ from typing import Any, Dict, List
 
 from dubber import models
 from dubber.engines.diarization import load_diar_pipeline
-from dubber.workers.common import WorkerContext, cuda_sync, free_gpu, peak_vram_gb, read_wav_mono, reset_peak, torch_device
+from dubber.workers.common import WorkerContext, cuda_sync, free_gpu, model_folder, peak_vram_gb, read_wav_mono, reset_peak, torch_device
 
 
 def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
@@ -26,10 +26,9 @@ def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
         have = False
     if not have:
         return {"status": "SKIP", "summary": "pyannote.audio is not installed in this environment (pip install pyannote.audio)"}
-    repo = args.get("repo") or models.SPECS["diar"].repo
     ctx.log("diarization: locating the model")
     try:
-        folder, info = models.ensure(repo, args.get("allow_download", True), log=ctx.log)
+        folder, info, repo = model_folder(args.get("repo"), "diarization", ctx.log)
     except models.ModelUnavailable as exc:
         return {"status": "SKIP", "summary": str(exc)[:200], "details": [str(exc)]}
     t = time.time()

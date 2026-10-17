@@ -43,12 +43,11 @@ def _install_loaders(cfg: Dict[str, Any]) -> None:
         resident.register_loader("separation", separation)
     if cfg.get("asr") == "whisper":
         def asr() -> Any:
-            from dubber import models
+            from dubber import model_resolver
             from dubber.engines.asr import load_whisper
             from dubber.pipeline.stages import DEFAULT_CFG
 
-            repo = str(cfg.get("asr_repo") or DEFAULT_CFG["asr_repo"])
-            folder, _ = models.ensure(repo, True, log=lambda _m: None)
+            folder = model_resolver.resolve(str(cfg.get("asr_model") or DEFAULT_CFG["asr_model"]))
             return load_whisper(str(folder), device)
 
         resident.register_loader("asr", asr)
@@ -102,6 +101,9 @@ def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
         key = str(cmd.get("stage") or "")
         folder = str(cmd.get("project") or args.get("project") or "")
         cfg = {**base, **dict(cmd.get("cfg") or {})}
+        dropped = resident.release_for(key)
+        if dropped:
+            ctx.log(json.dumps({"kind": "log", "text": f"{key}: unloaded {', '.join(dropped)} and emptied the CUDA cache"}))
         _install_loaders(cfg)
         try:
             summary, gpu = _run_one(folder, key, cfg, ctx)

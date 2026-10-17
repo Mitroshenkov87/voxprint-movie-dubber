@@ -11,8 +11,7 @@ import os
 import time
 from typing import Any, Dict
 
-from dubber import models
-from dubber.workers.common import (WorkerContext, cuda_sync, free_gpu, peak_vram_gb, read_wav_mono, reset_peak, resample, rms_db,
+from dubber.workers.common import (WorkerContext, cuda_sync, free_gpu, model_folder, peak_vram_gb, read_wav_mono, reset_peak, resample, rms_db,
                                    torch_device)
 
 
@@ -25,9 +24,8 @@ def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
 
     from dubber.third_party.look2hear.models import TIGERDNR
 
-    repo = args.get("repo", "JusperLee/TIGER-DnR")
     ctx.log("separation: locating the model")
-    folder, info = models.ensure(repo, args.get("allow_download", True), log=ctx.log)
+    folder, info, repo = model_folder(args.get("repo"), "separation", ctx.log)
     device = torch_device(args.get("device", "auto"))
     reset_peak()
     t = time.time()

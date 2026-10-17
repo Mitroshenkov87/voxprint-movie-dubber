@@ -9,7 +9,7 @@ from typing import Callable, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-from dubber import models
+from dubber import model_resolver
 from dubber.core import audio
 
 Window = Tuple[float, float]
@@ -236,7 +236,8 @@ def build_tiger(device: str, allow_download: bool, log: Callable[[str], None]):
 
     from dubber.third_party.look2hear.models import TIGERDNR
 
-    folder, _ = models.ensure(models.SPECS["sep"].repo, allow_download, log=log)
+    del allow_download, log
+    folder = model_resolver.resolve("separation")
     cfg = json.loads((folder / "config.json").read_text(encoding="utf-8"))
     model = TIGERDNR(**{k: v for k, v in cfg.items() if k in TIGERDNR.__init__.__code__.co_varnames})
     model.load_state_dict(load_file(str(folder / "model.safetensors")), strict=False)
@@ -312,7 +313,8 @@ def roformer_model(device: str, allow_download: bool, log: Callable[[str], None]
 
     from audio_separator.separator import Separator
 
-    folder, _ = models.ensure(models.SPECS["roformer"].repo, allow_download, log=log)
+    del allow_download, log
+    folder = model_resolver.resolve("separation.best")
     filename = _expose_roformer(folder, model_file)
     sep = Separator(model_file_dir=str(folder), output_dir=tempfile.mkdtemp(prefix="vmd-rof-"), output_single_stem=None)
     sep.load_model(model_filename=filename)

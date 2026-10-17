@@ -219,10 +219,28 @@ def keep_voices_loaded(budget_left_gb: float, batch: int = 1) -> bool:
     return budget_left_gb - ADAPTER_VRAM_GB >= TTS_ACT_RESERVE_GB + max(1, batch) * TTS_ITEM_VRAM_GB
 
 
+#: TTS batches fill the card up to this headroom: 8 % of the card, kept between 1.5 and 2.5 GB.
+TTS_HEADROOM_MIN_GB = 1.5
+TTS_HEADROOM_MAX_GB = 2.5
+
+
+def tts_headroom_gb(total_gb: float) -> float:
+    """VRAM the TTS batch leaves unused: 8 % of the card, at least 1.5 GB and at most 2.5 GB."""
+    return min(TTS_HEADROOM_MAX_GB, max(TTS_HEADROOM_MIN_GB, VRAM_HEADROOM_FRAC * max(0.0, total_gb)))
+
+
+def tts_allowance_gb(free_gb: float, total_gb: float, fraction: Optional[float] = None) -> float:
+    """``max(0, free_now - tts_headroom_gb(total))``, then ``min`` with ``fraction * total`` when a cap is set."""
+    budget = max(0.0, free_gb - tts_headroom_gb(total_gb))
+    if fraction is not None and fraction > 0:
+        budget = min(budget, fraction * total_gb)
+    return budget
+
+
 class VramBudget:
     """In a worker process: how much VRAM a batch may use, from the memory that is free *now*.
 
-    ``budget = max(0, free_now - max(2 GB, 8 % of total))``, optionally capped by :func:`vram_fraction`. Re-measure with
+    ``budget = max(0, free_now - tts_headroom_gb(total))`` (1.5 to 2.5 GB), optionally capped by :func:`vram_fraction`. Re-measure with
     :meth:`remeasure` before each TTS batch group. ``free_now`` already includes this process, so the result is not reduced
     a second time by what we allocated."""
 
@@ -231,7 +249,7 @@ class VramBudget:
         self.total = g[1] if g else 0.0
         self.free0 = g[2] if g else 0.0
         self.fraction = vram_fraction()
-        self.budget = vram_allowance_gb(self.free0, self.total, self.fraction)
+        self.budget = tts_allowance_gb(self.free0, self.total, self.fraction)
         _total, avail = ram_gb()
         self.ram_budget = RAM_SHARE * avail
 
@@ -246,7 +264,7 @@ class VramBudget:
         free_now = g[2] if g else 0.0
         if g:
             self.total = g[1]
-        self.budget = vram_allowance_gb(free_now, self.total, self.fraction)
+        self.budget = tts_allowance_gb(free_now, self.total, self.fraction)
         return self.budget
 
     def left(self) -> float:

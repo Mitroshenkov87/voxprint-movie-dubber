@@ -37,7 +37,7 @@ ASR_VERSION, SCRIPT_VERSION, MT_VERSION, VOICES_VERSION, TTS_FIT_VERSION = 3, 3,
 
 DEFAULT_CFG: Dict[str, Any] = {
     "device": "auto", "allow_download": True, "inprocess": False,
-    "vad": "silero", "separation": "tiger", "asr": "whisper", "asr_repo": "deepdml/faster-whisper-large-v3-turbo-ct2",
+    "vad": "silero", "separation": "tiger", "asr": "whisper", "asr_model": "asr",
     "diarization": "pyannote", "translation": "opus", "tts": "qwen", "tts_model": "tts_1_7b", "tts_backend": "auto",
     "roformer_model": "vocals_mel_band_roformer.ckpt",
     "subdl_key": "", "opensubtitles_key": "", "opensubtitles_user": "", "opensubtitles_password": "",
@@ -80,6 +80,16 @@ def _asr_hint(p: Project) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------------------------- cache keys
+def _model_key(role: str) -> str:
+    """The repository bound to ``role`` in mdl.json, so a cache follows the model (and keys made before roles stay valid)."""
+    from dubber import model_resolver
+
+    try:
+        return model_resolver.entry(role).repo
+    except model_resolver.ModelUnavailable:
+        return role
+
+
 def inputs_for(key: str, p: Project, cfg: Dict[str, Any], prev: str) -> str:
     """Hash the inputs that decide whether this stage's cache is fresh, chained to the previous stage's key."""
     s, c = p.settings, cfg
@@ -91,7 +101,7 @@ def inputs_for(key: str, p: Project, cfg: Dict[str, Any], prev: str) -> str:
         "subtitles": [requested_source_lang(p), s.get("target_lang"), s.get("subtitle_choice"), bool(c.get("subdl_key")), bool(c.get("opensubtitles_key"))],
         "vad": [c.get("vad")],
         "separation": [c.get("separation"), c.get("roformer_model") if c.get("separation") == "roformer" else ""],
-        "asr": [c.get("asr"), c.get("asr_repo"), requested_source_lang(p), ASR_VERSION],
+        "asr": [c.get("asr"), _model_key(str(c.get("asr_model") or "asr")), requested_source_lang(p), ASR_VERSION],
         "script": [SCRIPT_VERSION],
         "diarization": [s.get("multi_voice"), c.get("diarization")],
         "translation": [c.get("translation"), s.get("target_lang"), s.get("profanity"), MT_VERSION],
@@ -289,9 +299,9 @@ def _reference_hypothesis(wav: Path, cfg: Dict[str, Any], emit: Emit) -> Optiona
     """Re-transcription of a reference clip, or None in mock mode / when ASR cannot run."""
     if cfg.get("asr") != "whisper":
         return None
-    repo = str(cfg.get("asr_repo") or DEFAULT_CFG["asr_repo"])
+    role = str(cfg.get("asr_model") or DEFAULT_CFG["asr_model"])
     try:
-        res = transcribe_faster_whisper(str(wav), None, repo, _device(cfg), cfg.get("allow_download", True),
+        res = transcribe_faster_whisper(str(wav), None, role, _device(cfg), cfg.get("allow_download", True),
                                         lambda m: emit("log", text=m), requested=str(cfg.get("device") or "auto"))
     except AsrCudaFallback:
         raise
@@ -359,8 +369,8 @@ def st_asr(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
     wav = p.path("stems", "speech16.wav")
     if not wav.exists():
         wav = p.path("audio", "mix16.wav")
-    repo = str(cfg.get("asr_repo") or DEFAULT_CFG["asr_repo"])
-    res = transcribe_faster_whisper(str(wav), _asr_hint(p), repo, _device(cfg),
+    role = str(cfg.get("asr_model") or DEFAULT_CFG["asr_model"])
+    res = transcribe_faster_whisper(str(wav), _asr_hint(p), role, _device(cfg),
                                     cfg.get("allow_download", True), lambda m: emit("log", text=m),
                                     requested=str(cfg.get("device") or "auto"))
     write_json(out, res)
@@ -560,12 +570,12 @@ def make_tts(p: Project, cfg: Dict[str, Any], need_adapters: bool, emit: Emit):
 
     if cfg.get("tts") == "mock":
         return tts_mod.MockTTS(p.settings["target_lang"])
-    from dubber import models
+    from dubber import model_resolver
     from dubber.infra import resident
     from dubber.infra.resources import MODEL_VRAM_GB
 
     model_name = str(cfg.get("tts_model", "tts_1_7b"))
-    folder, _ = models.ensure(models.SPECS[model_name].repo, cfg.get("allow_download", True), log=lambda m: emit("log", text=m))
+    folder = model_resolver.resolve(model_resolver.role_for_key(model_name))
 
     def build():
         return tts_mod.QwenTTS(folder, p.settings["target_lang"], _device(cfg), cfg.get("tts_backend", "auto"), need_adapters,
@@ -574,7 +584,9 @@ def make_tts(p: Project, cfg: Dict[str, Any], need_adapters: bool, emit: Emit):
     from dubber.infra import vram_tier
 
     engine = resident.slot("tts", MODEL_VRAM_GB.get(model_name, 5.0), build) if resident.enabled() else build()
-    engine.batch_cap = vram_tier.batch_cap(str(cfg.get("vram_tier") or ""))      # the VRAM tier's cap on lines per call
+    # An explicit tier override caps the lines per call; otherwise the measured VRAM budget decides (up to MAX_BATCH).
+    override = str(cfg.get("vram_tier_override") or vram_tier.AUTO)
+    engine.batch_cap = vram_tier.batch_cap(override) if override != vram_tier.AUTO else tts_mod.MAX_BATCH
     return engine
 
 
