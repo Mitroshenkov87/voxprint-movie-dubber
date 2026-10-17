@@ -157,8 +157,15 @@ def test_custom_voices_wait_until_prepare_then_save_a_library_voice(tmp_path, mo
         (voice_dir / "adapter_config.json").write_text("{}", encoding="utf-8")
         (voice_dir / "voice.json").write_text(payload, encoding="utf-8")
     project = Project.create(folder, source)
-    project.speakers = [Speaker("S1", "Анна", voice=Voice("library", "maria"), seconds=4)]
-    project.lines = [Line(1, 0.0, 1.0, text="Hello", speaker="S1")]
+    project.speakers = [
+        Speaker("S1", "Ann", voice=Voice("library", "maria"), seconds=12),
+        Speaker("S2", "Speaker 2", seconds=4),
+    ]
+    project.lines = [
+        Line(1, 0.0, 1.0, text="Hello", speaker="S1"),
+        Line(2, 1.2, 2.0, text="Again", speaker="S1"),
+        Line(3, 2.2, 3.0, text="Yes", speaker="S2"),
+    ]
     project.stages["translation"] = {"done": True}
     project.settings["multi_voice"] = True
     project.save()
@@ -169,12 +176,22 @@ def test_custom_voices_wait_until_prepare_then_save_a_library_voice(tmp_path, mo
     assert not prepare.isVisible()
     name = dialog.findChild(QWidget, "voiceName-S1")
     picker = dialog.findChild(QComboBox, "voicePick-S1")
-    listen = dialog.findChild(QPushButton, "voiceListen-S1")
-    assert name is not None and name.text() == "Анна"
+    assert name is not None and name.text() == "Голос 1"
+    meta = dialog.findChild(QWidget, "voiceMeta-S1")
+    excerpt = dialog.findChild(QPushButton, "voiceExcerpt-S1")
+    library = dialog.findChild(QPushButton, "voiceLibrary-S1")
+    other = dialog.findChild(QWidget, "voiceName-S2")
+    assert other is not None and other.text() == "Голос 2"
+    assert meta is not None and "12" in meta.text()
+    assert excerpt is not None and excerpt.text() == "Прослушать отрывок"
+    assert library is not None and library.text() == "Прослушать голос"
+    assert dialog.findChild(QPushButton, "voiceListen-S1") is None
     assert picker is not None and picker.currentText() == "Maria (рус.)"
     assert "Библиотека" not in picker.currentText()
-    assert listen is not None and listen.text() == "Прослушать"
-    assert hint is not None and hint.text() == "Выберите голос из библиотеки для каждого персонажа."
+    assert "Ann" not in name.text()
+    assert hint is not None and hint.text() == "Послушайте отрывок каждого голоса из фильма и выберите для него голос озвучки."
+    studio.chars.load(project)
+    assert studio.chars.cards["S2"].edt_name.text() == "Голос 2"
     dialog.place_on_parent()
     QApplication.processEvents()
     for button in dialog.findChildren(QPushButton):

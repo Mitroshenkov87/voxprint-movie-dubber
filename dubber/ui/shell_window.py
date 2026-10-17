@@ -26,7 +26,7 @@ from dubber.ui import dialogs
 from dubber.ui.feature_wizard import FeatureWizard
 from dubber.ui.jobs import PipelineThread
 from dubber.ui.setup_progress import ensure_with_dialog, startup_repair_dialog
-from dubber.ui.pages import voice_from_key
+from dubber.ui.pages import speaker_number, voice_from_key
 from dubber.ui.shell_state import apply_engine, apply_project, build_layout, dub_settings
 from dubber.ui.voice_cast import VoiceCastDialog, current_voice_key
 from dubber.ui.window import MainWindow
@@ -450,17 +450,20 @@ class ShellWindow(QWidget):
         studio = self._studio
         return studio is not None and studio._prepared()
 
-    def cast_characters(self) -> list[tuple[str, str, str]]:
-        """Return each character's id, name, and library voice key."""
+    def cast_characters(self) -> list[tuple[str, str, str, str]]:
+        """Return each speaker's id, Voice N label, library voice key, and speech detail."""
         studio = self._studio
         project = None if studio is None else studio.project
         if project is None:
             return []
-        people = sorted(project.speakers, key=lambda speaker: -speaker.seconds)
-        return [
-            (speaker.id, speaker.name or speaker.id, current_voice_key(speaker.voice))
-            for speaker in people
-        ]
+        people = sorted(project.speakers, key=lambda speaker: speaker_number(speaker.id, 10**6))
+        rows: list[tuple[str, str, str, str]] = []
+        for index, speaker in enumerate(people, start=1):
+            number = speaker_number(speaker.id, index)
+            lines = sum(1 for line in project.lines if line.speaker == speaker.id)
+            detail = tr("chars.seconds", s=int(speaker.seconds), n=lines)
+            rows.append((speaker.id, tr("shell.voice.speaker", n=number), current_voice_key(speaker.voice), detail))
+        return rows
 
     def cast_prepare(self) -> None:
         """Run Prepare, then fill the character list."""
@@ -481,14 +484,28 @@ class ShellWindow(QWidget):
         if self._cast is not None and self._cast.isVisible():
             self._cast.reload()
 
-    def cast_listen(self, sid: str) -> None:
-        """Play the sample for one character.
+    def cast_play_excerpt(self, sid: str) -> None:
+        """Play this speaker's clip from the film.
 
         Args:
             sid: Speaker id.
         """
         studio = self._ensure_studio(sync_file=False, push=False)
-        studio.listen(sid)
+        if not studio.play_excerpt(sid):
+            self.view.set_note(tr("chars.no_sample"))
+
+    def cast_play_library(self, sid: str) -> None:
+        """Play the library voice chosen for this speaker.
+
+        Args:
+            sid: Speaker id.
+        """
+        studio = self._ensure_studio(sync_file=False, push=False)
+        project = studio.project
+        speaker = None if project is None else project.speaker(sid)
+        voice_id = speaker.voice.id if speaker is not None and speaker.voice.kind == "library" else ""
+        if not voice_id or not studio.play_library_preview(voice_id):
+            self.view.set_note(tr("shell.voice.no_preview"))
 
     def cast_assign(self, sid: str, key: str) -> None:
         """Save one character's library voice on the shared project.

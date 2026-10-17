@@ -47,16 +47,20 @@ class CastHost(Protocol):
         """Return whether Prepare has finished and the film has lines."""
         ...
 
-    def cast_characters(self) -> list[tuple[str, str, str]]:
-        """Return ``(id, name, voice key)`` for each character."""
+    def cast_characters(self) -> list[tuple[str, str, str, str]]:
+        """Return ``(id, Voice N, voice key, speech detail)`` for each speaker."""
         ...
 
     def cast_prepare(self) -> None:
         """Start Prepare."""
         ...
 
-    def cast_listen(self, sid: str) -> None:
-        """Play a sample of this character's voice."""
+    def cast_play_excerpt(self, sid: str) -> None:
+        """Play this speaker's short clip from the film."""
+        ...
+
+    def cast_play_library(self, sid: str) -> None:
+        """Play the library voice chosen for this speaker."""
         ...
 
     def cast_assign(self, sid: str, key: str) -> None:
@@ -75,7 +79,7 @@ class VoiceCastDialog(QDialog):
         """
         super().__init__(host)
         self._host = cast(CastHost, host)
-        self._original: list[tuple[str, str, str]] = []
+        self._original: list[tuple[str, str, str, str]] = []
         self.setObjectName("voiceCast")
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
@@ -150,12 +154,14 @@ class VoiceCastDialog(QDialog):
         self._hint.setText(tr("shell.voice.cast_hint") if ready else tr("shell.voice.cast_wait"))
         self._prepare_row.setVisible(not ready)
         self._scroll.setVisible(ready)
+        self.setMinimumWidth(920 if ready else 640)
         if not ready:
             self.adjustSize()
             return
         items = _library_items()
-        for sid, name, chosen in self._original:
-            self._rows.addWidget(self._row(sid, name, chosen, items))
+        for sid, label, chosen, detail in self._original:
+            self._rows.addWidget(self._row(sid, label, chosen, detail, items))
+        self._scroll.setMinimumHeight(min(440, max(56, 64 * len(self._original))))
         self._rows.addStretch(1)
         self.adjustSize()
 
@@ -181,24 +187,44 @@ class VoiceCastDialog(QDialog):
         self._host.cast_prepare()
 
     def _cancel_clicked(self) -> None:
-        for sid, _name, key in self._original:
+        for sid, _label, key, _detail in self._original:
             self._host.cast_assign(sid, key or "clone:")
         self.reject()
 
-    def _row(self, sid: str, name: str, current: str, items: list[tuple[Voice, str]]) -> QWidget:
+    def _row(
+        self,
+        sid: str,
+        label: str,
+        current: str,
+        detail: str,
+        items: list[tuple[Voice, str]],
+    ) -> QWidget:
         row = QWidget()
         row.setObjectName(f"voiceRow-{sid}")
         layout = QHBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
-        label = QLabel(name)
-        label.setObjectName(f"voiceName-{sid}")
-        label.setMinimumWidth(140)
-        label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        names_host = QWidget()
+        names_host.setFixedWidth(136)
+        names = QVBoxLayout(names_host)
+        names.setContentsMargins(0, 0, 0, 0)
+        names.setSpacing(0)
+        title = QLabel(label)
+        title.setObjectName(f"voiceName-{sid}")
+        meta = QLabel(detail)
+        meta.setObjectName(f"voiceMeta-{sid}")
+        meta.setProperty("voiceMeta", "true")
+        names.addWidget(title)
+        names.addWidget(meta)
+        excerpt = QPushButton(tr("shell.voice.play_excerpt"))
+        excerpt.setObjectName(f"voiceExcerpt-{sid}")
+        excerpt.setAutoDefault(False)
+        excerpt.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        excerpt.clicked.connect(lambda _checked=False, speaker=sid: self._host.cast_play_excerpt(speaker))
         picker = QComboBox()
         picker.setObjectName(f"voicePick-{sid}")
         picker.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        picker.setMinimumContentsLength(18)
+        picker.setMinimumContentsLength(16)
         picker.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         if items:
             fill_voice_combo(picker, _voice_from_key(current), items)
@@ -208,14 +234,15 @@ class VoiceCastDialog(QDialog):
         else:
             picker.addItem(tr("shell.voice.none"))
             picker.setEnabled(False)
-        listen = QPushButton(tr("chars.listen"))
-        listen.setObjectName(f"voiceListen-{sid}")
-        listen.setAutoDefault(False)
-        listen.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        listen.clicked.connect(lambda _checked=False, speaker=sid: self._host.cast_listen(speaker))
-        layout.addWidget(label)
+        preview = QPushButton(tr("shell.voice.play_library"))
+        preview.setObjectName(f"voiceLibrary-{sid}")
+        preview.setAutoDefault(False)
+        preview.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        preview.clicked.connect(lambda _checked=False, speaker=sid: self._host.cast_play_library(speaker))
+        layout.addWidget(names_host)
+        layout.addWidget(excerpt)
         layout.addWidget(picker, 1)
-        layout.addWidget(listen)
+        layout.addWidget(preview)
         return row
 
     def _assigned(self, sid: str, picker: QComboBox) -> None:
@@ -299,9 +326,12 @@ QLabel#voiceCastTitle {{
     font-weight: 600;
     background: transparent;
 }}
-QLabel#voiceCastHint {{
+QLabel#voiceCastHint, QLabel[voiceMeta="true"] {{
     color: {TEXT_MUTED};
     background: transparent;
+}}
+QLabel[voiceMeta="true"] {{
+    font-size: 11px;
 }}
 QWidget#voiceCastRows, QWidget#voiceCastPrepareRow, QScrollArea#voiceCastScroll {{
     background: {ROOT_PLAIN};

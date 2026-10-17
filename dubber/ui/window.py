@@ -666,6 +666,50 @@ class MainWindow(QWidget):
         if what in ("merge", "name", "voice"):
             self.lines.load(project)
 
+    def play_excerpt(self, sid: str) -> bool:
+        """Play this speaker's short clip from the film.
+
+        The clip is the reference built for the character card. When that file
+        is not ready yet, a few of the speaker's lines are joined instead.
+
+        Args:
+            sid: Speaker id.
+
+        Returns:
+            True when a clip started.
+        """
+        project = self.project
+        if project is None:
+            return False
+        speaker = project.speaker(sid)
+        clip: Optional[Path] = None
+        if speaker is not None and speaker.ref_audio:
+            path = project.abs(speaker.ref_audio)
+            if path.is_file():
+                clip = path
+        if clip is None:
+            clip = self._speaker_sample(sid)
+        if clip is None:
+            return False
+        self._play_clip(clip)
+        return True
+
+    def play_library_preview(self, voice_id: str) -> bool:
+        """Play the sample that belongs to a library voice.
+
+        Args:
+            voice_id: Library folder name.
+
+        Returns:
+            True when a clip started.
+        """
+        library = voices.get_library_voice(voice_id)
+        clip = None if library is None else library.preview
+        if clip is None or not clip.is_file():
+            return False
+        self._play_clip(clip)
+        return True
+
     def listen(self, sid: str) -> None:
         """Play what a voice will sound like: the library sample, the reference clip, or a few of the speaker's lines."""
         p = self.project
