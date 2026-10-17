@@ -32,6 +32,37 @@ published with those revisions. The pipeline config loads embedding, segmentatio
 The 2020 Helsinki-NLP `opus-mt-en-ru` and `opus-mt-de-en` cards are Apache-2.0. `opus-mt-ru-en` and `opus-mt-en-de` are
 CC-BY-4.0. Those four checkpoints are not used. en↔ru and ru↔de use tc-big. en↔de uses tc-bible-big.
 
+## Roles
+
+Pipeline stages ask `dubber/model_resolver.py` for a role. The resolver finds the matching `mdl.json` entry
+(model id, plus the VRAM tier for Qwen3-TTS), then the complete local folder. Stage code does not name a
+repository, a revision or a path, and nothing is downloaded. A missing model raises `ModelUnavailable`: the CLI
+exits with code 4 (`models`) and the window shows its Manage models notice.
+
+| Role | `mdl.json` entry | Used by | Placeholder |
+|---|---|---|---|
+| `separation` | `sep` | separation stage (TIGER-DnR) | yes |
+| `separation.best` | `roformer` | separation stage, `roformer` option | yes |
+| `asr` | `asr` | recognition, reference-clip check | yes |
+| `diarization` | `diar` | speaker stage (optional) | yes |
+| `embedding` | `embed` | voice matching (optional) | yes |
+| `translation.<src>-<tgt>` | `mt-<src>-<tgt>` | translation stage | no |
+| `tts.1_7b` | `qwen3-tts`, tier `24gb` | speech stage | yes |
+| `tts.0_6b` | `qwen3-tts`, tier `16gb` | speech stage | yes |
+
+Entries marked `"placeholder": true` in `mdl.json` point at the current upstream weights until Model Forge publishes
+the suite model for that role. Replacing one is a `mdl.json` change only.
+
+Silero VAD is not in `mdl.json`: its weights ship inside the `silero-vad` and `faster-whisper` wheels, which the
+runtime lock pins.
+
+## Memory between stages
+
+The model session unloads every resident model the next stage does not use and empties the CUDA cache before the
+stage starts. Speech synthesis therefore starts with separation, recognition and diarization off the card. The TTS
+batch is sized from the free VRAM measured before each batch, leaving 8 % of the card (between 1.5 and 2.5 GB)
+unused; an out-of-memory error halves the batch. A VRAM tier picked by hand still caps the lines per call.
+
 ## Mel-Band RoFormer
 
 `KimberleyJSN/melbandroformer` commit `ac9b0614ab3cd7f77219e18ba494dfd93956c348` (2026-04-22T12:30:27Z, "Update README.md")

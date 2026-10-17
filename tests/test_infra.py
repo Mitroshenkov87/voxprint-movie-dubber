@@ -431,10 +431,11 @@ def test_vram_budget_remeasures_free_before_each_batch_group(monkeypatch):
     monkeypatch.setattr(R, "gpu_from_torch", lambda: ("Test", 16.0, free["gb"]))
     monkeypatch.delenv("VOXPRINT_VRAM_FRACTION", raising=False)
     budget = R.VramBudget()
-    assert budget.budget == pytest.approx(13.0)
+    # TTS headroom on a 16 GB card: 8 % is 1.28 GB, raised to the 1.5 GB floor
+    assert budget.budget == pytest.approx(13.5)
     free["gb"] = 9.0
-    assert budget.remeasure() == pytest.approx(7.0)
-    assert budget.left() == pytest.approx(7.0)
+    assert budget.remeasure() == pytest.approx(7.5)
+    assert budget.left() == pytest.approx(7.5)
 
     class Eng(tts_mod.MockTTS):
         def max_batch(self) -> int:

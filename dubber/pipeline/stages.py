@@ -584,7 +584,9 @@ def make_tts(p: Project, cfg: Dict[str, Any], need_adapters: bool, emit: Emit):
     from dubber.infra import vram_tier
 
     engine = resident.slot("tts", MODEL_VRAM_GB.get(model_name, 5.0), build) if resident.enabled() else build()
-    engine.batch_cap = vram_tier.batch_cap(str(cfg.get("vram_tier") or ""))      # the VRAM tier's cap on lines per call
+    # An explicit tier override caps the lines per call; otherwise the measured VRAM budget decides (up to MAX_BATCH).
+    override = str(cfg.get("vram_tier_override") or vram_tier.AUTO)
+    engine.batch_cap = vram_tier.batch_cap(override) if override != vram_tier.AUTO else tts_mod.MAX_BATCH
     return engine
 
 

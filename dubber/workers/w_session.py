@@ -101,6 +101,9 @@ def run(args: Dict[str, Any], ctx: WorkerContext) -> Dict[str, Any]:
         key = str(cmd.get("stage") or "")
         folder = str(cmd.get("project") or args.get("project") or "")
         cfg = {**base, **dict(cmd.get("cfg") or {})}
+        dropped = resident.release_for(key)
+        if dropped:
+            ctx.log(json.dumps({"kind": "log", "text": f"{key}: unloaded {', '.join(dropped)} and emptied the CUDA cache"}))
         _install_loaders(cfg)
         try:
             summary, gpu = _run_one(folder, key, cfg, ctx)

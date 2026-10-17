@@ -280,6 +280,7 @@ class Runner:
         cfg = dict(self.cfg)
         cfg["job_started"] = self._t_start or time.time()      # the thermal rule's full-speed window counts from here
         cfg["vram_tier"] = tier
+        cfg["vram_tier_override"] = str(self.cfg.get("vram_tier") or vram_tier.AUTO)
         if key in S.GPU:
             cfg["device"] = plan.device
         if key == "tts" and plan.tts_model:
