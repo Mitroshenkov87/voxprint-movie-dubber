@@ -9,17 +9,18 @@ The wizard steps are Film, Characters, Lines, and Dub. The Dub step is the playe
 | Old feature | New place |
 | --- | --- |
 | Choose a video (button, click, or drop; mkv, mp4, avi, mov, webm, m4v, ts, m2ts) | Main screen drop target. The Review wizard Film step has the same chooser. |
-| Dub language: Russian, English, or German | Language chips on the main screen, the Expert language field, and the Film step combo. One language per film, as before. |
+| Dub language: Russian, English, or German | Dub language chips on the main screen and the Film step combo. One language per film, as before. |
 | Quality: Fast, Balanced, Best quality | Quality chips. Expert shows the concrete speech, separation, and batch values. |
 | Voices: Keep actor voices, Neutral voices, or Custom | Voices chips. Custom opens a dialog titled Choose voices, on the shell theme. After Prepare, each row is a diarization speaker (Voice 1, Voice 2), a film excerpt, a library voice, and a preview of that library voice. Before Prepare it asks to prepare. The same multi-voice flag and per-speaker voice are what the Characters step and Expert use. Likeness stays in Expert. |
 | Actor likeness, default 50% | Expert field shows 50%. The project still stores 0 to 1. Film step slider when one voice is used. Each character card has its own slider. |
 | Audiobook narrator voice (Warm, Clear, Low) | Hidden. That row belongs to the audio surface and is not a film voice. Character voices stay on the Characters step and in Expert. |
 | Different voices for different characters | Expert multi-voice field and the Film step checkbox. |
 | Profanity: as in the original, or soften | Expert field and the Film step combo. Softened lines stay highlighted on the Lines step. |
-| Original voices under the dub | Expert mix field, the Film step slider, and the Dub step slider. |
-| Output file: MKV or MP4 | Expert field and the Film step combo. |
-| Subtitles: automatic, none, a chosen file, or online when keys are set | Expert field is automatic or none. The Film step adds the file chooser and the status line. Keys are in Settings and in Expert. |
-| Original audio track, including automatic | Film step, Original audio track. |
+| Original voices under the dub | Original background chips on the main screen: Quieter, As in the original, or Louder. They write the mix value (0.05, 0.15, 0.45). Expert shows that same number. The Film step slider and the Dub step slider stay. |
+| Output file: MKV or MP4 | Format chips on the main screen. Expert and the Film step combo show the same choice. |
+| Subtitles: none, a separate track, or burned into the picture; a chosen file; online when keys are set | Subtitle chips on the main screen: None, As a track, or Burned in. None skips subtitle lookup and leaves subtitle streams out of the file. As a track copies text subtitles and adds the dub text as one more track. Burned in draws that text into the picture with the ffmpeg subtitles filter and re-encodes the video; the screen says the video will be re-encoded. Expert shows the same three choices. The Film step still has the file chooser and the status line. Keys stay in Settings and in Expert. |
+| Keep or replace the original audio | Original audio chips on the main screen. Keep as 2nd track is the default. Replace leaves the film's audio out of the file. Expert shows the same choice. |
+| Original audio track, including automatic | Film step, Original audio track. That chooser picks which track is the original. The chips above decide whether it stays in the finished file. |
 | Film details: duration, video format, audio tracks, embedded subtitles | Film step, under the file name. |
 | One-click Dub, full pipeline through mix and mux, resume from finished stages | Dub on the main screen. It runs the same pipeline as the Film step Dub button. |
 | Progress, current step, time left, cancel | Main screen progress and Cancel. The Film and Dub steps show the same job. |

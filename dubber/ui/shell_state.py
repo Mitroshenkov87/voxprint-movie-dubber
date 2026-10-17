@@ -42,7 +42,6 @@ _QUALITY_ORDER = (
     "dub.tts_backend",
     "dub.tts_batch",
     "dub.mt_context",
-    "dub.mix_original",
 )
 _VOICE_ORDER = ("dub.voice_style", "dub.actor_weight", "dub.multi_voice")
 _BACKENDS = {"auto": "auto", "standard": "standard/sdpa", "graphs": "graphs/sdpa"}
@@ -281,9 +280,22 @@ def dub_settings() -> Settings:
                 choices=models_or_off,
             ),
             SettingSpec(
+                "dub.original_track",
+                "shell.original",
+                "shell.original.help",
+                SettingType.ENUM,
+                "keep",
+                expert=True,
+                group="sound",
+                choices=(
+                    Choice("keep", "shell.original.keep"),
+                    Choice("replace", "shell.original.replace"),
+                ),
+            ),
+            SettingSpec(
                 "dub.mix_original",
-                "setting.dub.mix",
-                "setting.dub.mix.help",
+                "shell.background",
+                "shell.background.help",
                 SettingType.FLOAT,
                 0.15,
                 expert=True,
@@ -304,15 +316,16 @@ def dub_settings() -> Settings:
             ),
             SettingSpec(
                 "dub.subtitles",
-                "setting.dub.subtitles",
-                "setting.dub.subtitles.help",
+                "shell.subtitles",
+                "shell.subtitles.help",
                 SettingType.ENUM,
-                "auto",
+                "track",
                 expert=True,
                 group="words",
                 choices=(
-                    Choice("auto", "setting.dub.subtitles.auto"),
-                    Choice("none", "setting.dub.subtitles.none"),
+                    Choice("none", "shell.subtitles.none"),
+                    Choice("track", "shell.subtitles.track"),
+                    Choice("burn", "shell.subtitles.burn"),
                 ),
             ),
             SettingSpec(
@@ -345,15 +358,15 @@ def dub_settings() -> Settings:
             ),
             SettingSpec(
                 "dub.output_format",
-                "setting.dub.output",
-                "setting.dub.output.help",
+                "shell.format",
+                "shell.format.help",
                 SettingType.ENUM,
                 "mkv",
                 expert=True,
                 group="output",
                 choices=(
-                    Choice("mkv", "setting.dub.output.mkv"),
-                    Choice("mp4", "setting.dub.output.mp4"),
+                    Choice("mkv", "shell.format.mkv"),
+                    Choice("mp4", "shell.format.mp4"),
                 ),
             ),
             SettingSpec(
@@ -417,7 +430,10 @@ def dub_settings() -> Settings:
 
 
 def dub_presets(settings: Settings | None = None) -> PresetFile:
-    """Return Quality, Voices, and Language. Each option writes concrete values.
+    """Return the plain rows on the main screen. Each option writes concrete values.
+
+    Quality does not own the mix. The background row does, so a quality chip
+    leaves that level alone.
 
     Args:
         settings: Unused. Present so callers can pass the descriptor list.
@@ -431,20 +447,16 @@ def dub_presets(settings: Settings | None = None) -> PresetFile:
         "quality",
         "shell.quality",
         (
-            _option(
-                "fast",
-                "shell.quality.fast",
-                _quality(tts, "small", "off", "off", "standard", 8, 0, 0.15),
-            ),
+            _option("fast", "shell.quality.fast", _quality(tts, "small", "off", "off", "standard", 8, 0)),
             _option(
                 "balanced",
                 "shell.quality.balanced",
-                _quality(tts, "large", separate, diar, "auto", 4, 2, 0.15),
+                _quality(tts, "large", separate, diar, "auto", 4, 2),
             ),
             _option(
                 "best",
                 "shell.quality.best",
-                _quality(tts, "large", separate_best, diar, "graphs", 1, 4, 0.15),
+                _quality(tts, "large", separate_best, diar, "graphs", 1, 4),
             ),
         ),
         "balanced",
@@ -469,7 +481,45 @@ def dub_presets(settings: Settings | None = None) -> PresetFile:
         ),
         "ru",
     )
-    return PresetFile((quality, voices, language))
+    original = PresetGroup(
+        "original",
+        "shell.original",
+        (
+            _option("keep", "shell.original.keep", (("dub.original_track", "keep"),)),
+            _option("replace", "shell.original.replace", (("dub.original_track", "replace"),)),
+        ),
+        "keep",
+    )
+    background = PresetGroup(
+        "background",
+        "shell.background",
+        (
+            _option("quiet", "shell.background.quiet", (("dub.mix_original", 0.05),)),
+            _option("original", "shell.background.original", (("dub.mix_original", 0.15),)),
+            _option("loud", "shell.background.loud", (("dub.mix_original", 0.45),)),
+        ),
+        "original",
+    )
+    subtitles = PresetGroup(
+        "subtitles",
+        "shell.subtitles",
+        (
+            _option("none", "shell.subtitles.none", (("dub.subtitles", "none"),)),
+            _option("track", "shell.subtitles.track", (("dub.subtitles", "track"),)),
+            _option("burn", "shell.subtitles.burn", (("dub.subtitles", "burn"),)),
+        ),
+        "track",
+    )
+    container = PresetGroup(
+        "format",
+        "shell.format",
+        (
+            _option("mkv", "shell.format.mkv", (("dub.output_format", "mkv"),)),
+            _option("mp4", "shell.format.mp4", (("dub.output_format", "mp4"),)),
+        ),
+        "mkv",
+    )
+    return PresetFile((quality, voices, language, original, background, subtitles, container))
 
 
 def build_layout(state_dir: Path | None) -> SimpleLayout:
@@ -528,21 +578,28 @@ def apply_project(layout: SimpleLayout) -> dict[str, object]:
     ``mt_context`` is stored on the project. The translation engine does not
     read it yet. Actor likeness is a percent on the expert panel because the
     shell has no unit on a number. The project still stores that share from
-    0 to 1.
+    0 to 1. Subtitle chips map to ``subtitle_delivery`` (``none``, ``track``,
+    or ``burn``). ``none`` also sets ``subtitle_choice`` to ``none``. The other
+    two keep automatic lookup, and a file chosen in the wizard can replace that.
 
     Args:
         layout: Screen state after presets and any hand edits.
     """
     style = str(layout.get("dub.voice_style"))
     weight = _as_int(layout.get("dub.actor_weight")) / 100.0
+    delivery = str(layout.get("dub.subtitles"))
+    if delivery not in {"none", "track", "burn"}:
+        delivery = "track"
     return {
         "target_lang": str(layout.get("dub.target_lang")),
         "source_lang": str(layout.get("dub.source_lang")),
         "multi_voice": bool(layout.get("dub.multi_voice")),
         "actor_weight": weight,
         "original_volume": _as_float(layout.get("dub.mix_original")),
+        "keep_original_track": str(layout.get("dub.original_track")) != "replace",
         "profanity": str(layout.get("dub.profanity")),
-        "subtitle_choice": str(layout.get("dub.subtitles")),
+        "subtitle_choice": "none" if delivery == "none" else "auto",
+        "subtitle_delivery": delivery,
         "output_format": str(layout.get("dub.output_format")),
         "mt_context": _as_int(layout.get("dub.mt_context")),
         "audio_track_auto": True,
@@ -623,9 +680,8 @@ def _quality(
     backend: str,
     batch: int,
     context: int,
-    mix: float,
-) -> tuple[tuple[str, str | int | float], ...]:
-    values: dict[str, str | int | float] = {
+) -> tuple[tuple[str, str | int], ...]:
+    values: dict[str, str | int] = {
         "dub.tts_model": tts,
         "dub.tts_size": size,
         "dub.separation": separation,
@@ -633,7 +689,6 @@ def _quality(
         "dub.tts_backend": backend,
         "dub.tts_batch": batch,
         "dub.mt_context": context,
-        "dub.mix_original": mix,
     }
     return tuple((key, values[key]) for key in _QUALITY_ORDER)
 

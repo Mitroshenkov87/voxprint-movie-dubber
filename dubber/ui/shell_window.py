@@ -1,6 +1,6 @@
 """The movie window on the shared audio screen.
 
-Simple mode is the video, the language, Quality, Voices, and Dub. Expert mode
+Simple mode is the video, seven plain setting rows, and Dub. Expert mode
 adds the side panel. Both read one settings state. The screen is
 ``surface_for("movie-dubber")`` from voxprint-common. The overflow menu opens
 the existing film, character, line, and player steps. Manage models opens
@@ -12,9 +12,11 @@ import os
 from pathlib import Path
 from typing import Any, Callable, cast
 
-from PySide6.QtCore import QEvent, QObject, QSize, Qt, QUrl
-from PySide6.QtGui import QDesktopServices, QDropEvent, QPixmap
+from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer, QUrl
+from PySide6.QtGui import QDesktopServices, QDropEvent, QFontMetrics, QPixmap
 from PySide6.QtWidgets import (
+    QComboBox,
+    QDoubleSpinBox,
     QFileDialog,
     QLabel,
     QMenu,
@@ -60,6 +62,69 @@ from voxprint_common.ui.variants import (
 VIDEO_EXTS = {".mkv", ".mp4", ".avi", ".mov", ".webm", ".m4v", ".ts", ".m2ts"}
 # Object name of the optional video result region. Components adds it in the Yitro tag.
 VIDEO_RESULT_NAME = "videoResult"
+
+
+def _row_index(box: QVBoxLayout, label: QLabel) -> int:
+    """Return the row in ``box`` that holds ``label``.
+
+    Args:
+        box: The preset column.
+        label: A row label.
+
+    Returns:
+        The layout index, or -1 when the label is not in a row.
+    """
+    for index in range(box.count()):
+        item = box.itemAt(index)
+        row = None if item is None else item.layout()
+        if row is None:
+            continue
+        for child_index in range(row.count()):
+            child = row.itemAt(child_index)
+            if child is not None and child.widget() is label:
+                return index
+    return -1
+
+
+_PRESET_ROWS = (
+    "quality",
+    "voices",
+    "language",
+    "original",
+    "background",
+    "subtitles",
+    "format",
+)
+
+
+class _PresetFont(QObject):
+    """Line the chip rows up again when the shell font is applied."""
+
+    def __init__(self, owner: QWidget) -> None:
+        super().__init__(owner)
+        self._owner = owner
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        """Realign after a polish or a font change.
+
+        Args:
+            watched: The row label.
+            event: The Qt event.
+
+        Returns:
+            False. The label still handles the event.
+        """
+        del watched
+        if event.type() in {
+            QEvent.Type.Polish,
+            QEvent.Type.PolishRequest,
+            QEvent.Type.FontChange,
+            QEvent.Type.StyleChange,
+        }:
+            align = getattr(self._owner, "_align_preset_labels", None)
+            if callable(align):
+                align()
+        return False
 
 
 class _VideoPick(QObject):
@@ -139,6 +204,8 @@ class ShellWindow(QWidget):
         self._video_result: QWidget | None = None
         self._user_cancelled = False
         self._closing = False
+        self._rows_wired = False
+        self._aligning = False
         self.diag_dialog: dialogs.DiagnosticsDialog | None = None
         self.expert = ExpertMode()
         self.shell: SimpleLayout = build_layout(state_dir() / "movie-dubber")
@@ -158,6 +225,7 @@ class ShellWindow(QWidget):
 
     def _mount_view(self) -> None:
         """Build the shared screen and the controls this app adds to it."""
+        self._rows_wired = False
         self.view = SimpleWidget(
             self.shell,
             self.settings_model,
@@ -263,8 +331,14 @@ class ShellWindow(QWidget):
             self.diag_dialog.start()
 
     def showEvent(self, event) -> None:  # noqa: N802
-        """Use 1200 by 900 the first time, then the stored rectangle."""
+        """Use 1200 by 900 the first time, then the stored rectangle.
+
+        The chip rows are lined up after the shell font is applied.
+        """
         super().showEvent(event)
+        if hasattr(self, "view"):
+            self._align_preset_labels()
+            QTimer.singleShot(0, self._align_preset_labels)
         if self._fitted:
             return
         self._fitted = True
@@ -544,7 +618,11 @@ class ShellWindow(QWidget):
             return
         values = apply_project(self.shell)
         current = project.settings.get("subtitle_choice")
-        if isinstance(current, str) and current not in {"auto", "none"}:
+        if (
+            values.get("subtitle_delivery") != "none"
+            and isinstance(current, str)
+            and current not in {"auto", "none", ""}
+        ):
             values["subtitle_choice"] = current
         project.settings.update(values)
         project.save()
@@ -740,11 +818,114 @@ class ShellWindow(QWidget):
         studio.chars.load(project)
 
     def _settle_screen(self) -> None:
-        """Hide an empty history strip and remember a future video region."""
+        """Hide an empty history strip, line up the chips, and remember a video region."""
         if not hasattr(self, "view"):
             return
         self._settle_history()
         self._bind_video_result()
+        self._watch_row_fonts()
+        self._align_preset_labels()
+        self._place_burn_note()
+        self._wire_plain_rows()
+        self._sync_burn_note()
+
+    def _watch_row_fonts(self) -> None:
+        """Notice when the shell font lands on a row label."""
+        watcher = getattr(self, "_row_font", None)
+        if watcher is None:
+            watcher = _PresetFont(self)
+            self._row_font = watcher
+        for row_id in _PRESET_ROWS:
+            label = self.view.root.findChild(QLabel, f"preset-{row_id}")
+            if label is None:
+                continue
+            label.removeEventFilter(watcher)
+            label.installEventFilter(watcher)
+
+    def _align_preset_labels(self) -> None:
+        """Give every row label the same width so the chips start on one line.
+
+        The shell gives each label a short minimum and does not wrap it. A
+        longer Russian label would start its chips further right than the rest.
+        """
+        if not hasattr(self, "view") or self._aligning:
+            return
+        self._aligning = True
+        try:
+            labels: list[QLabel] = []
+            for row_id in _PRESET_ROWS:
+                found = self.view.root.findChild(QLabel, f"preset-{row_id}")
+                if isinstance(found, QLabel):
+                    labels.append(found)
+            if not labels:
+                return
+            for label in labels:
+                label.setWordWrap(False)
+            width = 0
+            for label in labels:
+                advance = QFontMetrics(label.font()).horizontalAdvance(label.text())
+                width = max(width, label.sizeHint().width(), advance + 4)
+            for label in labels:
+                label.setFixedWidth(width)
+            self._fit_chip_text()
+            host = labels[0].parentWidget()
+            box = None if host is None else host.layout()
+            if box is not None:
+                box.activate()
+        finally:
+            self._aligning = False
+
+    def _fit_chip_text(self) -> None:
+        """Keep each chip at least as wide as its label."""
+        for button in self.view.root.findChildren(QPushButton):
+            name = button.objectName()
+            if not name.startswith("chip-"):
+                continue
+            text = button.text()
+            if not text:
+                continue
+            advance = QFontMetrics(button.font()).horizontalAdvance(text)
+            needed = advance + 28
+            if button.minimumWidth() < needed:
+                button.setMinimumWidth(needed)
+
+    def _place_burn_note(self) -> None:
+        """Put a short note under the subtitle chips. Burning re-encodes the picture."""
+        existing = self.view.root.findChild(QLabel, "subtitleBurnNote")
+        if isinstance(existing, QLabel):
+            existing.setText(tr("shell.subtitles.burn_note"))
+            return
+        label = self.view.root.findChild(QLabel, "preset-subtitles")
+        host = None if label is None else label.parentWidget()
+        box = None if host is None else host.layout()
+        if not isinstance(box, QVBoxLayout) or label is None:
+            return
+        index = _row_index(box, label)
+        if index < 0:
+            return
+        note = QLabel(tr("shell.subtitles.burn_note"))
+        note.setObjectName("subtitleBurnNote")
+        note.setWordWrap(True)
+        note.setStyleSheet("color: #b7c0cc; font-size: 12px;")
+        note.hide()
+        box.insertWidget(index + 1, note)
+
+    def _wire_plain_rows(self) -> None:
+        """Notice a subtitle chip click. Expert rebuilds its own combo later."""
+        if self._rows_wired:
+            return
+        self._rows_wired = True
+        for value in ("none", "track", "burn"):
+            button = self.view.root.findChild(QPushButton, f"chip-subtitles-{value}")
+            if button is not None:
+                button.clicked.connect(self._sync_burn_note)
+
+    def _sync_burn_note(self, *_args: object) -> None:
+        """Show the re-encode note only while Burned in is the live choice."""
+        note = self.view.root.findChild(QLabel, "subtitleBurnNote")
+        if note is None:
+            return
+        note.setVisible(str(self.shell.get("dub.subtitles")) == "burn")
 
     def _settle_history(self) -> None:
         """Show the history strip only when a finished dub is in it.
@@ -844,6 +1025,11 @@ class ShellWindow(QWidget):
         """
         self.view.set_expert(enabled)
         self._show_likeness_percent()
+        self._show_mix_steps()
+        combo = self.view.root.findChild(QComboBox, "dub.subtitles")
+        if combo is not None:
+            combo.currentIndexChanged.connect(self._sync_burn_note)
+        self._sync_burn_note()
 
     def _hide_narrator_voice(self) -> None:
         """Hide the audiobook narrator row on the audio surface.
@@ -866,6 +1052,23 @@ class ShellWindow(QWidget):
         spin = self.view.root.findChild(QSpinBox, "dub.actor_weight")
         if spin is not None:
             spin.setSuffix("%")
+
+    def _show_mix_steps(self) -> None:
+        """Show the background level in hundredths.
+
+        The shell float field uses one decimal and a large step, so 0.15 would
+        become 0.2 the moment Expert opens. The chips write 0.05, 0.15, and 0.45.
+        """
+        spin = self.view.root.findChild(QDoubleSpinBox, "dub.mix_original")
+        if spin is None:
+            return
+        spin.blockSignals(True)
+        spin.setDecimals(2)
+        spin.setSingleStep(0.05)
+        value = self.shell.get("dub.mix_original")
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            spin.setValue(float(value))
+        spin.blockSignals(False)
 
     def _restore_source(self) -> Path | None:
         """Put the chosen film back into the prompt.
@@ -1008,7 +1211,7 @@ class ShellWindow(QWidget):
                 "dub_multi_voice": bool(self.shell.get("dub.multi_voice")),
                 "dub_original_volume": _mix_level(self.shell.get("dub.mix_original")),
                 "output_format": str(self.shell.get("dub.output_format")),
-                "dub_subtitles": str(self.shell.get("dub.subtitles")) if str(self.shell.get("dub.subtitles")) in {"auto", "none"} else "auto",
+                "dub_subtitles": "none" if str(self.shell.get("dub.subtitles")) == "none" else "auto",
                 "vram_tier": str(self.shell.get("dub.vram_tier")),
                 "device": str(self.shell.get("dub.device")),
             }

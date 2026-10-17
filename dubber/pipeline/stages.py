@@ -111,7 +111,7 @@ def inputs_for(key: str, p: Project, cfg: Dict[str, Any], prev: str) -> str:
                 [(sp.id, sp.voice.kind, sp.voice.id, p.is_key(sp), sp.actor_weight) for sp in p.speakers],
                 [(ln.id, ln.translation, ln.speaker, ln.keep_original, ln.start, ln.end) for ln in p.lines]],
         "mix": [s.get("original_volume")],
-        "mux": [s.get("output_format"), s.get("output")],
+        "mux": [s.get("output_format"), s.get("output"), s.get("subtitle_delivery"), s.get("keep_original_track")],
     }
     return hash_of(key, parts.get(key, []), prev)
 
@@ -742,6 +742,36 @@ def st_mix(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
     return f"dub track {total / 60:.1f} min, original voice at {int(100 * float(p.settings.get('original_volume', 0.15)))} %"
 
 
+def dub_cues(p: Project) -> List[subtitles.Cue]:
+    """Return one cue per dubbed line, using the spoken words and where they sit.
+
+    A line that keeps the original audio is left out. The start is the fitted
+    place when that place is set, otherwise the line's own start.
+
+    Args:
+        p: The film project.
+
+    Returns:
+        Cues in line order.
+    """
+    cues: List[subtitles.Cue] = []
+    for line in p.lines:
+        if line.keep_original:
+            continue
+        text = (line.spoken or line.translation or "").strip()
+        if not text:
+            continue
+        start = line.place_start if line.place_start >= 0 else line.start
+        if line.place_start >= 0 and line.audio_s > 0:
+            end = line.place_start + line.audio_s
+        else:
+            end = line.end
+        if end <= start:
+            end = start + 0.4
+        cues.append(subtitles.Cue(start, end, text))
+    return cues
+
+
 def output_path(p: Project) -> Path:
     """Path of the finished movie: the configured output, or a ``.dub-<lang>`` file beside the source."""
     if p.settings.get("output"):
@@ -755,15 +785,42 @@ def output_path(p: Project) -> Path:
 
 
 def st_mux(p: Project, cfg: Dict[str, Any], emit: Emit) -> str:
-    """Add the dub as the default audio track, copying video and the original tracks, unless this run is only a preview."""
+    """Add the dub as the default audio track, unless this run is only a preview.
+
+    ``keep_original_track`` leaves the film's audio in the file. ``subtitle_delivery``
+    is ``none``, ``track``, or ``burn``. Burning re-encodes the picture. The other
+    choices copy it.
+    """
     if p.settings.get("range"):
         return "preview: no new file"
+    delivery = str(p.settings.get("subtitle_delivery") or "track")
+    if delivery not in ("none", "track", "burn"):
+        delivery = "track"
+    keep = p.settings.get("keep_original_track", True) is not False
+    sub_path: Optional[Path] = None
+    if delivery in ("track", "burn"):
+        cues = dub_cues(p)
+        if cues:
+            sub_path = p.path("subs", "dub.srt")
+            subtitles.write_srt(cues, sub_path)
     out = output_path(p)
     tmp = out.with_name(f".{out.stem}.{os.getpid()}.partial{out.suffix}")
-    idx = media.mux_dub(p.source, p.path("out", "dub_track.wav"), tmp, p.settings["target_lang"],
-                        f"AI dub ({p.settings['target_lang']}) - Voxprint")
+    idx = media.mux_dub(
+        p.source,
+        p.path("out", "dub_track.wav"),
+        tmp,
+        p.settings["target_lang"],
+        f"AI dub ({p.settings['target_lang']}) - Voxprint",
+        keep_original=keep,
+        subtitle_delivery=delivery,
+        subtitle_path=sub_path,
+    )
     os.replace(tmp, out)
     p.settings["output_file"] = str(out)
+    if delivery == "burn" and sub_path is not None:
+        return f"{out.name}: dub added as audio track #{idx + 1}, subtitles burned in, video re-encoded"
+    if not keep:
+        return f"{out.name}: dub replaced the original audio (track #{idx + 1})"
     return f"{out.name}: dub added as audio track #{idx + 1} (default), video and original tracks copied"
 
 

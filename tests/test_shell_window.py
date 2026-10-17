@@ -3,12 +3,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtGui import QImage
-from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QPushButton, QSpinBox, QWidget
+from PySide6.QtGui import QFontMetrics, QImage
+from PySide6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QDoubleSpinBox,
+    QLabel,
+    QPushButton,
+    QSpinBox,
+    QWidget,
+)
 
 from dubber import i18n
 from dubber.ui.shell_window import ShellWindow
 from voxprint_common.i18n import reset as reset_shell
+from voxprint_common.ui.presets import PresetMatch
 from voxprint_common.ui.variants import surface_for
 
 
@@ -336,6 +345,79 @@ def test_poster_uses_the_shell_region_or_a_still(tmp_path, monkeypatch):
     assert region.pixmap() is not None and not region.pixmap().isNull()
     assert region_window.view.root.findChild(QLabel, "posterFrame") is None
     region_window.close()
+
+
+def test_plain_rows_line_up_in_russian_and_burning_notes_the_reencode(tmp_path, monkeypatch):
+    window = _window(tmp_path, monkeypatch, "ru")
+    window.resize(1200, 900)
+    window.show()
+    QApplication.processEvents()
+    chips = {
+        "quality": ("fast", "balanced", "best"),
+        "voices": ("keep", "neutral", "pick"),
+        "language": ("ru", "en", "de"),
+        "original": ("keep", "replace"),
+        "background": ("quiet", "original", "loud"),
+        "subtitles": ("none", "track", "burn"),
+        "format": ("mkv", "mp4"),
+    }
+    words = {
+        "quality": "Качество",
+        "voices": "Голоса",
+        "language": "Язык озвучки",
+        "original": "Оригинальная дорожка",
+        "background": "Фон из оригинала",
+        "subtitles": "Субтитры",
+        "format": "Формат",
+    }
+    chip_words = {
+        ("original", "keep"): "Оставить второй дорожкой",
+        ("background", "original"): "Как в оригинале",
+        ("subtitles", "track"): "Отдельной дорожкой",
+        ("subtitles", "burn"): "Вшить в видео",
+    }
+    first_x = None
+    widths = []
+    for row_id, values in chips.items():
+        label = window.view.root.findChild(QLabel, f"preset-{row_id}")
+        assert label is not None and label.text() == words[row_id]
+        assert label.width() >= QFontMetrics(label.font()).horizontalAdvance(label.text())
+        widths.append(label.minimumWidth())
+        for value in values:
+            chip = window.view.root.findChild(QPushButton, f"chip-{row_id}-{value}")
+            assert chip is not None and chip.isVisible()
+            expected = chip_words.get((row_id, value))
+            if expected is not None:
+                assert chip.text() == expected
+            assert chip.width() >= QFontMetrics(chip.font()).horizontalAdvance(chip.text())
+            corner = chip.mapTo(window, chip.rect().bottomRight())
+            assert corner.x() <= 1200 and corner.y() <= 900
+        first = window.view.root.findChild(QPushButton, f"chip-{row_id}-{values[0]}")
+        assert first is not None
+        left = first.mapTo(window, first.rect().topLeft()).x()
+        if first_x is None:
+            first_x = left
+        else:
+            assert abs(left - first_x) <= 2
+    assert len(set(widths)) == 1
+    note = window.view.root.findChild(QLabel, "subtitleBurnNote")
+    assert note is not None and not note.isVisible()
+    burn = window.view.root.findChild(QPushButton, "chip-subtitles-burn")
+    assert burn is not None
+    burn.click()
+    QApplication.processEvents()
+    assert window.shell.get("dub.subtitles") == "burn"
+    assert note.isVisible() and note.text() == "видео будет перекодировано"
+    window.expert.set_enabled(True)
+    QApplication.processEvents()
+    mix = window.view.root.findChild(QDoubleSpinBox, "dub.mix_original")
+    assert mix is not None and mix.decimals() == 2 and mix.value() == 0.15
+    assert window.shell.get("dub.mix_original") == 0.15
+    background = window.shell.preset_status("background")
+    assert background is not None and background.kind is PresetMatch.EXACT
+    delivery = window.view.root.findChild(QComboBox, "dub.subtitles")
+    assert delivery is not None and delivery.currentData() == "burn"
+    window.close()
 
 
 def test_window_source_does_not_name_model_ids():

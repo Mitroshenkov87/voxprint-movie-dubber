@@ -88,7 +88,11 @@ def test_far_edit_marks_custom_and_reset_restores_the_stored_preset(tmp_path, mo
     assert layout.preset_status("quality").kind is PresetMatch.EXACT
     assert layout.get("dub.tts_batch") == 4
     assert layout.get("dub.tts_size") == "large"
+    assert layout.get("dub.mix_original") == 0.33
+    assert layout.preset_status("background").kind is PresetMatch.CUSTOM
+    layout.reset_group("background")
     assert layout.get("dub.mix_original") == 0.15
+    assert layout.preset_status("background").kind is PresetMatch.EXACT
 
 
 def test_expert_mode_switch_keeps_values(tmp_path, monkeypatch):
@@ -168,3 +172,40 @@ def test_source_language_and_stop_stage_stay_in_the_shared_state(tmp_path, monke
     assert restored.get("dub.source_lang") == "en"
     assert restored.get("dub.until") == "translation"
     assert stop_stage(restored) == "translation"
+
+
+def test_plain_rows_write_the_shared_mix_track_subtitles_and_format(tmp_path, monkeypatch):
+    layout = _layout(tmp_path, monkeypatch)
+    assert layout.preset_status("original").option_id == "keep"
+    assert layout.preset_status("background").option_id == "original"
+    assert layout.preset_status("subtitles").option_id == "track"
+    assert layout.preset_status("format").option_id == "mkv"
+    project = apply_project(layout)
+    assert project["keep_original_track"] is True
+    assert project["original_volume"] == 0.15
+    assert project["subtitle_delivery"] == "track"
+    assert project["subtitle_choice"] == "auto"
+    assert project["output_format"] == "mkv"
+    layout.choose("original", "replace")
+    layout.choose("background", "quiet")
+    layout.choose("subtitles", "none")
+    layout.choose("format", "mp4")
+    project = apply_project(layout)
+    assert project["keep_original_track"] is False
+    assert project["original_volume"] == 0.05
+    assert project["subtitle_delivery"] == "none"
+    assert project["subtitle_choice"] == "none"
+    assert project["output_format"] == "mp4"
+    assert layout.preset_status("quality").kind is PresetMatch.EXACT
+    layout.choose("quality", "fast")
+    assert layout.get("dub.mix_original") == 0.05
+    layout.choose("background", "loud")
+    layout.choose("subtitles", "burn")
+    project = apply_project(layout)
+    assert project["original_volume"] == 0.45
+    assert project["subtitle_delivery"] == "burn"
+    assert project["subtitle_choice"] == "auto"
+    layout.set_value("dub.mix_original", 0.2)
+    assert layout.preset_status("background").kind is PresetMatch.CUSTOM
+    layout.reset_group("background")
+    assert layout.get("dub.mix_original") == 0.45
