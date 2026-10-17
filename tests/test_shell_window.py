@@ -132,22 +132,30 @@ def test_custom_voices_wait_until_prepare_then_save_a_library_voice(tmp_path, mo
     dialog = window._open_voice_cast()
     QApplication.processEvents()
     assert window.shell.get("dub.multi_voice") is True
-    wait = dialog.findChild(QWidget, "voiceCastWait")
+    title = dialog.findChild(QWidget, "voiceCastTitle")
+    hint = dialog.findChild(QWidget, "voiceCastHint")
     prepare = dialog.findChild(QPushButton, "voiceCastPrepare")
-    assert wait is not None and wait.text() == "Голоса можно назначить после подготовки"
+    done = dialog.findChild(QPushButton, "voiceCastDone")
+    cancel = dialog.findChild(QPushButton, "voiceCastCancel")
+    assert title is not None and title.text() == "Свой выбор голосов"
+    assert hint is not None and hint.text() == "Голоса можно назначить после подготовки"
     assert prepare is not None and prepare.isVisible()
+    assert done is not None and done.text() == "Готово"
+    assert cancel is not None and cancel.text() == "Отмена"
+    assert dialog.findChild(QPushButton, "voiceListen-S1") is None
     folder = tmp_path / "proj"
     source = tmp_path / "film.mkv"
     source.write_bytes(b"x")
-    for folder_name, title in (("maria", "Maria"), ("ivan", "Ivan")):
+    voices = {
+        "maria": '{"name": "Maria", "language": "ru"}',
+        "ivan": '{"name": "Ivan", "names": {"en": "Ivan", "ru": "Иван"}, "language": "ru"}',
+    }
+    for folder_name, payload in voices.items():
         voice_dir = tmp_path / "home" / "voices" / folder_name
         voice_dir.mkdir(parents=True)
         (voice_dir / "adapter_model.safetensors").write_bytes(b"x")
         (voice_dir / "adapter_config.json").write_text("{}", encoding="utf-8")
-        (voice_dir / "voice.json").write_text(
-            '{"name": "%s", "language": "ru"}' % title,
-            encoding="utf-8",
-        )
+        (voice_dir / "voice.json").write_text(payload, encoding="utf-8")
     project = Project.create(folder, source)
     project.speakers = [Speaker("S1", "Анна", voice=Voice("library", "maria"), seconds=4)]
     project.lines = [Line(1, 0.0, 1.0, text="Hello", speaker="S1")]
@@ -163,9 +171,21 @@ def test_custom_voices_wait_until_prepare_then_save_a_library_voice(tmp_path, mo
     picker = dialog.findChild(QComboBox, "voicePick-S1")
     listen = dialog.findChild(QPushButton, "voiceListen-S1")
     assert name is not None and name.text() == "Анна"
-    assert picker is not None and "Maria" in picker.currentText()
+    assert picker is not None and picker.currentText() == "Maria (рус.)"
+    assert "Библиотека" not in picker.currentText()
     assert listen is not None and listen.text() == "Прослушать"
-    ivan = next(index for index in range(picker.count()) if "Ivan" in picker.itemText(index))
+    assert hint is not None and hint.text() == "Выберите голос из библиотеки для каждого персонажа."
+    dialog.place_on_parent()
+    QApplication.processEvents()
+    for button in dialog.findChildren(QPushButton):
+        if not button.isVisible():
+            continue
+        corner = button.mapTo(dialog, button.rect().topLeft())
+        assert corner.x() >= 0
+        assert corner.x() + button.width() <= dialog.width()
+        assert corner.y() >= 0
+        assert corner.y() + button.height() <= dialog.height()
+    ivan = next(index for index in range(picker.count()) if picker.itemText(index) == "Иван (рус.)")
     picker.setCurrentIndex(ivan)
     assert project.speaker("S1").voice.kind == "library"
     assert project.speaker("S1").voice.id == "ivan"

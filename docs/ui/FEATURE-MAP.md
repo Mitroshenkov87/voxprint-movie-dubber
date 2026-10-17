@@ -11,7 +11,7 @@ The wizard steps are Film, Characters, Lines, and Dub. The Dub step is the playe
 | Choose a video (button, click, or drop; mkv, mp4, avi, mov, webm, m4v, ts, m2ts) | Main screen drop target. The Review wizard Film step has the same chooser. |
 | Dub language: Russian, English, or German | Language chips on the main screen, the Expert language field, and the Film step combo. One language per film, as before. |
 | Quality: Fast, Balanced, Best quality | Quality chips. Expert shows the concrete speech, separation, and batch values. |
-| Voices: Keep actor voices, Neutral voices, or Custom | Voices chips. Custom opens a dialog: after Prepare, each character gets a library voice and Listen. Before Prepare it asks to prepare. The same multi-voice flag and per-character voice are what the Characters step and Expert use. Likeness stays in Expert. |
+| Voices: Keep actor voices, Neutral voices, or Custom | Voices chips. Custom opens a dialog titled Choose voices, on the shell theme. After Prepare, each row is a character, a library voice, and Listen. Before Prepare it asks to prepare. The same multi-voice flag and per-character voice are what the Characters step and Expert use. Likeness stays in Expert. |
 | Actor likeness, default 50% | Expert field shows 50%. The project still stores 0 to 1. Film step slider when one voice is used. Each character card has its own slider. |
 | Audiobook narrator voice (Warm, Clear, Low) | Hidden. That row belongs to the audio surface and is not a film voice. Character voices stay on the Characters step and in Expert. |
 | Different voices for different characters | Expert multi-voice field and the Film step checkbox. |

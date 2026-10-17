@@ -441,6 +441,7 @@ class ShellWindow(QWidget):
             self._cast = VoiceCastDialog(self)
         self._cast.reload()
         self._cast.show()
+        self._cast.place_on_parent()
         self._cast.raise_()
         return self._cast
 
