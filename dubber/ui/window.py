@@ -645,15 +645,20 @@ class MainWindow(QWidget):
         self._film_changed()
         self.run_pipeline("prepare", PREPARE_UNTIL)
 
-    def dub_all(self) -> bool:
-        """The main action: the whole pipeline with the current (preset) Options, ending with the dubbed file next to the film."""
+    def dub_all(self, until: str = "mux") -> bool:
+        """Run the pipeline with the current options and stop after ``until``.
+
+        Args:
+            until: Last stage. A name that is not a stage runs through mux.
+        """
         if self.project is None:
             self.film.lbl_prepare.setText(tr("ui.start_need_file"))
             return False
         self._film_changed()
         self.apply_auto(self.project)
         self.project.save()
-        return self.run_pipeline("auto", "mux")
+        last = until if until in S.ORDER else "mux"
+        return self.run_pipeline("auto", last)
 
     # ------------------------------------------------------------------ characters / lines
     def _chars_changed(self, what: str) -> None:
@@ -665,6 +670,50 @@ class MainWindow(QWidget):
             self._refresh_plan()
         if what in ("merge", "name", "voice"):
             self.lines.load(project)
+
+    def play_excerpt(self, sid: str) -> bool:
+        """Play this speaker's short clip from the film.
+
+        The clip is the reference built for the character card. When that file
+        is not ready yet, a few of the speaker's lines are joined instead.
+
+        Args:
+            sid: Speaker id.
+
+        Returns:
+            True when a clip started.
+        """
+        project = self.project
+        if project is None:
+            return False
+        speaker = project.speaker(sid)
+        clip: Optional[Path] = None
+        if speaker is not None and speaker.ref_audio:
+            path = project.abs(speaker.ref_audio)
+            if path.is_file():
+                clip = path
+        if clip is None:
+            clip = self._speaker_sample(sid)
+        if clip is None:
+            return False
+        self._play_clip(clip)
+        return True
+
+    def play_library_preview(self, voice_id: str) -> bool:
+        """Play the sample that belongs to a library voice.
+
+        Args:
+            voice_id: Library folder name.
+
+        Returns:
+            True when a clip started.
+        """
+        library = voices.get_library_voice(voice_id)
+        clip = None if library is None else library.preview
+        if clip is None or not clip.is_file():
+            return False
+        self._play_clip(clip)
+        return True
 
     def listen(self, sid: str) -> None:
         """Play what a voice will sound like: the library sample, the reference clip, or a few of the speaker's lines."""

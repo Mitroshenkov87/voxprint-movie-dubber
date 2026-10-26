@@ -2,8 +2,8 @@
 
 Search order: ``VOXPRINT_FFMPEG`` (file or folder) -> the shared suite ffmpeg (``shared/ffmpeg/<version>``) -> ``PATH``
 (only if ``-version`` really runs) -> the ``imageio-ffmpeg`` wheel (a GPL build; offline fallback, no ffprobe).
-Older per-app copies are moved into the shared folder on launch and are not searched. The video stream is NEVER
-re-encoded (``-c:v copy``).
+Older per-app copies are moved into the shared folder on launch and are not searched. The video stream is copied
+(``-c:v copy``), except when subtitles are burned into the picture.
 """
 from __future__ import annotations
 

@@ -615,6 +615,54 @@ def test_mp4_export_remuxes_video_and_converts_only_unsupported_audio(tmp_path, 
     assert b[b.index("-map") + 1] == "0" and "-c:a:0" not in b          # MKV: every stream copied as it is
 
 
+def test_mux_can_drop_the_original_add_a_subtitle_track_or_burn_it(tmp_path, clip, monkeypatch):
+    from dubber import ffmpeg
+    from dubber.core import media
+
+    calls = []
+    info = media.MediaInfo(clip, 18.0, "hevc", [media.Track(0, 1, "aac", "eng", "", 2)], [media.Track(0, 2, "subrip", "eng")])
+    monkeypatch.setattr(media, "probe", lambda p: info)
+    monkeypatch.setattr(ffmpeg, "run", lambda args, timeout=0: calls.append([str(a) for a in args]))
+    srt = tmp_path / "dub.srt"
+    srt.write_text("1\n00:00:01,000 --> 00:00:02,000\nПривет\n", encoding="utf-8")
+    media.mux_dub(clip, tmp_path / "d.wav", tmp_path / "out.mkv", "ru", "AI dub", keep_original=False, subtitle_delivery="none")
+    dropped = calls[-1]
+    assert "0:a?" not in dropped and "-map" in dropped and "0:s?" not in dropped
+    assert "-c:v" not in dropped
+    media.mux_dub(
+        clip, tmp_path / "d.wav", tmp_path / "soft.mkv", "ru", "AI dub", subtitle_delivery="track", subtitle_path=srt
+    )
+    soft = calls[-1]
+    assert str(srt) in soft and "-c:v" not in soft and soft[soft.index("-map") + 1] == "0"
+    media.mux_dub(
+        clip, tmp_path / "d.wav", tmp_path / "burn.mp4", "ru", "AI dub", subtitle_delivery="burn", subtitle_path=srt
+    )
+    burned = calls[-1]
+    assert any(part.startswith("subtitles=") for part in burned)
+    assert burned[burned.index("-c:v") + 1] == "mpeg4"
+    assert "-c:s" not in burned and "0:s:0" not in burned
+    project = Project.create(tmp_path / "proj", clip)
+    project.lines = [Line(1, 1.0, 2.0, "Hi", translation="Привет", spoken="Привет", place_start=1.2, audio_s=0.8)]
+    project.lines.append(Line(2, 3.0, 4.0, "song", keep_original=True, translation="песня"))
+    project.settings["subtitle_delivery"] = "burn"
+    project.settings["keep_original_track"] = False
+    seen = {}
+
+    def fake_mux(*args, **kwargs):
+        seen["kwargs"] = kwargs
+        Path(args[2]).write_bytes(b"x")
+        return 0
+
+    monkeypatch.setattr(S.media, "mux_dub", fake_mux)
+    summary = S.st_mux(project, {}, lambda *args, **kwargs: None)
+    assert seen["kwargs"]["keep_original"] is False
+    assert seen["kwargs"]["subtitle_delivery"] == "burn"
+    written = Path(seen["kwargs"]["subtitle_path"])
+    assert "Привет" in written.read_text(encoding="utf-8")
+    assert "песня" not in written.read_text(encoding="utf-8")
+    assert "re-encoded" in summary
+
+
 def test_tidy_translation_russian_acronyms():
     from dubber.pipeline.stages import tidy_translation as t
 

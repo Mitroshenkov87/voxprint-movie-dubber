@@ -530,20 +530,23 @@ def test_driver_cuda_is_read_from_new_nvidia_smi_headers():
     assert "UMD" in src
 
 
-def test_common_pin_is_the_0_2_4_wheel():
+def test_common_pin_is_yitro_v0_2_5():
     root = Path(__file__).resolve().parents[1]
     req = (root / "requirements.txt").read_text(encoding="utf-8")
     pin = (
-        "voxprint-common @ https://github.com/Mitroshenkov87/voxprint-common/releases/download/"
-        "v0.2.4/voxprint_common-0.2.4-py3-none-any.whl "
-        "--hash=sha256:3051bc64700964705bf5cee5182829d1311560a38a9f7436195f26481e4fa239"
+        "voxprint-common[ui] @ git+https://github.com/Mitroshenkov87/voxprint-common@"
+        "8a94b531cb4f3526425a80a86a1e64624b5de606"
     )
     assert pin in req
+    docs = (root / ".github" / "workflows" / "docs.yml").read_text(encoding="utf-8")
+    assert pin in docs
+    assert "0d1e30de68cc49549a2a94cb3695e5601c17e7db" not in req
+    assert "0d1e30de68cc49549a2a94cb3695e5601c17e7db" not in docs
     assert "voxprint-common==0.1.*" not in req
-    assert "git+https://github.com/Mitroshenkov87/voxprint-common" not in req
+    assert "releases/download/v0.2.4" not in req
     fetcher = (root / "installer" / "fetch_common_wheel.py").read_text(encoding="utf-8")
-    assert "3051bc64700964705bf5cee5182829d1311560a38a9f7436195f26481e4fa239" in fetcher
-    assert "voxprint_common-0.2.4-py3-none-any.whl" in fetcher
+    assert "4980c1ab5a75b22dec1a16b16474ccb350110c8d3d056f25b5ed74a623fe6a9b" in fetcher
+    assert "voxprint_common-0.2.5-py3-none-any.whl" in fetcher
     ps1 = (root / "installer" / "install-runtime.ps1").read_text(encoding="utf-8")
     sh = (root / "installer" / "linux" / "install.sh").read_text(encoding="utf-8")
     payload = (root / "installer" / "make-full-payload.ps1").read_text(encoding="utf-8")
@@ -552,7 +555,7 @@ def test_common_pin_is_the_0_2_4_wheel():
         assert "git+https://github.com/Mitroshenkov87/voxprint-common" not in text
     assert "vmd-requirements-offline" not in ps1
     assert "voxprint-common==0.1.0" not in ps1
-    assert "__version__ == '0.2.4'" in ps1 and "__version__ == '0.2.4'" in sh
+    assert "__version__ == '0.2.5'" in ps1 and "__version__ == '0.2.5'" in sh
 
 
 def test_other_packages_step_keeps_the_torch_build_and_uses_pypi():

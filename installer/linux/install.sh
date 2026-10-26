@@ -124,6 +124,10 @@ else
   DATA_HOME="$USER_HOME/.local/share"
 fi
 VX_HOME="$DATA_HOME/voxprint"
+# The provisional voxprint-common pin moves a legacy suite directory to
+# voxprint-ai-suite on the first import. The runtime this script creates
+# stays under the legacy directory, so pin the home for every child process.
+export VOXPRINT_HOME="$VX_HOME"
 SHARED="$VX_HOME/shared"
 RT="$SHARED/runtimes/$RUNTIME_VERSION"
 ENV_DIR="$RT/env"
@@ -153,6 +157,7 @@ as_user() {
       USER="$TARGET_USER" \
       LOGNAME="$TARGET_USER" \
       PATH="$PATH" \
+      VOXPRINT_HOME="$VX_HOME" \
       PYTHONUTF8=1 \
       UV_PYTHON_INSTALL_DIR="$RT/python" \
       UV_PYTHON_PREFERENCE=only-managed \
@@ -255,6 +260,7 @@ write_launcher() {
 APP="$APP_DIR"
 DATA="\${XDG_DATA_HOME:-\$HOME/.local/share}"
 PY="\$DATA/voxprint/shared/runtimes/$RUNTIME_VERSION/env/bin/python"
+export VOXPRINT_HOME="\$DATA/voxprint"
 if [ ! -x "\$PY" ]; then
   echo "$DISPLAY_NAME could not find the shared Python runtime: \$PY" >&2
   exit 1
@@ -429,6 +435,20 @@ for old in "$VX_HOME"/runtime-*; do
 done
 say "[2/5] Creating the Python 3.14 environment"
 retry "Creating the Python 3.14 environment" as_user "$UV" venv "$ENV_DIR" --python 3.14 --allow-existing --quiet
+# Every interpreter in this runtime must keep the suite directory where the
+# runtime was created. The provisional library otherwise renames it on import.
+"$PY" - "$VX_HOME" <<'PYEOF'
+import site
+import sys
+from pathlib import Path
+dest = Path(site.getsitepackages()[0]) / "sitecustomize.py"
+home = sys.argv[1]
+dest.write_text(
+    "import os\n"
+    f"os.environ.setdefault('VOXPRINT_HOME', {home!r})\n",
+    encoding="utf-8",
+)
+PYEOF
 read -r TV TA TC < <("$PY" - "$APP_DIR/dubber/infra/runtime_lock.json" <<'PYEOF'
 import json, sys
 lock = json.load(open(sys.argv[1], encoding="utf-8"))
@@ -459,7 +479,7 @@ if "$PY" -c "from voxprint_common.runtime_manifest import cpu_onnxruntime_confli
   as_user "$UV" pip uninstall --python "$PY" --quiet onnxruntime
   retry "Installing onnxruntime-gpu" as_user "$UV" pip install --python "$PY" --quiet "onnxruntime-gpu==1.30.0"
 fi
-"$PY" -c "import voxprint_common; from voxprint_common.runtime_manifest import cpu_onnxruntime_conflicts; assert voxprint_common.__version__ == '0.2.4', voxprint_common.__version__; raise SystemExit('The CPU package onnxruntime is installed. The shared runtime must not contain it.' if cpu_onnxruntime_conflicts() else 0)"
+"$PY" -c "import voxprint_common; from voxprint_common.runtime_manifest import cpu_onnxruntime_conflicts; assert voxprint_common.__version__ == '0.2.5', voxprint_common.__version__; raise SystemExit('The CPU package onnxruntime is installed. The shared runtime must not contain it.' if cpu_onnxruntime_conflicts() else 0)"
 "$PY" -c "import torch, transformers, PySide6, faster_whisper, ctranslate2; print('torch', torch.__version__, '- CUDA available:', torch.cuda.is_available())"
 date -u +%Y-%m-%dT%H:%M:%SZ > "$RT/.install-complete"
 "$PY" - "$RT/runtime-key.json" "$TV" <<'PYEOF'
@@ -485,7 +505,7 @@ else
 fi
 ff_sha="$(sha256sum "$FF_DIR/ffmpeg" | awk '{ print $1 }')"
 add_ref --id python-3.14 --kind runtime --version "$RUNTIME_VERSION" --path "$RT"
-# torch and CTranslate2 live in that runtime directory. voxprint-common 0.2.4
+# torch and CTranslate2 live in that runtime directory. voxprint-common 0.2.5
 # refuses a second component on a path another component already uses.
 add_ref --id ffmpeg-8 --kind tool --version "$FFMPEG_VERSION" --path "$FF_DIR" --sha256 "$ff_sha"
 # The models directory is not a component. VOXPrint MDL records one ref per file.

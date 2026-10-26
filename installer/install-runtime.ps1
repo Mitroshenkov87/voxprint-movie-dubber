@@ -489,7 +489,7 @@ try {
         } else {
             Invoke-Retry "Installing PyTorch" { Run "[2/5] Installing PyTorch $tv ($flavor build), torchaudio $taBase and torchcodec $tcBase" $uv @("pip", "install", "--python", $py, "--compile-bytecode", "torch==$tv", "torchaudio==$taBase", "torchcodec==$tcBase", "--torch-backend=$flavor") }
         }
-        # requirements.txt pins the voxprint-common 0.2.4 wheel by URL and sha256.
+        # requirements.txt pins the voxprint-common 0.2.5 wheel by URL and sha256.
         # The online installer also downloads that wheel. The full installer already
         # has it in the payload, so --find-links can satisfy the same pin offline.
         $commonLinks = @()
@@ -498,7 +498,7 @@ try {
             New-Item -ItemType Directory -Force -Path $wheelDir | Out-Null
             $fetcher = Join-Path $PSScriptRoot "fetch_common_wheel.py"
             if (-not (Test-Path -LiteralPath $fetcher)) { throw "fetch_common_wheel.py was not extracted next to install-runtime.ps1" }
-            Invoke-Retry "Downloading voxprint-common" { Run "Downloading voxprint-common 0.2.4" $py @($fetcher, "--dest", $wheelDir) }
+            Invoke-Retry "Downloading voxprint-common" { Run "Downloading voxprint-common 0.2.5" $py @($fetcher, "--dest", $wheelDir) }
             $commonLinks = @("--find-links", $wheelDir)
         }
         Invoke-Retry "Installing the other packages" { Run "[3/5] Installing the other packages" $uv (@("pip", "install", "--python", $py, "--compile-bytecode", "-r", $Requirements, "-c", $pins) + $offline + $commonLinks) }
@@ -514,7 +514,7 @@ try {
             Run "Replacing the CPU onnxruntime package with onnxruntime-gpu 1.30.0" $uv (@("pip", "uninstall", "--python", $py, "onnxruntime"))
             Invoke-Retry "Installing onnxruntime-gpu" { Run "Installing onnxruntime-gpu 1.30.0" $uv (@("pip", "install", "--python", $py, "--compile-bytecode", "onnxruntime-gpu==1.30.0") + $offline) }
         }
-        Run "Checking voxprint-common 0.2.4" $py @("-c", "import voxprint_common; from voxprint_common.runtime_manifest import cpu_onnxruntime_conflicts; assert voxprint_common.__version__ == '0.2.4', voxprint_common.__version__; raise SystemExit('The CPU package onnxruntime is installed. The shared runtime must not contain it.' if cpu_onnxruntime_conflicts() else 0)")
+        Run "Checking voxprint-common 0.2.5" $py @("-c", "import voxprint_common; from voxprint_common.runtime_manifest import cpu_onnxruntime_conflicts; assert voxprint_common.__version__ == '0.2.5', voxprint_common.__version__; raise SystemExit('The CPU package onnxruntime is installed. The shared runtime must not contain it.' if cpu_onnxruntime_conflicts() else 0)")
         # no --torch-backend on this step: it would re-resolve every requirement against the PyTorch index
         Run "Checking the installation" $py $check
         $info = [ordered]@{ key = $key; python = $lockObj.python; platform = $lockObj.platform; torch = "$tv+$flavor"; flavor = $flavor
@@ -634,7 +634,7 @@ try {
     }
     $runtimeId = if ($flavor -eq "cpu") { "python-3.14-cpu" } else { "python-3.14" }
     Add-SharedRef $runtimeId "runtime" $rtName $rt ""
-    # torch and CTranslate2 live in that runtime directory. voxprint-common 0.2.4
+    # torch and CTranslate2 live in that runtime directory. voxprint-common 0.2.5
     # refuses a second component on a path another component already uses.
     Add-SharedRef "ffmpeg-8" "tool" "n8.1" $ffDir ((Get-FileHash -LiteralPath $ffExe -Algorithm SHA256).Hash.ToLower())
     # The models directory is not a component. VOXPrint MDL records one ref per file.
