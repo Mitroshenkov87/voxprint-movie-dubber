@@ -3,9 +3,135 @@
 # "package" is optional; when set, the id matches only that distribution.
 # Match is against the advisory id and any alias (PYSEC, GHSA, CVE).
 
-# No accepted advisories yet. Entries added after a run look like this:
-#
-# [[advisory]]
-# id = "GHSA-xxxx-xxxx-xxxx"
-# package = "example"
-# reason = "Why this exact advisory is accepted for this release."
+# until common ships the shared pillow 13 fix; review 2026-11-02
+# pillow 12.3.0 only. filelock is pinned to 4.2.1 instead of being allowlisted.
+
+[[advisory]]
+id = "CVE-2026-112895"
+package = "pillow"
+reason = "until common ships the shared pillow 13 fix; review 2026-11-02"
+
+[[advisory]]
+id = "CVE-2026-112400"
+package = "pillow"
+reason = "until common ships the shared pillow 13 fix; review 2026-11-02"
+
+[[advisory]]
+id = "CVE-2026-112397"
+package = "pillow"
+reason = "until common ships the shared pillow 13 fix; review 2026-11-02"
+
+[[advisory]]
+id = "CVE-2026-112896"
+package = "pillow"
+reason = "until common ships the shared pillow 13 fix; review 2026-11-02"
+
+[[advisory]]
+id = "CVE-2026-112897"
+package = "pillow"
+reason = "until common ships the shared pillow 13 fix; review 2026-11-02"
+
+[[advisory]]
+id = "CVE-2026-112404"
+package = "pillow"
+reason = "until common ships the shared pillow 13 fix; review 2026-11-02"
+
+[[advisory]]
+id = "CVE-2026-112402"
+package = "pillow"
+reason = "until common ships the shared pillow 13 fix; review 2026-11-02"
+
+[[advisory]]
+id = "CVE-2026-112900"
+package = "pillow"
+reason = "until common ships the shared pillow 13 fix; review 2026-11-02"
+
+[[advisory]]
+id = "CVE-2026-112893"
+package = "pillow"
+reason = "until common ships the shared pillow 13 fix; review 2026-11-02"
+
+[[advisory]]
+id = "CVE-2026-112392"
+package = "pillow"
+reason = "until common ships the shared pillow 13 fix; review 2026-11-02"
+
+[[advisory]]
+id = "CVE-2026-112405"
+package = "pillow"
+reason = "until common ships the shared pillow 13 fix; review 2026-11-02"
+
+[[advisory]]
+id = "CVE-2026-112390"
+package = "pillow"
+reason = "until common ships the shared pillow 13 fix; review 2026-11-02"
+
+[[advisory]]
+id = "CVE-2026-112894"
+package = "pillow"
+reason = "until common ships the shared pillow 13 fix; review 2026-11-02"
+
+[[advisory]]
+id = "CVE-2026-112406"
+package = "pillow"
+reason = "until common ships the shared pillow 13 fix; review 2026-11-02"
+
+[[advisory]]
+id = "CVE-2026-112399"
+package = "pillow"
+reason = "until common ships the shared pillow 13 fix; review 2026-11-02"
+
+[[advisory]]
+id = "CVE-2026-112892"
+package = "pillow"
+reason = "until common ships the shared pillow 13 fix; review 2026-11-02"
+
+[[advisory]]
+id = "CVE-2026-112393"
+package = "pillow"
+reason = "until common ships the shared pillow 13 fix; review 2026-11-02"
+
+[[advisory]]
+id = "CVE-2026-96640"
+package = "pillow"
+reason = "until common ships the shared pillow 13 fix; review 2026-11-02"
+
+[[advisory]]
+id = "CVE-2026-96642"
+package = "pillow"
+reason = "until common ships the shared pillow 13 fix; review 2026-11-02"
+
+[[advisory]]
+id = "CVE-2026-96639"
+package = "pillow"
+reason = "until common ships the shared pillow 13 fix; review 2026-11-02"
+
+[[advisory]]
+id = "CVE-2026-96643"
+package = "pillow"
+reason = "until common ships the shared pillow 13 fix; review 2026-11-02"
+
+[[advisory]]
+id = "CVE-2026-96637"
+package = "pillow"
+reason = "until common ships the shared pillow 13 fix; review 2026-11-02"
+
+[[advisory]]
+id = "CVE-2026-96644"
+package = "pillow"
+reason = "until common ships the shared pillow 13 fix; review 2026-11-02"
+
+[[advisory]]
+id = "CVE-2026-96778"
+package = "pillow"
+reason = "until common ships the shared pillow 13 fix; review 2026-11-02"
+
+[[advisory]]
+id = "GHSA-78g4-xqwv-q3g8"
+package = "pillow"
+reason = "until common ships the shared pillow 13 fix; review 2026-11-02"
+
+[[advisory]]
+id = "CVE-2026-112398"
+package = "pillow"
+reason = "until common ships the shared pillow 13 fix; review 2026-11-02"

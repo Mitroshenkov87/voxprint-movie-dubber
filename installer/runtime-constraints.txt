@@ -3,3 +3,6 @@
 # local tag, +cu130 or +cpu) by install-runtime.ps1. There is no torchaudio wheel for torch 2.14.1 on
 # the cu130 index. 2.11.0 is the newest pair the official install commands publish together.
 # torchcodec 0.17.0 is the newest codec compatible with torch >= 2.11 and has a win_amd64 wheel.
+# The CPU torch install pulls filelock 3.32.3. This pin is applied with the rest of the
+# requirements, so the audited environment keeps 4.2.1.
+filelock==4.2.1
