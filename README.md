@@ -1,5 +1,10 @@
 # VOXPrint AI Movie Dubber
 
+> [!WARNING]
+> **⚠️ Deep alpha.** This software is experimental; nothing is guaranteed to work. Use at your own risk.
+>
+> **⚠️ Глубокая альфа.** Программа экспериментальная, работа не гарантируется.
+
 Part of the Voxprint AI Media Suite, together with [Voxprint AI Audiobook Builder](https://github.com/Mitroshenkov87/voxprint-audiobook-builder).
 
 VOXPrint AI Movie Dubber is a Windows desktop application that adds an AI-dubbed audio track to a movie. It separates the dialogue from music and effects, recognises and translates the speech, re-voices it with a voice cloned from the film or taken from the Voxprint voice library and adds the result to the file as an extra audio track, leaving the video and the original audio untouched. You can listen to a one-minute preview first and start watching while the rest of the film is still being dubbed. Everything runs locally on your NVIDIA GPU.
