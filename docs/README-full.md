@@ -1,0 +1,67 @@
+# VOXPrint AI Movie Dubber
+
+> [!WARNING]
+> **⚠️ Deep alpha.** This software is experimental; nothing is guaranteed to work. Use at your own risk.
+
+Part of the Voxprint AI Media Suite, together with [Voxprint AI Audiobook Builder](https://github.com/Mitroshenkov87/voxprint-audiobook-builder).
+
+VOXPrint AI Movie Dubber is a Windows desktop application that adds an AI-dubbed audio track to a movie. It separates the dialogue from music and effects, recognises and translates the speech, re-voices it with a voice cloned from the film or taken from the Voxprint voice library and adds the result to the file as an extra audio track, leaving the video and the original audio untouched. You can listen to a one-minute preview first and start watching while the rest of the film is still being dubbed. Everything runs locally on your NVIDIA GPU.
+
+This is the 1.0.0 release candidate. The build number and the codename (Bochan) come from `BUILD.json`.
+
+## Install
+
+**Requirements:** Windows 11 24H2 or newer (64-bit), an NVIDIA GeForce RTX 40-series graphics card or newer with an NVIDIA driver from the 600 branch or newer, about 25 GB of free disk space and an internet connection so VOXPrint MDL can fetch the models. The setup and the program stop with a clear message on older hardware; there is no processor-only mode. Linux (x86_64) is available as a preview tarball, see [Linux](#linux-preview) below.
+
+1. Download the installer from the [latest release](https://github.com/Mitroshenkov87/voxprint-movie-dubber/releases):
+   - **Full installer** (offline, recommended): `VoxprintMovieDubber-Full-Setup.exe` together with every `VoxprintMovieDubber-Full-Setup-N.bin` part, all in the same folder. It carries Python and PyTorch, so setup needs no internet.
+   - **Online installer**: the small `VoxprintMovieDubber-Setup.exe`, which downloads Python and PyTorch during setup.
+2. Check the download against the SHA-256 in the release notes, run the `.exe` and follow the setup. The last step runs VOXPrint MDL, which downloads the models (about 8 GB). The program itself does not download them.
+3. Start **VOXPrint AI Movie Dubber** from the Start menu (folder "VOXPrint AI Suite"). The program is installed in `C:\Program Files\VOXPrint AI Suite\Movie Dubber`. The window launcher is `voxprint-movie-dubber.exe` and the command-line launcher is `voxprint-movie-dubber-cli.exe`.
+
+<!-- screenshot: setup wizard -->
+
+### Linux (preview)
+
+The release also has `VoxprintMovieDubber-Linux-x86_64.tar.gz`. It needs x86_64 Linux (a distribution released in 2025 or later), an NVIDIA GeForce RTX 40-series card or newer and an NVIDIA driver from the 600 branch or newer.
+
+```
+tar -xzf VoxprintMovieDubber-Linux-x86_64.tar.gz
+cd VoxprintMovieDubber-Linux-x86_64
+./install.sh
+```
+
+`install.sh` installs for the whole system, into `/opt/voxprint-ai-suite/movie-dubber`, and asks for sudo. It checks the driver and the GPU, creates a Python 3.14 environment with [uv](https://docs.astral.sh/uv/) (downloaded if it is missing), installs PyTorch 2.11.0 (CUDA 13.0) and the other packages, and symlinks `voxprint-movie-dubber` and `voxprint-movie-dubber-cli` into `/usr/local/bin`. The menu entry is named **VOXPrint AI Movie Dubber**. User data stays in `~/.local/share/voxprint`. An older install under `~/.local` is removed; that user data is kept. `./install.sh --prefix DIR` installs the same layout under `DIR` without root (used by CI). `./install.sh --uninstall` removes the program and keeps the downloaded models. `--skip-gpu-check` is only for CI machines that have no GPU.
+
+## Use
+
+1. Drag a movie or series episode into the window, or press **Choose a movie**.
+2. Pick the dub language and press **Dub**. Everything else is preset: the program finds or makes the translation, picks the voices and fits every line into its time.
+3. When it is done, the dubbed file sits next to the original as `<name>.dub-<language>.mkv`. It has the new audio track added; the original audio and subtitles are kept, and the video is not re-encoded.
+
+<!-- screenshot: main window -->
+
+You can listen to a one-minute preview first, start watching while the rest is still being dubbed, and review characters, voices and every line before dubbing. Step-by-step instructions are in the [User guide](USER-GUIDE.md). [Documentation](https://mitroshenkov87.github.io/voxprint-movie-dubber/).
+
+Other programs can call it without the window. `python main.py --dry-run --json` prints one JSON object and does not load or download models. The commands and exit codes are in the [command-line reference](CLI.md).
+
+## Roadmap
+
+Next: meaning-based translation with a local language model, full command-line control and a Linux package. See [ROADMAP.md](https://github.com/Mitroshenkov87/voxprint-movie-dubber/blob/main/ROADMAP.md).
+
+**License:** Apache-2.0, see `LICENSE` and `NOTICE`. Third-party components keep their own licenses (`docs/THIRD_PARTY_NOTICES.md`).
+
+## Philosophy
+
+Voxprint apps are complete: the choices about models, settings and pipelines are already made, so you install the app and start working. Like software used to be, there is no account, no subscription and no online sign-in, and your files stay on your computer. Voxprint looks forward. It is built for current operating systems and recent NVIDIA GPUs, and it drops old platforms after two to three years instead of carrying them. Free and open source (Apache-2.0), with modern open formats by default. [Read more](https://github.com/Mitroshenkov87/voxprint-movie-dubber/blob/main/PHILOSOPHY.md)
+
+## ☕ Support the Project
+
+If you find this project useful and would like to support its development, you can buy me a coffee!
+
+- **Network:** TRON (TRC-20)
+- **Accepted:** USDT or TRX
+- **Address:** `TYveZBXaSpM4FEHa6iGrc7A6zuLfS4z3x6`
+
+> ⚠️ **Important:** Please ensure you are sending funds **only** via the TRON (TRC-20) network. 
+> Sending assets from other networks (such as Ethereum ERC-20, BSC BEP-20, etc.) to this address will result in **permanent loss of funds**.
