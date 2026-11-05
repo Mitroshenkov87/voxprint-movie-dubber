@@ -4,15 +4,19 @@ Agreed rules (Audiobook Builder, project-notes/voxprint/DECISIONS.md):
 
 * Pins: ``runtime_lock.json`` next to this file keeps the Audiobook Builder lock schema (so the two files can be aligned
   later). The sibling lock on main is still Python 3.11 / torch 2.11 cu128, which this app does not copy. This lock is
-  Python 3.14, win_amd64, torch 2.11.0. The only GPU flavor is cu130. The cu130 index and the PyTorch
+  Python 3.15, win_amd64, torch 2.11.0. The only GPU flavor is cu130. The cu130 index and the PyTorch
   previous-versions install commands have no torchaudio for 2.12, 2.13, or 2.14, so the newest consistent set is
   torch 2.11.0+cu130 with torchaudio 2.11.0+cu130. torchcodec 0.17.0+cu130 is the newest codec whose table allows
   torch >= 2.11. The cpu flavor remains only so CI can pass ``-Backend cpu``.
+  Checked 2026-11-05: torch 2.11.0, torchaudio 2.11.0 and torchcodec 0.17.0 have no cp315 win_amd64 wheel
+  (torchaudio has no cp315 wheel on the cu130, cpu, or default indexes). Newer torch builds do
+  (2.14.1+cu130 and 2.15.0+cpu) but no torchaudio matches them, so this pin stays at 2.11.0 and those
+  lock entries keep the published cp314 files.
   CTranslate2 still needs CUDA 12, so the lock also pins ``nvidia-cublas-cu12`` and ``nvidia-cudnn-cu12``.
   ``installer/runtime-constraints.txt`` records that those torch pins are applied by the installer.
 * Key: :func:`runtime_key` = SHA-256 over Python version, platform, torch version + flavor, our requirements and constraints
   (comments and blank lines ignored), 12 hex digits.  ``installer/install-runtime.ps1`` computes the same key.
-* The installed copy lives at ``<Voxprint home>/shared/runtimes/py3.14-torch2.11-<flavor>/`` (``cu130`` for a user install,
+* The installed copy lives at ``<Voxprint home>/shared/runtimes/py3.15-torch2.11-<flavor>/`` (``cu130`` for a user install,
   ``cpu`` only when CI asks for it). A folder that already matches the pin is reused. It is never upgraded in place to a
   different Python or torch line: that line has its own directory name. ``<home>/runtime`` belongs to the Audiobook Builder
   and is never touched. An older ``runtime-<key>`` directory is moved into this layout by :func:`dubber.infra.shared_deps.migrate`.
@@ -38,7 +42,7 @@ from voxprint_common.paths import home as suite_home
 from voxprint_common.paths import shared_dir
 
 LOCK_PATH = Path(__file__).with_name("runtime_lock.json")
-PREFIX = "py3.14-torch2.11-"
+PREFIX = "py3.15-torch2.11-"
 KEY_FILE = "runtime-key.json"
 DONE_MARK = ".install-complete"
 USER_KEY = model_store.USER_KEY
@@ -97,7 +101,7 @@ def choose_flavor(lock: Dict[str, Any], driver_cuda: Optional[tuple]) -> Optiona
 
 
 def runtime_dir(flavor: str) -> Path:
-    """Return ``<Voxprint home>/shared/runtimes/py3.14-torch2.11-<flavor>``."""
+    """Return ``<Voxprint home>/shared/runtimes/py3.15-torch2.11-<flavor>``."""
     return shared_dir() / "runtimes" / f"{PREFIX}{flavor}"
 
 

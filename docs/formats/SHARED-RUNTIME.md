@@ -21,7 +21,7 @@ Every app reads and writes THIS shape; no app-private variants. Blocker fix, app
 
 Rules
 - Top-level keys are exactly `schema` (integer) and `components` (object keyed by id). Unknown keys are preserved on write, never dropped.
-- Component ids are lowercase `[a-z0-9][a-z0-9._-]*`, e.g. `python-3.14`, `torch-2.11.0-cu130`, `onnxruntime-gpu-1.31`, `tensorrt-10`, `ffmpeg-8`, `model-<sha256-prefix>`.
+- Component ids are lowercase `[a-z0-9][a-z0-9._-]*`, e.g. `python-3.15`, `torch-2.11.0-cu130`, `onnxruntime-gpu-1.31`, `tensorrt-10`, `ffmpeg-8`, `model-<sha256-prefix>`.
 - Reuse when id + version + sha256 match; otherwise install side by side under a new path. Never overwrite a component another app refs.
 - `refs`: add your app id on install, remove it on uninstall; delete the component only when `refs` is empty.
 - Writes are atomic: write `manifest.json.tmp`, fsync, rename; take the lock file `manifest.lock` (exclusive, 30 s timeout) around read-modify-write.

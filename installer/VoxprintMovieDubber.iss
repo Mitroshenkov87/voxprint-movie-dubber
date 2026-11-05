@@ -2,13 +2,13 @@
 ;   ISCC installer\VoxprintMovieDubber.iss                 ->   installer\Output\VoxprintMovieDubber-Setup.exe (online)
 ;   ISCC /DFull installer\VoxprintMovieDubber.iss          ->   installer\Output\VoxprintMovieDubber-Full-Setup.exe + -N.bin parts
 ;   The full (offline) build carries the payload made by installer\make-full-payload.ps1 (default folder build\payload, or
-;   /DPayloadDir=<folder>): uv, the Python 3.14 build, every wheel incl. PyTorch 2.11.0+cu130, and the LGPL ffmpeg.  The setup
+;   /DPayloadDir=<folder>): uv, the Python 3.15 build, every wheel incl. PyTorch 2.11.0+cu130, and the LGPL ffmpeg.  The setup
 ;   then downloads nothing except the AI models.  It is split into parts below 2 GB (GitHub release asset limit);
 ;   keep all parts in one folder and start the .exe.
 ;
 ; The installer is small: it contains only the program's own files (Python sources, icon, licences) and a download script.
 ; While it installs, install-runtime.ps1 installs (or reuses) the shared runtime
-; LOCALAPPDATA\Voxprint\shared\runtimes\py3.14-torch2.11-cu130 (Python 3.14, PyTorch 2.11.0+cu130,
+; LOCALAPPDATA\Voxprint\shared\runtimes\py3.15-torch2.11-cu130 (Python 3.15, PyTorch 2.11.0+cu130,
 ; torchaudio, torchcodec, the CTranslate2 CUDA 12 libraries), the shared ffmpeg, and the shared models folder.
 ; It links the runtime as the runtime sub-folder of the program folder. VOXPrint MDL downloads the AI models
 ; as the last step into LOCALAPPDATA\Voxprint\models (one copy for every Voxprint program). shared\manifest.json

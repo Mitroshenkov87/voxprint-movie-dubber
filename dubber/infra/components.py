@@ -96,14 +96,14 @@ def shared_root(home: Path) -> Path:
 def component_id_for(piece_id: str, version: str) -> tuple[str, str]:
     """Return ``(component id, kind)`` for a self-test piece id.
 
-    ``python-3.14`` is the user CUDA runtime. The CI CPU runtime uses
-    ``python-3.14-cpu`` so the two copies sit side by side.
+    ``python-3.15`` is the user CUDA runtime. The CI CPU runtime uses
+    ``python-3.15-cpu`` so the two copies sit side by side.
     """
     text = version.strip()
     if piece_id == "runtime":
         if text.endswith("cpu"):
-            return "python-3.14-cpu", "runtime"
-        return "python-3.14", "runtime"
+            return "python-3.15-cpu", "runtime"
+        return "python-3.15", "runtime"
     if piece_id == "torch":
         flavor = "cpu" if text.endswith("+cpu") or text.endswith("-cpu") else "cu130"
         return f"torch-2.11.0-{flavor}", "wheels"
