@@ -15,7 +15,7 @@
 #
 # Requirements: x86_64 Linux (a distribution released in 2025 or later), an NVIDIA GeForce RTX 40-series GPU or newer
 # (compute capability 8.9+) and an NVIDIA driver from the 600 branch or newer, about 25 GB of free disk space and an
-# internet connection. The installer puts Python 3.14, PyTorch 2.11.0+cu130, torchaudio, torchcodec, the CTranslate2
+# internet connection. The installer puts Python 3.15, PyTorch 2.11.0+cu130, torchaudio, torchcodec, the CTranslate2
 # CUDA 12 libraries and ffmpeg into ~/.local/share/voxprint/shared, and the default-pipeline models into ~/.local/share/voxprint/models, before the first launch.
 # An interrupted download is continued from a .partial file.
 set -euo pipefail
@@ -31,7 +31,7 @@ MIME_ICON="application-vnd.voxprint.dub+zip"
 OLD_PREFIX_NAME="voxprint-movie-dubber"
 MIN_DRIVER=600
 MIN_CC="8.9"
-RUNTIME_VERSION="py3.14-torch2.11-cu130"
+RUNTIME_VERSION="py3.15-torch2.11-cu130"
 FFMPEG_VERSION="n8.1"
 FFMPEG_ARCHIVE="ffmpeg-n8.1-latest-linux64-lgpl-8.1.tar.xz"
 FFMPEG_BASE="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest"
@@ -409,7 +409,7 @@ fi
 say "[2/5] Copying the program to $APP_DIR"
 install_program_files
 
-# 4. Shared Python 3.14 environment.
+# 4. Shared Python 3.15 environment.
 if [ -d "$SHARED/models" ] && [ ! -e "$VX_HOME/models" ]; then
   mv "$SHARED/models" "$VX_HOME/models"
 fi
@@ -433,8 +433,8 @@ for old in "$VX_HOME"/runtime-*; do
       ;;
   esac
 done
-say "[2/5] Creating the Python 3.14 environment"
-retry "Creating the Python 3.14 environment" as_user "$UV" venv "$ENV_DIR" --python 3.14 --allow-existing --quiet
+say "[2/5] Creating the Python 3.15 environment"
+retry "Creating the Python 3.15 environment" as_user "$UV" venv "$ENV_DIR" --python 3.15 --allow-existing --quiet
 # Every interpreter in this runtime must keep the suite directory where the
 # runtime was created. The provisional library otherwise renames it on import.
 "$PY" - "$VX_HOME" <<'PYEOF'
@@ -486,7 +486,7 @@ date -u +%Y-%m-%dT%H:%M:%SZ > "$RT/.install-complete"
 import json, sys
 path, tv = sys.argv[1], sys.argv[2]
 with open(path, "w", encoding="utf-8") as handle:
-    json.dump({"python": "3.14", "torch": tv + "+cu130", "flavor": "cu130", "created_by": "movie-dubber"}, handle, indent=1)
+    json.dump({"python": "3.15", "torch": tv + "+cu130", "flavor": "cu130", "created_by": "movie-dubber"}, handle, indent=1)
     handle.write("\n")
 PYEOF
 
@@ -504,7 +504,7 @@ else
   as_user "$PY" -m voxprint_common.mdl --json status --wait --manifest "$APP_DIR/mdl.json"
 fi
 ff_sha="$(sha256sum "$FF_DIR/ffmpeg" | awk '{ print $1 }')"
-add_ref --id python-3.14 --kind runtime --version "$RUNTIME_VERSION" --path "$RT"
+add_ref --id python-3.15 --kind runtime --version "$RUNTIME_VERSION" --path "$RT"
 # torch and CTranslate2 live in that runtime directory. voxprint-common 0.2.5
 # refuses a second component on a path another component already uses.
 add_ref --id ffmpeg-8 --kind tool --version "$FFMPEG_VERSION" --path "$FF_DIR" --sha256 "$ff_sha"

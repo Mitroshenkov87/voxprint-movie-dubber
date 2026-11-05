@@ -1,7 +1,11 @@
 # Building
 
 ## Run from source
-Python 3.14 is required; Windows x64 for the installer.
+Python 3.15 is required (newest stable 3.15.2); Windows x64 for the installer.
+Torch stays at 2.11.0. The runtime lock still names cp314 wheels where PyPI or the PyTorch indexes
+have not published a cp315 win_amd64 build, including torch, torchaudio and torchcodec, so a 3.15
+install cannot finish until those wheels exist.
+
 ```
 python -m venv .venv && .venv\Scripts\activate          (Linux: source .venv/bin/activate)
 pip install uv
@@ -18,12 +22,12 @@ Never run `uv run` without `--no-sync`: it can replace the CUDA build of PyTorch
 ISCC installer\VoxprintMovieDubber.iss
 ```
 The installer contains the program's own files only. During setup `installer/install-runtime.ps1` downloads `uv` and installs the
-runtime: Python 3.14 and PyTorch 2.11.0+cu130 pinned by `dubber/infra/runtime_lock.json` (the Audiobook Builder lock schema;
+runtime: Python 3.15 and PyTorch 2.11.0+cu130 pinned by `dubber/infra/runtime_lock.json` (the Audiobook Builder lock schema;
 the sibling main lock is still 3.11/cu128 and is not copied). There is no torchaudio wheel for torch 2.14.1 on the cu130
 index, so the pin follows the newest official pair: torch 2.11.0+cu130 and torchaudio 2.11.0+cu130. torchcodec is 0.17.0+cu130.
 `nvidia-cublas-cu12` and `nvidia-cudnn-cu12` supply the CUDA 12 libraries CTranslate2 needs. The dependencies come from
 `requirements.txt` and the pins in `installer/runtime-constraints.txt`. The runtime lives in
-`%LOCALAPPDATA%\Voxprint\shared\runtimes\py3.14-torch2.11-cu130` (see [SHARED-RESOURCES.md](SHARED-RESOURCES.md)). A folder
+`%LOCALAPPDATA%\Voxprint\shared\runtimes\py3.15-torch2.11-cu130` (see [SHARED-RESOURCES.md](SHARED-RESOURCES.md)). A folder
 for that version is reused. A different Python or torch line gets its own directory, and a shared runtime is never upgraded
 in place. `<install folder>\runtime` is a junction to its `env`. `shared\manifest.json` counts the programs using each
 resource. The last setup step asks VOXPrint MDL (`voxprint-mdl enqueue`, then `status --wait`) to download the AI models into the shared models folder. `/SKIPMODELS=1`
@@ -33,10 +37,10 @@ skips that download and is only for CI.
 The full installer carries everything the online one downloads, so setup needs no internet (only the optional AI model download does):
 ```
 powershell -File installer\make-full-payload.ps1 -Out build\payload -Requirements requirements.txt `
-    -Constraints installer\runtime-constraints.txt -Lock dubber\infra\runtime_lock.json -Python <python 3.14> -Flavor cu130
+    -Constraints installer\runtime-constraints.txt -Lock dubber\infra\runtime_lock.json -Python <python 3.15> -Flavor cu130
 ISCC /DFull installer\VoxprintMovieDubber.iss
 ```
-`make-full-payload.ps1` puts into `build\payload`: `uv.exe`, the python-build-standalone archive this uv installs for Python 3.14,
+`make-full-payload.ps1` puts into `build\payload`: `uv.exe`, the python-build-standalone archive this uv installs for Python 3.15,
 every wheel of the runtime (`pip wheel` with the same pins as the online setup, including torch 2.11.0+cu130, torchaudio and
 torchcodec) and the LGPL ffmpeg archive. The result is `VoxprintMovieDubber-Full-Setup.exe` plus `VoxprintMovieDubber-Full-Setup-N.bin`
 parts, each below 2 GB (the GitHub release asset limit); keep all of them in one folder. During setup `install-runtime.ps1 -Payload`

@@ -271,7 +271,8 @@ def test_mp4_remux_after_auto_language_reruns_only_mux(tmp_path, film_no_subs, m
 def test_runtime_lock_is_the_audiobook_builder_pin():
     from dubber.infra import runtime
     lock = runtime.load_lock()
-    assert lock["torch_version"] == "2.11.0" and lock["python"] == "3.14" and "cu130" in lock["flavors"]
+    assert lock["torch_version"] == "2.11.0" and lock["python"] == "3.15" and "cu130" in lock["flavors"]
+    # torch 2.11.0 publishes no cp315 win_amd64 wheel. The lock keeps that real cp314 file.
     assert any(w["dist"] == "torch" and w["version"] == "2.11.0+cu130" and "cp314" in w["file"] for w in lock["wheels"])
     assert runtime.choose_flavor(lock, (12, 8)) is None and runtime.choose_flavor(lock, (13, 0)) == "cu130"
     assert "cu126" not in lock["flavors"]
@@ -288,7 +289,7 @@ def test_runtime_key_is_exact_and_matches_the_installer_script():
     assert runtime.runtime_key("cpu", req, con) != k and runtime.runtime_key("cu130", req + "\nnumpy<3", con) != k
     ps = (Path(__file__).resolve().parent.parent / "installer" / "install-runtime.ps1").read_text(encoding="utf-8")
     assert 'python=$($lockObj.python);platform=$($lockObj.platform);torch=$($lockObj.torch_version)+$flavor;' in ps
-    assert r"shared\runtimes\py3.14-torch2.11-" in ps and "components.py" in ps and "New-Item -ItemType Junction" in ps
+    assert r"shared\runtimes\py3.15-torch2.11-" in ps and "components.py" in ps and "New-Item -ItemType Junction" in ps
     assert "never upgraded" in ps
 
 
@@ -297,19 +298,19 @@ def test_runtime_users_and_cli(tmp_path, monkeypatch):
     from dubber.infra import components, runtime
     from voxprint_common.paths import home as suite_home
     home = suite_home()
-    rt = home / "shared" / "runtimes" / "py3.14-torch2.11-cu130"
+    rt = home / "shared" / "runtimes" / "py3.15-torch2.11-cu130"
     (rt / "env").mkdir(parents=True)
     (rt / "runtime-key.json").write_text('{"flavor": "cu130"}', encoding="utf-8")
-    components.add_component(home, "python-3.14", kind="runtime", version=rt.name, path=rt, app="movie-dubber")
-    components.add_component(home, "python-3.14", kind="runtime", version=rt.name, path=rt, app="future-app")
+    components.add_component(home, "python-3.15", kind="runtime", version=rt.name, path=rt, app="movie-dubber")
+    components.add_component(home, "python-3.15", kind="runtime", version=rt.name, path=rt, app="future-app")
     monkeypatch.setattr(runtime, "current_runtime_dir", lambda: rt)
     out = tmp_path / "o.txt"
     assert app_main.main(["--unregister-runtime-user", "--out", str(out)]) == 0
     assert out.read_text(encoding="utf-8").splitlines() == ["1", str(rt)]
-    assert components.component_refs(home, "python-3.14") == ["future-app"]
+    assert components.component_refs(home, "python-3.15") == ["future-app"]
     assert runtime.is_runtime_dir(rt) and not runtime.is_runtime_dir(home / "runtime")
     assert app_main.main(["--register-runtime-user"]) == 0
-    assert "movie-dubber" in components.component_refs(home, "python-3.14")
+    assert "movie-dubber" in components.component_refs(home, "python-3.15")
 
 
 def test_cuda_dll_dirs_are_found_without_importing_torch():
@@ -486,7 +487,7 @@ def test_cyrillic_acronym_only_when_the_source_says_ai():
 def test_uninstaller_finds_the_runtime_from_the_installer_note(tmp_path, monkeypatch):
     from dubber.infra import runtime
 
-    rt = tmp_path / "Voxprint" / "shared" / "runtimes" / "py3.14-torch2.11-cu130"
+    rt = tmp_path / "Voxprint" / "shared" / "runtimes" / "py3.15-torch2.11-cu130"
     (rt / "env").mkdir(parents=True)
     (rt / runtime.KEY_FILE).write_text("{}", encoding="utf-8")
     app = tmp_path / "app"

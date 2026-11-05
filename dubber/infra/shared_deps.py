@@ -1,6 +1,6 @@
 """Shared suite dependencies: layout, migration, check and repair.
 
-The installer puts the Python 3.14 runtime, the torch 2.11.0 / torchaudio / torchcodec cu130 wheels, the
+The installer puts the Python 3.15 runtime, the torch 2.11.0 / torchaudio / torchcodec cu130 wheels, the
 CTranslate2 CUDA 12 libraries and ffmpeg into ``<Voxprint home>/shared``, and the
 default-pipeline models into ``<Voxprint home>/models``, before
 the first launch. Every launch and ``--selftest`` call :func:`live_selftest`, which checks those pieces and
@@ -53,7 +53,7 @@ from voxprint_common.hashing import sha256_file
 from voxprint_common.paths import home as suite_home
 
 Progress = Callable[[Dict[str, Any]], None]
-RUNTIME_STEM = "py3.14-torch2.11"
+RUNTIME_STEM = "py3.15-torch2.11"
 FFMPEG_VERSION = "n8.1"
 TORCH_VERSION = "2.11.0"
 TORCHAUDIO_VERSION = "2.11.0"
@@ -126,12 +126,12 @@ class Report:
 
 
 def runtime_version(flavor: str) -> str:
-    """Directory name ``py3.14-torch2.11-<flavor>`` for one pin set."""
+    """Directory name ``py3.15-torch2.11-<flavor>`` for one pin set."""
     return f"{RUNTIME_STEM}-{flavor}"
 
 
 def runtime_path(home: Path, flavor: str) -> Path:
-    """``shared/runtimes/py3.14-torch2.11-<flavor>``."""
+    """``shared/runtimes/py3.15-torch2.11-<flavor>``."""
     return Path(home) / "shared" / "runtimes" / runtime_version(flavor)
 
 
@@ -247,7 +247,7 @@ def live_pieces(home: Path) -> List[Piece]:
     py_version = _run_text([str(python), "-c", "import sys; print(sys.version.split()[0])"], 30) if python.is_file() else ""
     packages = _package_line(python) if python.is_file() else ""
     wheels_ok, cu12_ok = _pins(flavor, packages)
-    runtime_ok = py_version.startswith("3.14.") and (root / ".install-complete").is_file() and python.is_file()
+    runtime_ok = py_version.startswith("3.15.") and (root / ".install-complete").is_file() and python.is_file()
     ffmpeg = ffmpeg_executable(home)
     ffmpeg_line = _binary_ok(ffmpeg)
     models = paths.models_dir()
@@ -261,7 +261,7 @@ def live_pieces(home: Path) -> List[Piece]:
     ffmpeg_sha = sha256_file(ffmpeg) if ffmpeg.is_file() else None
     ffmpeg_size = ffmpeg.stat().st_size if ffmpeg.is_file() else None
     return [
-        Piece("runtime", version, str(root), runtime_ok, "" if runtime_ok else "Python 3.14 runtime is missing or incomplete"),
+        Piece("runtime", version, str(root), runtime_ok, "" if runtime_ok else "Python 3.15 runtime is missing or incomplete"),
         Piece("torch", f"{TORCH_VERSION}+{flavor}", str(root), wheels_ok,
               "" if wheels_ok else "torch, torchaudio or torchcodec does not match the pinned cu130/cpu build"),
         Piece("ctranslate2", CT2_VERSION, str(root), cu12_ok,
@@ -305,8 +305,8 @@ def install_shared_runtime(home: Path, progress: Progress, flavor: Optional[str]
     env_vars["UV_PYTHON_INSTALL_DIR"] = str(root / "python")
     env_vars["UV_PYTHON_PREFERENCE"] = "only-managed"
     env_vars["PYTHONUTF8"] = "1"
-    progress(_event("runtime", "repairing", f"Installing Python 3.14 into {root}"))
-    _check([str(uv), "venv", str(env), "--python", "3.14", "--allow-existing"], env_vars, "runtime")
+    progress(_event("runtime", "repairing", f"Installing Python 3.15 into {root}"))
+    _check([str(uv), "venv", str(env), "--python", "3.15", "--allow-existing"], env_vars, "runtime")
     torch_spec = f"{TORCH_VERSION}+{flavor}"
     audio_spec = f"{TORCHAUDIO_VERSION}+{flavor}"
     codec_spec = f"{TORCHCODEC_VERSION}+{flavor}"
@@ -323,7 +323,7 @@ def install_shared_runtime(home: Path, progress: Progress, flavor: Optional[str]
                 f"nvidia-cudnn-cu12=={CUDNN_VERSION}"], env_vars, "ctranslate2")
     (root / ".install-complete").write_text("ok\n", encoding="utf-8")
     (root / "runtime-key.json").write_text(json.dumps({
-        "python": "3.14", "torch": torch_spec, "flavor": flavor, "created_by": APP_ID,
+        "python": "3.15", "torch": torch_spec, "flavor": flavor, "created_by": APP_ID,
     }, indent=1) + "\n", encoding="utf-8")
     return root
 

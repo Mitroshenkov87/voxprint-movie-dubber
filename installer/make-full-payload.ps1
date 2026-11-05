@@ -3,8 +3,8 @@
     -Out           payload folder (created; must be empty or missing)
     -Requirements  requirements.txt
     -Constraints   installer\runtime-constraints.txt
-    -Lock          dubber\infra\runtime_lock.json (Python 3.14, torch 2.11.0, flavor cu130)
-    -Python        a Python 3.14 interpreter for "pip wheel" (the build machine's, not shipped)
+    -Lock          dubber\infra\runtime_lock.json (Python 3.15, torch 2.11.0, flavor cu130)
+    -Python        a Python 3.15 interpreter for "pip wheel" (the build machine's, not shipped)
     -Flavor        the PyTorch build to bundle (default cu130; the only GPU build the program installs)
   Layout read by install-runtime.ps1 -Payload:
     payload.json          flavor, Python release, versions (what this payload carries)

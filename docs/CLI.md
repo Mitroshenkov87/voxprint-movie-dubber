@@ -104,7 +104,7 @@ voxprint-movie-dubber-cli run-project PATH
 
 ## selftest
 
-Checks the shared Python 3.14 runtime, the torch 2.11.0, torchaudio and torchcodec wheels, the CTranslate2 CUDA 12 libraries, ffmpeg and the models the default pipeline needs. A missing or broken piece is repaired. Progress is one JSON object per line on stderr. The result includes outcome: ok when nothing changed, repair when a piece was restored. An NVIDIA driver older than branch 600, or a GPU that is not an RTX 40-series card or newer, exits 3. The error names https://www.nvidia.com/Download/index.aspx. --dry-run checks and does not repair.
+Checks the shared Python 3.15 runtime, the torch 2.11.0, torchaudio and torchcodec wheels, the CTranslate2 CUDA 12 libraries, ffmpeg and the models the default pipeline needs. A missing or broken piece is repaired. Progress is one JSON object per line on stderr. The result includes outcome: ok when nothing changed, repair when a piece was restored. An NVIDIA driver older than branch 600, or a GPU that is not an RTX 40-series card or newer, exits 3. The error names https://www.nvidia.com/Download/index.aspx. --dry-run checks and does not repair.
 
 ```
 voxprint-movie-dubber-cli selftest PATH

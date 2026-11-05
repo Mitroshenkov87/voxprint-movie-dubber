@@ -4,7 +4,7 @@
     -AppDir        installation folder (gets the junction <AppDir>\runtime -> <runtime>\env and the uv tool)
     -Requirements  requirements.txt (everything except torch)
     -Constraints   installer\runtime-constraints.txt (pins that follow from the torch version)
-    -Lock          dubber\infra\runtime_lock.json (same schema as the Audiobook Builder lock: Python 3.14, torch 2.11.0, flavor cu130)
+    -Lock          dubber\infra\runtime_lock.json (same schema as the Audiobook Builder lock: Python 3.15, torch 2.11.0, flavor cu130)
     -Backend       auto (cu130 when the GPU passes the gate) or an explicit flavor. -Backend cpu is CI-only (GPU-less runners).
     -HardwareFile  receives the English stop message when the GPU or driver is below the minimum
     -Log           log file (all output is copied there)
@@ -17,7 +17,7 @@
                    The setup's own last step downloads the weights unless /SKIPMODELS=1 is passed.
   Rules (docs/SHARED-RESOURCES.md; dubber/infra/runtime.py has the same key logic):
     key = SHA-256 of Python + platform + torch version/flavor + requirements + constraints (12 hex digits), stored in runtime-key.json
-    %LOCALAPPDATA%\Voxprint\shared\runtimes\py3.14-torch2.11-<flavor> is reused when that version is already installed;
+    %LOCALAPPDATA%\Voxprint\shared\runtimes\py3.15-torch2.11-<flavor> is reused when that version is already installed;
     a shared runtime is never upgraded in place to a different Python or torch line (that line has its own directory).
     shared\manifest.json (schema 1) counts the programs using each resource. An older runtime-<12 hex digits> folder is moved once.
     <Voxprint home>\runtime belongs to the Audiobook Builder and is never moved.
@@ -398,7 +398,7 @@ try {
     $key = RuntimeKey $lockObj $flavor
     $vxHome = if ($env:VOXPRINT_HOME) { $env:VOXPRINT_HOME } else { Join-Path $env:LOCALAPPDATA "Voxprint" }
     $shared = Join-Path $vxHome "shared"
-    $rtName = "py3.14-torch2.11-$flavor"
+    $rtName = "py3.15-torch2.11-$flavor"
     $rt = Join-Path $shared "runtimes\$rtName"
     $envDir = Join-Path $rt "env"
     $py = Join-Path $envDir "Scripts\python.exe"
@@ -632,7 +632,7 @@ try {
         Run "[5/5] Enqueueing models with VOXPrint MDL" $mdlExe ($mdlPrefix + @("enqueue", "--app", "movie-dubber", "--manifest", $manifest))
         Run "[5/5] Waiting for VOXPrint MDL" $mdlExe ($mdlPrefix + @("--json", "status", "--wait", "--manifest", $manifest))
     }
-    $runtimeId = if ($flavor -eq "cpu") { "python-3.14-cpu" } else { "python-3.14" }
+    $runtimeId = if ($flavor -eq "cpu") { "python-3.15-cpu" } else { "python-3.15" }
     Add-SharedRef $runtimeId "runtime" $rtName $rt ""
     # torch and CTranslate2 live in that runtime directory. voxprint-common 0.2.5
     # refuses a second component on a path another component already uses.

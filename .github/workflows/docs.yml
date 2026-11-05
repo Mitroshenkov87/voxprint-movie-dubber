@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.14"
+          python-version: "3.15"
       - name: Install documentation dependencies
         run: |
           python -m pip install "voxprint-common[ui] @ git+https://github.com/Mitroshenkov87/voxprint-common@8a94b531cb4f3526425a80a86a1e64624b5de606"
