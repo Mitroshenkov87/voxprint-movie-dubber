@@ -36,7 +36,7 @@ def test_installer_reads_appinfo_and_docs_state_the_codename_rule():
     assert "VersionLabel" in iss and "VersionInfoProductTextVersion" in iss
     building = (ROOT / "docs" / "BUILDING.md").read_text(encoding="utf-8")
     assert "BUILD.json" in building and "Bochan" in building and "Biblical Hebrew" in building and "not a theme" in building
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    readme = (ROOT / "docs" / "README-full.md").read_text(encoding="utf-8")
     assert "Windows 11 24H2" in readme and "2025" in readme and "Bochan" in readme and "BUILD.json" in readme
     assert "BUILD.json" in iss
     yml = (ROOT / ".github" / "workflows" / "build-installer.yml").read_text(encoding="utf-8")

@@ -135,3 +135,13 @@ reason = "until common ships the shared pillow 13 fix; review 2026-11-02"
 id = "CVE-2026-112398"
 package = "pillow"
 reason = "until common ships the shared pillow 13 fix; review 2026-11-02"
+
+[[advisory]]
+id = "CVE-2026-112403"
+package = "pillow"
+reason = "until common ships the shared pillow 13 fix; review 2026-11-05"
+
+[[advisory]]
+id = "GHSA-8g5g-8vmr-9782"
+package = "pillow"
+reason = "until common ships the shared pillow 13 fix; review 2026-11-05"
