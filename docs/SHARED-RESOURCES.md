@@ -13,12 +13,12 @@ variable is set). Windows uses `%LOCALAPPDATA%\Voxprint\shared\`.
 shared/
   manifest.json
   manifest.lock
-  runtimes/py3.14-torch2.11-cu130/     Python 3.14, torch 2.11.0+cu130, torchaudio 2.11.0, torchcodec 0.17.0
+  runtimes/py3.15-torch2.11-cu130/     Python 3.15, torch 2.11.0+cu130, torchaudio 2.11.0, torchcodec 0.17.0
     python/                            uv-managed CPython
     env/                               virtual environment (the program folder's runtime junction points here)
     runtime-key.json
     .install-complete
-  runtimes/py3.14-torch2.11-cpu/       CI only. A user install does not create this folder.
+  runtimes/py3.15-torch2.11-cpu/       CI only. A user install does not create this folder.
   ffmpeg/n8.1/                         LGPL ffmpeg and ffprobe (BtbN FFmpeg-Builds, release 8.1)
     ffmpeg or ffmpeg.exe
     ffprobe or ffprobe.exe
@@ -49,10 +49,10 @@ The app id in `refs` is `movie-dubber`.
 {
   "schema": 1,
   "components": {
-    "python-3.14": {
+    "python-3.15": {
       "kind": "runtime",
-      "version": "py3.14-torch2.11-cu130",
-      "path": "runtimes/py3.14-torch2.11-cu130",
+      "version": "py3.15-torch2.11-cu130",
+      "path": "runtimes/py3.15-torch2.11-cu130",
       "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
       "installed_at": "2026-10-11T12:00:00",
       "refs": ["movie-dubber"]
@@ -77,7 +77,7 @@ Paths are relative to `shared/`, except a `model` component, whose path is absol
 `torch` version `2.11.0+cu130` stands for torch 2.11.0, torchaudio 2.11.0 and torchcodec 0.17.0, all `+cu130`.
 `ctranslate2` version `cu12` means CTranslate2 can import and the CUDA 12 libraries are `nvidia-cublas-cu12==12.9.2.10`
 and `nvidia-cudnn-cu12==9.27.0.42`. The CPU runtime only requires CTranslate2 to import. Its component id is
-`python-3.14-cpu`. Torch and CTranslate2 are installed into that runtime directory. They are not separate
+`python-3.15-cpu`. Torch and CTranslate2 are installed into that runtime directory. They are not separate
 manifest components: voxprint-common 0.2.4 refuses a second component whose path is a directory another
 component already uses.
 
@@ -106,7 +106,7 @@ python components.py release --home <voxprint home> --app movie-dubber
 ## Install
 
 The Windows setup (online and full) and `installer/linux/install.sh` install anything that is missing before
-the first launch: Python 3.14, the torch wheels, the CUDA 12 libraries, ffmpeg, and the models the default
+the first launch: Python 3.15, the torch wheels, the CUDA 12 libraries, ffmpeg, and the models the default
 pipeline needs. Progress is numbered. A download that stops can be continued: the partial file is kept and
 the next run sends an HTTP Range request.
 
@@ -131,7 +131,7 @@ being repaired or has failed.
 The result is one JSON object on stdout when `--json` is set:
 
 ```json
-{"ok": true, "exit_code": 0, "command": "selftest", "outcome": "repair", "repaired": ["ffmpeg"], "resources": [{"id": "runtime", "version": "py3.14-torch2.11-cu130", "path": "...", "ok": true}]}
+{"ok": true, "exit_code": 0, "command": "selftest", "outcome": "repair", "repaired": ["ffmpeg"], "resources": [{"id": "runtime", "version": "py3.15-torch2.11-cu130", "path": "...", "ok": true}]}
 ```
 
 `outcome` is `ok` (nothing to do), `repair` (something was restored and the second check passed), `gpu`,

@@ -113,9 +113,9 @@ jobs:
       - uses: actions/setup-python@v7
         if: matrix.kind == 'full'
         with:
-          python-version: "3.14"
+          python-version: "3.15"
 
-      - name: Build the full installer's payload (uv, Python 3.14, wheels incl. PyTorch 2.11.0+cu130, ffmpeg)
+      - name: Build the full installer's payload (uv, Python 3.15, wheels incl. PyTorch 2.11.0+cu130, ffmpeg)
         if: matrix.kind == 'full'
         shell: pwsh
         run: |
@@ -212,12 +212,12 @@ jobs:
           $menu | ForEach-Object { "start menu: " + $_.FullName }
           if (-not ($menu | Where-Object { $_.Name -eq "VOXPrint AI Movie Dubber.lnk" })) { throw "no Start menu shortcut in VOXPrint AI Suite" }
           if ($menu | Where-Object { $_.Name -eq "VOXPrint AI Movie Dubber - diagnostics.lnk" }) { throw "the diagnostics Start menu shortcut must not be installed" }
-          # the runtime: a junction to LOCALAPPDATA\Voxprint\shared\runtimes\py3.14-torch2.11-<flavor>
+          # the runtime: a junction to LOCALAPPDATA\Voxprint\shared\runtimes\py3.15-torch2.11-<flavor>
           $link = Get-Item "$app\runtime" -Force
           if (-not ($link.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw "$app\runtime is not a link to the shared runtime" }
           $flavor = if ("${{ matrix.kind }}" -eq "full") { "cu130" } else { "cpu" }
           $shared = "$env:LOCALAPPDATA\Voxprint\shared"
-          $rt = Get-Item "$shared\runtimes\py3.14-torch2.11-$flavor"
+          $rt = Get-Item "$shared\runtimes\py3.15-torch2.11-$flavor"
           if (-not (Test-Path "$($rt.FullName)\runtime-key.json")) { throw "no shared runtime folder" }
           "runtime: " + $rt.FullName + " " + (Get-Content "$($rt.FullName)\runtime-key.json" -Raw)
           if (-not (Test-Path "$shared\ffmpeg\n8.1\ffmpeg.exe")) { throw "shared ffmpeg is missing" }
@@ -226,7 +226,7 @@ jobs:
           if (Test-Path "$shared\models") { throw "models must not live under shared\" }
           $manifest = Get-Content "$shared\manifest.json" -Raw | ConvertFrom-Json
           if ($manifest.schema -ne 1) { throw "manifest schema is $($manifest.schema)" }
-          $pyId = if ($flavor -eq "cpu") { "python-3.14-cpu" } else { "python-3.14" }
+          $pyId = if ($flavor -eq "cpu") { "python-3.15-cpu" } else { "python-3.15" }
           foreach ($id in @($pyId, "ffmpeg-8")) {
             $row = $manifest.components.$id
             if (-not $row) { throw "manifest has no $id" }
@@ -368,7 +368,7 @@ jobs:
           # movie-dubber is the only app on this runner, so every component goes when its reference count hits zero.
           $flavor = if ("${{ matrix.kind }}" -eq "full") { "cu130" } else { "cpu" }
           $shared = "$env:LOCALAPPDATA\Voxprint\shared"
-          $rt = "$shared\runtimes\py3.14-torch2.11-$flavor"
+          $rt = "$shared\runtimes\py3.15-torch2.11-$flavor"
           $models = "$env:LOCALAPPDATA\Voxprint\models"
           for ($i = 0; $i -lt 120; $i++) {
             $runtimeLeft = Test-Path $rt

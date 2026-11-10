@@ -96,10 +96,10 @@ def test_last_ref_removes_an_empty_models_root_this_app_alone_owns(tmp_path, mon
 
 def test_manifest_keeps_a_running_directory_for_the_uninstaller(tmp_path, monkeypatch):
     home = tmp_path / "home"
-    folder = home / "shared" / "runtimes" / "py3.14-torch2.11-cu130"
+    folder = home / "shared" / "runtimes" / "py3.15-torch2.11-cu130"
     folder.mkdir(parents=True)
     (folder / "runtime-key.json").write_text("{}", encoding="utf-8")
-    components.add_component(home, "python-3.14", kind="runtime", version=folder.name, path=folder, app="movie-dubber")
+    components.add_component(home, "python-3.15", kind="runtime", version=folder.name, path=folder, app="movie-dubber")
     monkeypatch.setattr(components, "running_from", lambda path: True)
     result = components.release_app(home, "movie-dubber")
     assert str(folder.resolve()) in result.pending
@@ -192,7 +192,7 @@ def test_migrate_moves_the_legacy_runtime_ffmpeg_and_models(tmp_path, monkeypatc
     (app / "runtime-dir.txt").write_text(str(old), encoding="utf-8")
     (home / "shared" / "models" / "kept").mkdir(parents=True)
     actions = migrate(home, app)
-    dest = home / "shared" / "runtimes" / "py3.14-torch2.11-cu130"
+    dest = home / "shared" / "runtimes" / "py3.15-torch2.11-cu130"
     assert (dest / "env" / "marker").is_file()
     assert not old.exists()
     assert not (app / "runtime-dir.txt").exists()

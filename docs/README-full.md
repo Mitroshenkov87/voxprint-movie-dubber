@@ -31,7 +31,7 @@ cd VoxprintMovieDubber-Linux-x86_64
 ./install.sh
 ```
 
-`install.sh` installs for the whole system, into `/opt/voxprint-ai-suite/movie-dubber`, and asks for sudo. It checks the driver and the GPU, creates a Python 3.14 environment with [uv](https://docs.astral.sh/uv/) (downloaded if it is missing), installs PyTorch 2.11.0 (CUDA 13.0) and the other packages, and symlinks `voxprint-movie-dubber` and `voxprint-movie-dubber-cli` into `/usr/local/bin`. The menu entry is named **VOXPrint AI Movie Dubber**. User data stays in `~/.local/share/voxprint`. An older install under `~/.local` is removed; that user data is kept. `./install.sh --prefix DIR` installs the same layout under `DIR` without root (used by CI). `./install.sh --uninstall` removes the program and keeps the downloaded models. `--skip-gpu-check` is only for CI machines that have no GPU.
+`install.sh` installs for the whole system, into `/opt/voxprint-ai-suite/movie-dubber`, and asks for sudo. It checks the driver and the GPU, creates a Python 3.15 environment with [uv](https://docs.astral.sh/uv/) (downloaded if it is missing), installs PyTorch 2.11.0 (CUDA 13.0) and the other packages, and symlinks `voxprint-movie-dubber` and `voxprint-movie-dubber-cli` into `/usr/local/bin`. The menu entry is named **VOXPrint AI Movie Dubber**. User data stays in `~/.local/share/voxprint`. An older install under `~/.local` is removed; that user data is kept. `./install.sh --prefix DIR` installs the same layout under `DIR` without root (used by CI). `./install.sh --uninstall` removes the program and keeps the downloaded models. `--skip-gpu-check` is only for CI machines that have no GPU.
 
 ## Use
 

@@ -1,7 +1,7 @@
 # Linux package of VOXPrint AI Movie Dubber: a tar.gz of the program with install.sh (installer/linux/).
 # The job packs the tarball, installs it on a GPU-less runner with --skip-gpu-check (CI only), then runs
 # `voxprint-movie-dubber --dry-run --json` (installed with --prefix, no root) and checks the JSON: exit 3 (no GPU), the build number and codename
-# from BUILD.json, Python 3.14 and torch 2.11.0+cu130. The installer workflow calls this job and publishes the tarball.
+# from BUILD.json, Python 3.15 and torch 2.11.0+cu130. The installer workflow calls this job and publishes the tarball.
 name: linux
 on:
   pull_request:
@@ -95,8 +95,8 @@ jobs:
           if command -v desktop-file-validate >/dev/null; then desktop-file-validate "$prefix/share/applications/voxprint-movie-dubber.desktop"; fi
           shared="$d/voxprint/shared"
           test -f "$shared/manifest.json"
-          test -d "$shared/runtimes/py3.14-torch2.11-cu130"
-          test -x "$shared/runtimes/py3.14-torch2.11-cu130/env/bin/python"
+          test -d "$shared/runtimes/py3.15-torch2.11-cu130"
+          test -x "$shared/runtimes/py3.15-torch2.11-cu130/env/bin/python"
           test -x "$shared/ffmpeg/n8.1/ffmpeg"
           test -d "$d/voxprint/models"
           test ! -d "$shared/models"
@@ -105,7 +105,7 @@ jobs:
           data = json.load(open(sys.argv[1], encoding="utf-8"))
           assert data.get("schema") == 1, data
           comps = data["components"]
-          for key in ("python-3.14", "ffmpeg-8"):
+          for key in ("python-3.15", "ffmpeg-8"):
               row = comps[key]
               for field in ("kind", "version", "path", "sha256", "installed_at", "refs"):
                   assert field in row, (key, field)
@@ -122,7 +122,7 @@ jobs:
           set -euo pipefail
           test -z "${HF_TOKEN}"
           test -z "${HUGGINGFACE_HUB_TOKEN}"
-          py="$HOME/.local/share/voxprint/shared/runtimes/py3.14-torch2.11-cu130/env/bin/python"
+          py="$HOME/.local/share/voxprint/shared/runtimes/py3.15-torch2.11-cu130/env/bin/python"
           "$py" -m voxprint_common.mdl --json --dry-run plan --manifest "$VOX_PREFIX/movie-dubber/mdl.json" > mdl-plan.json
           python3 - <<'PY'
           import json
@@ -165,7 +165,7 @@ jobs:
           need(out.get("codename") == stamp["codename"], f"codename {out.get('codename')} != {stamp['codename']}")
           need(f'build {stamp["build"]} "{stamp["codename"]}"' in str(out.get("label")), f"label {out.get('label')!r}")
           rt = out.get("runtime", {})
-          need(str(rt.get("python", "")).startswith("3.14."), f"python {rt.get('python')}")
+          need(str(rt.get("python", "")).startswith("3.15."), f"python {rt.get('python')}")
           need(rt.get("torch") == "2.11.0+cu130", f"torch {rt.get('torch')}")
           need(isinstance(out.get("models"), list) and out["models"], "no models listed")
           if problems:
@@ -184,7 +184,7 @@ jobs:
           test ! -e "$HOME/.local/share/voxprint-movie-dubber"
           test ! -e "$HOME/.local/share/applications/voxprint-movie-dubber.desktop"
           shared="$HOME/.local/share/voxprint/shared"
-          test ! -d "$shared/runtimes/py3.14-torch2.11-cu130"
+          test ! -d "$shared/runtimes/py3.15-torch2.11-cu130"
           test ! -d "$shared/ffmpeg/n8.1"
           test ! -d "$shared/models"
           test ! -d "$HOME/.local/share/voxprint/models"
