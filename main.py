@@ -1,0 +1,267 @@
+r"""Voxprint AI Movie Dubber - entry point.
+
+    main.py                       start the window
+    main.py PROJECT.vxdub         start the window and open that dubbing project
+    main.py --diagnose            start the window and run the diagnostics at once (the report goes to the Desktop)
+    main.py --diagnose-cli        run the diagnostics without a window (console output), same report
+    main.py version|diagnose|fetch-models|run-project|info   headless commands (docs/CLI.md)
+    main.py --dry-run --json      discovery only: one JSON object, no model load or download
+    main.py --worker NAME ARGS    internal: one heavy step in its own process (used by the diagnostics and the pipeline)
+    main.py --fetch-models        ask VOXPrint MDL to fetch the models; --models KEY,KEY limits the set
+    main.py --register-models-user      (installer) add this program to the shared models folder's .users.json
+    main.py --unregister-models-user --out FILE   (uninstaller) remove it; FILE gets "<other users>\n<models folder>"
+    main.py --register-runtime-user / --unregister-runtime-user --out FILE   the same for the shared runtime in shared/manifest.json
+    main.py --sync-suite-settings (installer) write the shared suite.json (models folder, UI language) if it has none yet
+    main.py --run-project DIR [--stages a,b]      run (or resume) a dubbing project without a window (detached long run)
+    main.py --selftest            check and repair shared components, then open the window briefly (smoke test)
+    main.py --selftest --json     same check, one JSON object on stdout, progress JSON lines on stderr, no window
+    main.py selftest [--json]     the same check as a headless command
+    main.py --release-shared      drop this app's shared-resource references and delete unreferenced directories
+    main.py --version
+
+Options for the diagnostics:  --out FILE  --quick  --no-download  --target ru|en|de  --skip system,gpu,network,models,tts,stages
+--tts-model tts_1_7b|tts_0_6b  --tts-modes standard_sdpa,graphs_sdpa,...  --cpu-tts  --cpu-sep  --clip FILE  --asr-repo REPO
+"""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from dubber.i18n import tr
+from dubber.cli import EXIT_GPU
+from dubber.infra.gpu_policy import NVIDIA_DRIVER_URL, driver_branch, gate_skipped, launch_block, probe_torch, startup_detail_key, with_driver_link
+
+
+def _arg(argv, name, default=None):
+    if name in argv:
+        i = argv.index(name)
+        if i + 1 < len(argv) and not argv[i + 1].startswith("--"):
+            return argv[i + 1]
+    return default
+
+
+def _options_from_argv(argv):
+    from dubber.diag.runner import ALL_TTS_MODES, DiagOptions
+
+    o = DiagOptions()
+    o.quick = "--quick" in argv
+    o.allow_download = "--no-download" not in argv
+    o.target_lang = _arg(argv, "--target", "ru")
+    o.skip = tuple(x for x in (_arg(argv, "--skip", "") or "").split(",") if x)
+    o.tts_model = _arg(argv, "--tts-model", o.tts_model)
+    modes = _arg(argv, "--tts-modes")
+    o.tts_modes = tuple(m for m in modes.split(",") if m in ALL_TTS_MODES) if modes else ALL_TTS_MODES
+    o.cpu_tts, o.cpu_sep = "--cpu-tts" in argv, "--cpu-sep" in argv
+    if _arg(argv, "--out"):
+        o.out_path = Path(_arg(argv, "--out"))
+    if _arg(argv, "--clip"):
+        o.clip = Path(_arg(argv, "--clip"))
+    o.asr_repo = _arg(argv, "--asr-repo", "") or ""
+    return o
+
+
+def _setup_logging() -> None:
+    import logging
+
+    try:
+        from dubber import paths
+
+        logging.basicConfig(filename=str(paths.logs_dir() / "dubber.log"), level=logging.INFO, encoding="utf-8",
+                            format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    except Exception:  # noqa: BLE001 - logging must never block the start
+        pass
+
+
+_HEADLESS_COMMANDS = {"version", "diagnose", "fetch-models", "run-project", "info", "project-info", "selftest"}
+_HEADLESS_FLAGS = {"--version", "--dry-run", "--json", "--diagnose-cli", "--fetch-models", "--run-project",
+                   "--project-info", "--help", "-h"}
+
+
+def _wants_headless(argv: list) -> bool:
+    """True when this process should stay a command and not open the window."""
+    if not argv:
+        return False
+    if not str(argv[0]).startswith("-") and argv[0] in _HEADLESS_COMMANDS:
+        return True
+    flags = {str(item) for item in argv}
+    if flags & _HEADLESS_FLAGS:
+        return True
+    return False
+
+
+def project_file_from_argv(argv) -> str | None:
+    """A ``.vxdub`` path passed as the first argument, or ``None``."""
+    if not argv or str(argv[0]).startswith("-"):
+        return None
+    if Path(argv[0]).suffix.lower() == ".vxdub":
+        return str(argv[0])
+    return None
+
+
+def _refuse_unsupported_gpu(message_box) -> bool:
+    """True when the graphics card or the driver is below the minimum. The dialog is shown and the window must not open.
+
+    ``VOXPRINT_SKIP_GPU_GATE`` skips the check for tests and the CI smoke run. The message names
+    ``https://www.nvidia.com/Download/index.aspx``.
+    """
+    if gate_skipped():
+        return False
+    available, capability, name = probe_torch()
+    block = launch_block(available, capability, name, driver_branch())
+    if block is None:
+        return False
+    key, params = startup_detail_key(block)
+    body = with_driver_link(tr("gpu.gate_body", detail=tr(key, **params)))
+    if NVIDIA_DRIVER_URL not in body:
+        body = with_driver_link(body)
+    message_box.critical(None, tr("gpu.gate_title"), body)
+    return True
+
+
+def main(argv=None) -> int:
+    """Start the window, or dispatch a headless, worker, or installer command. The window returns 3 when the graphics card or driver is below the minimum."""
+    argv = list(sys.argv[1:] if argv is None else argv)
+    from dubber.infra.stdio_guard import guard_stdio
+
+    guard_stdio()                                            # pythonw.exe: stdout may be None or a dead handle
+    if "--worker" in argv:                                   # heavy step in its own process: no Qt, no logging setup
+        i = argv.index("--worker")
+        from dubber.infra.quiet import mute_library_noise
+        from dubber.workers.common import worker_main
+
+        mute_library_noise()
+
+        return worker_main(argv[i + 1], argv[i + 2])
+    if _wants_headless(argv):
+        # Kept off the module import so --worker and the installer flags do not load the pipeline.
+        from dubber.cli import main as cli_main
+
+        return cli_main(argv)
+    _setup_logging()
+    if "--register-models-user" in argv or "--unregister-models-user" in argv:
+        return _models_users(argv)
+    if "--register-runtime-user" in argv or "--unregister-runtime-user" in argv:
+        from dubber.infra import runtime
+
+        if "--register-runtime-user" in argv:
+            runtime.register_user()
+            return 0
+        return runtime.unregister_cli(_arg(argv, "--out"))
+    if "--sync-suite-settings" in argv:
+        from dubber.settings import sync_suite_settings
+
+        return sync_suite_settings()
+    if "--release-shared" in argv:
+        return _release_shared(argv)
+    if "--selftest" in argv and "--json" in argv:
+        from dubber.cli import main as cli_main
+
+        forwarded = [item for item in argv if item != "--selftest"]
+        if "selftest" not in forwarded:
+            forwarded.insert(0, "selftest")
+        return cli_main(forwarded)
+    from PySide6.QtCore import QTimer
+    from PySide6.QtGui import QIcon
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from dubber.appinfo import resource_dir
+
+    running = QApplication.instance()
+    app = running if isinstance(running, QApplication) else QApplication(sys.argv)
+    app.setApplicationName("VOXPrint AI Movie Dubber")
+    icon = resource_dir() / "assets" / "voxprint-dubber.ico"
+    if icon.is_file():
+        app.setWindowIcon(QIcon(str(icon)))
+    if _refuse_unsupported_gpu(QMessageBox):
+        return EXIT_GPU
+    from dubber.ui.setup_progress import ensure_with_dialog, startup_repair_dialog
+
+    ensured = ensure_with_dialog()
+    if ensured.exit_code != 0:
+        dialog = startup_repair_dialog(ensured)
+        title, body = dialog if dialog is not None else (tr("models.repair_title"), ensured.message or "")
+        QMessageBox.critical(None, title, body or ensured.message or "")
+        return ensured.exit_code
+    from dubber.ui.splash_hook import show_splash
+
+    splash = show_splash()                               # the first thing on screen: before the heavy UI imports below
+    splash.set_stage(tr("splash.loading_ui"))
+    splash.set_progress(0.3)
+    from dubber.ui.shell_window import ShellWindow
+
+    splash.set_stage(tr("splash.opening"))
+    splash.set_progress(0.8)
+    win = ShellWindow(autorun="--diagnose" in argv, options_hook=(lambda o: _apply_cli(o, argv)) if "--diagnose" in argv else None)
+    win.show()
+    if ensured.optional_missing:
+        win.show_optional_models(list(ensured.optional_missing))
+    opened = project_file_from_argv(argv)
+    if opened:
+        win.open_vxdub(Path(opened))
+    splash.finish()                                       # fades once the splash has been up for the minimum time
+    if "--selftest" in argv:
+        QTimer.singleShot(400, app.quit)
+    return app.exec()
+
+
+def _release_shared(argv) -> int:
+    """Drop this app's references in ``shared/manifest.json`` and delete directories no app still uses.
+
+    ``--out FILE`` receives one pending path per line (still on disk because this process is using it).
+    The uninstaller deletes those after this process exits.
+    """
+    from dubber.infra.components import APP_ID, release_app
+    from voxprint_common.paths import home as suite_home
+
+    try:
+        result = release_app(suite_home(), APP_ID)
+        out = _arg(argv, "--out")
+        if out:
+            Path(out).write_text("".join(f"{path}\n" for path in result.pending), encoding="utf-8")
+    except OSError as exc:
+        print(f"shared resources: {exc}", flush=True)
+        return 1
+    print(f"deleted: {', '.join(result.deleted) or 'none'}", flush=True)
+    print(f"pending: {', '.join(result.pending) or 'none'}", flush=True)
+    return 0
+
+
+def _models_users(argv) -> int:
+    """Installer / uninstaller helper for the shared ``models/.users.json`` (never fails the setup: exit 0 unless writing failed)."""
+    from dubber import paths
+    from dubber.infra import model_store
+
+    try:
+        if "--register-models-user" in argv:
+            model_store.register_user()
+            return 0
+        others = model_store.unregister_user()
+        out = _arg(argv, "--out")
+        if out:
+            Path(out).write_text(f"{len(others)}\n{paths.models_dir()}\n", encoding="utf-8")
+        print(f"other programs using the models: {', '.join(others) or 'none'}", flush=True)
+        return 0
+    except OSError as exc:
+        print(f"models users file: {exc}", flush=True)
+        return 1
+
+
+def _apply_cli(opt, argv) -> None:
+    """Command-line values override the window's check boxes for an auto-started run."""
+    cli = _options_from_argv(argv)
+    for name in ("out_path", "clip", "tts_model", "tts_modes", "skip", "cpu_tts", "cpu_sep", "asr_repo"):
+        setattr(opt, name, getattr(cli, name))
+    if "--quick" in argv:
+        opt.quick = True
+    if "--no-download" in argv:
+        opt.allow_download = False
+    if "--target" in argv:
+        opt.target_lang = cli.target_lang
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

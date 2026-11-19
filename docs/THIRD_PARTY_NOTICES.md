@@ -1,0 +1,27 @@
+# Third-party components
+
+| Component | Use | License |
+|---|---|---|
+| TIGER (look2hear) code, vendored and trimmed in `dubber/third_party/look2hear` | dialogue / effects / music separation | MIT (see `dubber/third_party/look2hear/LICENSE`) |
+| TIGER-DnR weights (`JusperLee/TIGER-DnR`) | downloaded on demand | Apache-2.0 |
+| faster-qwen3-tts, qwen-tts-hf | Qwen3-TTS inference, CUDA Graphs | MIT / Apache-2.0 |
+| Qwen3-TTS-12Hz Base models (Qwen) | TTS with voice cloning, downloaded on demand | Apache-2.0 |
+| faster-whisper, CTranslate2, `deepdml/faster-whisper-large-v3-turbo-ct2` | speech recognition | MIT |
+| Silero VAD | voice activity detection | MIT |
+| Opus-MT tc-big (`Helsinki-NLP/opus-mt-tc-big-en-zle`, `-zle-en`, `-zle-de`, `-de-zle`) | translation (en↔ru, ru↔de) | CC-BY-4.0. University of Helsinki (Helsinki-NLP), https://huggingface.co/Helsinki-NLP, https://creativecommons.org/licenses/by/4.0/ |
+| Opus-MT tc-bible-big (`Helsinki-NLP/opus-mt-tc-bible-big-deu_eng_fra_por_spa-gmw`, `Helsinki-NLP/opus-mt-tc-bible-big-gmw-deu_eng_fra_por_spa`) | translation (en→de with `>>deu<<`, de→en with `>>eng<<`) | Apache-2.0. University of Helsinki (Helsinki-NLP), https://huggingface.co/Helsinki-NLP, https://www.apache.org/licenses/LICENSE-2.0 |
+| pyannote speaker-diarization community-1 | speaker diarization | CC-BY-4.0. Hervé Bredin and the pyannote.audio authors. Original https://huggingface.co/pyannote/speaker-diarization-community-1 . Mirror https://huggingface.co/Mitroshenkov87/voxprint-pyannote-speaker-diarization-community-1 at 9c851af727f1085a361777d13e32734f7f5ebb30. https://creativecommons.org/licenses/by/4.0/ . No changes besides removing the access gate. |
+| pyannote/embedding | speaker embeddings | MIT. Copyright (c) 2022 CNRS. Original https://huggingface.co/pyannote/embedding . Mirror https://huggingface.co/Mitroshenkov87/voxprint-pyannote-embedding at 4655ca656e1d7b1d8fe8100b39b4fdbf3015c7b8. No changes besides removing the access gate. |
+| Mel-Band RoFormer (`KimberleyJSN/melbandroformer` @ `ac9b0614ab3cd7f77219e18ba494dfd93956c348`, 2026-04-22) | optional vocal separation | MIT (model card relicensed MIT on that commit) |
+| PySide6 / Qt | user interface | LGPL-3.0 |
+| FFmpeg libraries inside PySide6 (Qt Multimedia FFmpeg backend, shared DLLs) | built-in video player for the preview and Watch mode | LGPL-2.1-or-later (dynamically linked, replaceable) |
+| python-stretch (Signalsmith Stretch) | time stretching of dub lines | MIT |
+| PEFT | loading voices of the shared Voxprint voice library (LoRA adapters) | Apache-2.0 |
+| SubDL / OpenSubtitles APIs | optional subtitle search with the user's own keys | service terms of each site |
+| PyTorch, transformers, numpy, scipy, librosa, soundfile | runtime | BSD / Apache-2.0 / ISC |
+| ffmpeg program (an LGPL build is preferred; PATH or imageio-ffmpeg as a fallback) | audio extraction and muxing, called as a separate program | LGPL/GPL, depending on the build |
+| espeak-ng (only to generate the synthetic test clip, `tools/make_test_clip.py`) | not shipped | GPL-3.0 (the generated audio is synthetic) |
+
+Project licence: Apache-2.0 for the program's own source code (see `LICENSE` and `NOTICE`), the same as Voxprint AI Audiobook Builder.
+
+`dubber/assets/splash-easter.jpg` is original generated art shipped with this program. It does not depict a real person. See `dubber/assets/README.md`.

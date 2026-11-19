@@ -1,0 +1,14 @@
+# Release gate for tools/audit.py. Pyflakes (F) and syntax errors (E9) stay blocking.
+# Line length and pyupgrade stay off. Public docstring coverage is the interrogate check
+# in tools/audit.py (65% on dubber and main.py). The Google convention is recorded so a
+# format check would use it; the missing-docstring rules are not selected.
+extend-exclude = ["dubber/third_party"]
+
+[lint]
+select = [
+    "F",
+    "E9",
+]
+
+[lint.pydocstyle]
+convention = "google"

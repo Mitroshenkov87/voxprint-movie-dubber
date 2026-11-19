@@ -1,0 +1,412 @@
+"""Building the script: dialogue windows, lines from recognition or subtitles, translations, speakers, length estimates."""
+from __future__ import annotations
+
+import re
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+
+import numpy as np
+
+from dubber.core import timefit
+from dubber.core.project import Line
+from dubber.core.subtitles import Cue, clean_text, is_music, sdh_speaker
+from dubber.engines.translation import split_sentences
+
+Window = Tuple[float, float]
+
+
+# ---------------------------------------------------------------------------------------------- dialogue windows
+def dialogue_windows(segments: Iterable[Window], merge_gap: float = 0.6, pad: float = 0.15, min_len: float = 0.3,
+                     total: Optional[float] = None) -> List[Window]:
+    """Merge VAD segments closer than ``merge_gap`` into windows, pad them; only these windows are separated and dubbed
+    (everything outside stays the original soundtrack - research decision 2, "fail-open")."""
+    out: List[List[float]] = []
+    for s, e in sorted((float(a), float(b)) for a, b in segments):
+        if e - s <= 0:
+            continue
+        s, e = max(0.0, s - pad), e + pad
+        if total is not None:
+            e = min(e, total)
+        if out and s - out[-1][1] < merge_gap:
+            out[-1][1] = max(out[-1][1], e)
+        else:
+            out.append([s, e])
+    return [(round(a, 3), round(b, 3)) for a, b in out if b - a >= min_len]
+
+
+def overlap(a0: float, a1: float, b0: float, b1: float) -> float:
+    """Seconds shared by the intervals ``[a0, a1]`` and ``[b0, b1]``."""
+    return max(0.0, min(a1, b1) - max(a0, b0))
+
+
+# ---------------------------------------------------------------------------------------------- lines
+def lines_from_asr(segments: Sequence[Dict[str, Any]], max_len: float = 8.0, lang: Optional[str] = None,
+                  turns: Optional[Sequence[Dict[str, Any]]] = None) -> List[Line]:
+    """ASR segments -> lines rebuilt from the words (:mod:`dubber.core.segment`): sentence ends, pauses > 0.6 s and speaker
+    turns (``turns`` from diarization, when known) break a line; long sentences are split at their best pause/comma."""
+    from dubber.core import segment
+
+    words = segment.words_of(segments, lang)
+    out = [Line(0, a, b, t, source="asr") for a, b, t in segment.segment(words, turns=turns, max_s=max_len)]
+    return _number(out)
+
+
+def lines_from_cues(cues: Sequence[Cue], target: bool) -> List[Line]:
+    """Subtitle cues -> lines.  ``target``: the cue text is already the translation (subtitles in the dub language)."""
+    out = []
+    for c in cues:
+        music = is_music(c.text)
+        text = clean_text(c.text)
+        if not text and not music:
+            continue
+        ln = Line(0, c.start, c.end, source="subs", keep_original=music, kind="music" if music else "speech", tag=sdh_speaker(c.text))
+        if target:
+            ln.translation = text
+        else:
+            ln.text = text
+        out.append(ln)
+    return _number(out)
+
+
+def _number(lines: List[Line]) -> List[Line]:
+    lines.sort(key=lambda ln: ln.start)
+    for i, ln in enumerate(lines, 1):
+        ln.id = i
+    return lines
+
+
+def attach_text(lines: List[Line], cues: Sequence[Cue], attr: str) -> int:
+    """Fill ``attr`` (``text`` / ``translation``) of each line from the cues it overlaps most; returns how many got text."""
+    n = 0
+    for ln in lines:
+        best = [c for c in cues if overlap(ln.start, ln.end, c.start, c.end) > 0.3 * min(ln.duration, c.end - c.start)]
+        if best:
+            txt = " ".join(clean_text(c.text) for c in best).strip()
+            if txt:
+                setattr(ln, attr, txt)
+                n += 1
+            if any(is_music(c.text) for c in best):
+                ln.keep_original, ln.kind = True, "music"
+            if not ln.tag:
+                ln.tag = next((t for t in (sdh_speaker(c.text) for c in best) if t), "")
+    return n
+
+
+def speakers_from_tags(lines: Sequence[Line], min_cover: float = 0.6) -> Dict[int, str]:
+    """Speaker per line from subtitle speaker tags ("JOHN: ...") when most speech lines carry one (>= ``min_cover`` and at
+    least two names); untagged lines take the nearest tagged line before them (else after).  {} = not enough tags."""
+    speech = [ln for ln in lines if not ln.keep_original]
+    tagged = [ln for ln in speech if ln.tag]
+    if not speech or len(tagged) < min_cover * len(speech) or len({ln.tag.upper() for ln in tagged}) < 2:
+        return {}
+    out: Dict[int, str] = {}
+    last = ""
+    for ln in sorted(speech, key=lambda x: x.start):
+        if ln.tag:
+            last = ln.tag.strip().title()
+        out[ln.id] = last
+    first = next(ln.tag.strip().title() for ln in sorted(tagged, key=lambda x: x.start))
+    return {k: (v or first) for k, v in out.items()}
+
+
+def snap_to_windows(lines: List[Line], windows: Sequence[Window], max_move: float = 0.6) -> None:
+    """Subtitle timing is approximate: snap line edges to the nearest speech window edge when it is close."""
+    if not windows:
+        return
+    starts = np.array([w[0] for w in windows])
+    ends = np.array([w[1] for w in windows])
+    for ln in lines:
+        i = int(np.argmin(np.abs(starts - ln.start)))
+        if abs(starts[i] - ln.start) <= max_move:
+            ln.start = float(starts[i])
+        j = int(np.argmin(np.abs(ends - ln.end)))
+        if abs(ends[j] - ln.end) <= max_move and ends[j] > ln.start:
+            ln.end = float(ends[j])
+
+
+# ---------------------------------------------------------------------------------------------- speakers
+def assign_speakers(lines: List[Line], turns: Sequence[Dict[str, Any]]) -> None:
+    """Each line gets the diarization speaker that covers most of it (turns: ``{"start","end","speaker"}``)."""
+    for ln in lines:
+        score: Dict[str, float] = {}
+        for t in turns:
+            o = overlap(ln.start, ln.end, t["start"], t["end"])
+            if o > 0:
+                score[t["speaker"]] = score.get(t["speaker"], 0.0) + o
+        if score:
+            ln.speaker = max(score, key=lambda name: score[name])
+
+
+def cluster_speakers(features: np.ndarray, threshold: float = 0.35, max_speakers: int = 8) -> List[int]:
+    """Agglomerative clustering (cosine, average linkage) of per-line voice fingerprints - the fallback when pyannote is not
+    available.  Returns a cluster index per row (0 = the most frequent)."""
+    n = len(features)
+    if n == 0:
+        return []
+    if n == 1:
+        return [0]
+    from scipy.cluster.hierarchy import fcluster, linkage
+
+    f = features - features.mean(axis=0)
+    f = f / (np.linalg.norm(f, axis=1, keepdims=True) + 1e-9)
+    z = linkage(f, method="average", metric="cosine")
+    labels = fcluster(z, t=threshold, criterion="distance")
+    if len(set(labels)) > max_speakers:
+        labels = fcluster(z, t=max_speakers, criterion="maxclust")
+    order = {lab: i for i, (lab, _) in enumerate(sorted(((lab, (labels == lab).sum()) for lab in set(labels)), key=lambda x: -x[1]))}
+    return [order[lab] for lab in labels]
+
+
+# ---------------------------------------------------------------------------------------------- length estimates
+_VOWELS = {"ru": "аеёиоуыэюя", "en": "aeiouy", "de": "aeiouyäöü"}
+SYLLABLES_PER_S = {"ru": 5.6, "en": 5.0, "de": 5.2}
+
+
+def syllables(text: str, lang: str) -> int:
+    """Syllable count for the length estimate: vowel groups in English and German, vowel letters otherwise. At least 1."""
+    v = _VOWELS.get(lang, "aeiouy")
+    t = text.lower()
+    if lang in ("en", "de"):
+        return max(1, len(re.findall(f"[{v}]+", t)))
+    return max(1, sum(t.count(c) for c in v))
+
+
+def estimate_seconds(text: str, lang: str) -> float:
+    """Spoken length of ``text`` at a normal dubbing pace (+ pauses at punctuation)."""
+    pauses = len(re.findall(r"[,;:]", text)) * 0.12 + len(re.findall(r"[.!?…]", text.rstrip(".!?… "))) * 0.25
+    return syllables(text, lang) / SYLLABLES_PER_S.get(lang, 5.2) + pauses
+
+
+def too_long(line: Line, lang: str, slack: float = 1.15, next_start: Optional[float] = None) -> bool:
+    """Flag for the Script table: the translation will not fit its slot even after squeezing (shown before any synthesis).
+
+    A short interjection (Whoa!, Yes!, No., Wait., Boy.) may run into the following pause, up to
+    min(next start - gap, end + 0.8 s), before it is stretched. It is flagged only when it would still
+    overlap the next line at 1.25x. With no following line the bare slot is judged at that same 1.25x."""
+    if line.keep_original or not line.translation.strip():
+        return False
+    est = estimate_seconds(line.translation, lang)
+    if timefit.is_short_interjection(line):
+        if next_start is None:
+            return est > line.duration * timefit.HARD_STRETCH
+        if est <= max(line.duration, timefit.interjection_end(line, next_start) - line.start):
+            return False
+        return est > (next_start - timefit.GAP - line.start) * timefit.HARD_STRETCH
+    room = line.duration
+    if next_start is not None:
+        room = max(room, min(next_start - 0.1, line.end + 0.8) - line.start)
+    return est > room * slack
+
+
+_FILLERS = {
+    "ru": ["ну", "вот", "знаешь", "знаете", "в общем", "так сказать", "как бы", "просто", "вообще-то", "же", "ведь", "ладно", "слушай", "послушай"],
+    "en": ["well", "you know", "i mean", "just", "actually", "really", "so", "like", "okay", "oh"],
+    "de": ["also", "na ja", "eigentlich", "halt", "eben", "doch", "ja", "mal"],
+}
+
+
+#: a shorter wording must keep at least this share of the letters (real case: "Бивис, нам нужно достать кое-что из этого ИИ."
+#: was cut to "Бивис." - 12 % of the line, the meaning gone) and at least two words
+MIN_KEEP = 0.7
+
+
+def kept_share(variant: str, text: str) -> float:
+    """Share of the letters of ``text`` still in ``variant`` (1.0 = complete)."""
+    a = sum(c.isalnum() for c in text)
+    return 1.0 if a == 0 else min(1.0, sum(c.isalnum() for c in variant) / a)
+
+
+def acceptable_variant(variant: str, text: str, min_keep: float = MIN_KEEP) -> bool:
+    """Whether ``variant`` keeps ``min_keep`` of the letters of ``text``, and two words unless ``text`` is shorter."""
+    words = re.findall(r"\w+", variant)
+    return kept_share(variant, text) >= min_keep and (len(words) >= 2 or len(re.findall(r"\w+", text)) < 2)
+
+
+def shorten(text: str, lang: str, min_keep: float = MIN_KEEP) -> List[str]:
+    """Shorter variants of a translation, most conservative first: drop parentheticals, filler words, repeated words,
+    then the last clause.  Only variants that keep >= ``min_keep`` of the letters and two or more words are returned, so the
+    meaning survives; the time fitter tries them only after shifting into pauses and stretching up to 1.15x."""
+    out: List[str] = []
+
+    def add(t: str) -> None:
+        t = re.sub(r"\s+([,.!?…])", r"\1", re.sub(r"\s+", " ", t)).strip(" ,;")
+        t = re.sub(r"^[,;]\s*", "", t)
+        if t and t[:1].islower() and text[:1].isupper():
+            t = t[0].upper() + t[1:]
+        if t and t != text and t not in out and acceptable_variant(t, text, min_keep):
+            out.append(t)
+    t = re.sub(r"\s*[(\[][^)\]]*[)\]]", "", text)
+    add(t)
+    for f in sorted(_FILLERS.get(lang, []), key=len, reverse=True):
+        t = re.sub(rf"(?i)(^|[\s,])({re.escape(f)})(?=[\s,.!?]|$),?", r"\1", t)
+    add(t)
+    t = re.sub(r"(?i)\b(\w+)(\s+\1\b)+", r"\1", t)
+    add(t)
+    parts = re.split(r"(?<=[,;:])\s+", t)
+    if len(parts) > 1:
+        add(" ".join(parts[:-1]).rstrip(",;:") + ".")
+    return out
+
+
+# ---------------------------------------------------------------------------------------------- context for short lines
+BREATH_GAP_S = 1.2            # consecutive lines of one speaker closer than this are one breath
+SHORT_LINE_S = 1.2            # a shorter line is translated with its neighbour
+SHORT_LINE_WORDS = 3
+
+
+def is_short_for_context(line: Line) -> bool:
+    """A line Opus-MT tends to mistranslate on its own: under ~1.2 s, or three words or fewer."""
+    return line.duration < SHORT_LINE_S + 1e-6 or len((line.text or "").split()) <= SHORT_LINE_WORDS
+
+
+def breath_groups(lines: Sequence[Line]) -> List[List[Line]]:
+    """Consecutive lines of the same speaker with a gap under ``BREATH_GAP_S``."""
+    groups: List[List[Line]] = []
+    for ln in sorted(lines, key=lambda x: (x.start, x.id)):
+        if ln.keep_original or not (ln.text or "").strip():
+            continue
+        if groups and groups[-1][-1].speaker == ln.speaker and ln.start - groups[-1][-1].end < BREATH_GAP_S:
+            groups[-1].append(ln)
+        else:
+            groups.append([ln])
+    return groups
+
+
+def context_units(lines: Sequence[Line], todo_ids: Optional[Set[int]] = None) -> List[List[Line]]:
+    """Translation units. A short line is joined with the next line of its breath group (the previous, if it is last)."""
+    units: List[List[Line]] = []
+    for group in breath_groups(lines):
+        i = 0
+        while i < len(group):
+            ln = group[i]
+            if todo_ids is not None and ln.id not in todo_ids:
+                i += 1
+                continue
+            nxt = group[i + 1] if i + 1 < len(group) else None
+            if is_short_for_context(ln) and nxt is not None and (todo_ids is None or nxt.id in todo_ids):
+                units.append([ln, nxt])
+                i += 2
+                continue
+            prev = group[i - 1] if i else None
+            if (is_short_for_context(ln) and prev is not None and units and len(units[-1]) == 1
+                    and units[-1][-1].id == prev.id and (todo_ids is None or prev.id in todo_ids)):
+                units[-1].append(ln)
+                i += 1
+                continue
+            units.append([ln])
+            i += 1
+    return units
+
+
+def split_translation(sources: Sequence[str], translated: str) -> Optional[List[str]]:
+    """Split ``translated`` back into one piece per source line, by sentence, in proportion to the sources.
+
+    None when the sentence counts do not match (the caller merges the short line into the next one)."""
+    sents = split_sentences(translated) or [translated.strip()]
+    counts = [max(1, len(split_sentences(src) or [src])) for src in sources]
+    if sum(counts) != len(sents):
+        return None
+    out: List[str] = []
+    k = 0
+    for c in counts:
+        out.append(" ".join(sents[k:k + c]).strip())
+        k += c
+    return out
+
+
+def fit_text_to_slot(text: str, lang: str, slot_s: float) -> str:
+    """The shortest acceptable wording of ``text`` that the estimate can say inside ``slot_s``, or the shortest one."""
+    if slot_s <= 0 or estimate_seconds(text, lang) <= slot_s + 1e-6:
+        return text
+    best = text
+    for variant in shorten(text, lang):
+        best = variant
+        if estimate_seconds(variant, lang) <= slot_s + 1e-6:
+            return variant
+    return best
+
+
+def prepare_for_voice(lines: List[Line], lang: str, total: Optional[float] = None) -> List[int]:
+    """Shorten lines that will not fit their slot, then merge one that is still too long into the next breath.
+
+    ``lines`` is updated in place. Absorbed ids are removed from the list and returned. A second call does not
+    shorten a line whose estimate already fits, and does not merge it again."""
+    dropped: List[int] = []
+    for ln in lines:
+        if ln.keep_original or not (ln.translation or "").strip():
+            continue
+        room = timefit.slot_for(ln, lines, total) * timefit.MAX_STRETCH
+        fitted = fit_text_to_slot(ln.translation, lang, room)
+        if fitted != ln.translation:
+            ln.translation = fitted
+        ln.spoken = ln.translation
+    i = 0
+    while i < len(lines) - 1:
+        ln, nxt = lines[i], lines[i + 1]
+        if ln.keep_original or not (ln.translation or "").strip() or nxt.keep_original:
+            i += 1
+            continue
+        room = timefit.slot_for(ln, lines, total) * timefit.MAX_STRETCH
+        if estimate_seconds(ln.translation, lang) <= room + 1e-6:
+            i += 1
+            continue
+        if nxt.speaker != ln.speaker or nxt.start - ln.end >= BREATH_GAP_S:
+            i += 1
+            continue
+        joined = f"{ln.translation.strip()} {(nxt.translation or '').strip()}".strip()
+        merged = merge_short_into_next(ln, nxt, joined)
+        merged.spoken = joined
+        lines[i] = merged
+        dropped.append(nxt.id)
+        del lines[i + 1]
+    return dropped
+
+
+def merge_short_into_next(short: Line, nxt: Line, translation: str) -> Line:
+    """One line spanning both, texts joined. Used when a joint translation cannot be split back apart."""
+    return Line(id=short.id, start=min(short.start, nxt.start), end=max(short.end, nxt.end),
+                text=f"{short.text.strip()} {nxt.text.strip()}".strip(), translation=translation.strip(),
+                speaker=short.speaker or nxt.speaker, source=short.source or nxt.source, tag=short.tag or nxt.tag,
+                kind=short.kind)
+
+
+def translate_with_context(lines: Sequence[Line], translate: Callable[[List[str]], List[str]],
+                           todo_ids: Optional[Set[int]] = None) -> List[Line]:
+    """Translate lines that still need it. Short lines share one translation with their neighbour in the breath group.
+
+    ``translate`` receives source strings (a short line already joined with its neighbour) and returns one translation
+    each. When that translation does not split back into the same number of sentences, the short line is merged into
+    the next line."""
+    if todo_ids is None:
+        todo_ids = {ln.id for ln in lines if not ln.keep_original and not (ln.translation or "").strip() and (ln.text or "").strip()}
+    units = context_units(lines, todo_ids)
+    if not units:
+        return list(lines)
+    sources = [" ".join(ln.text.strip() for ln in unit) for unit in units]
+    outs = list(translate(sources))
+    if len(outs) != len(sources):
+        raise RuntimeError(f"translation returned {len(outs)} lines for {len(sources)}")
+    produced: Dict[int, Line] = {}
+    drop: Set[int] = set()
+    for unit, out in zip(units, outs):
+        text = (out or "").strip()
+        if len(unit) == 1:
+            unit[0].translation = text
+            produced[unit[0].id] = unit[0]
+            continue
+        parts = split_translation([ln.text for ln in unit], text)
+        if parts is not None:
+            for ln, part in zip(unit, parts):
+                ln.translation = part
+                produced[ln.id] = ln
+            continue
+        merged = merge_short_into_next(unit[0], unit[1], text)
+        produced[unit[0].id] = merged
+        drop.add(unit[1].id)
+        for extra in unit[2:]:
+            drop.add(extra.id)
+    new: List[Line] = []
+    for ln in lines:
+        if ln.id in drop:
+            continue
+        new.append(produced.get(ln.id, ln))
+    return new

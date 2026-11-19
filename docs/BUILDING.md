@@ -1,0 +1,77 @@
+# Building
+
+## Run from source
+Python 3.14 is required; Windows x64 for the installer.
+```
+python -m venv .venv && .venv\Scripts\activate          (Linux: source .venv/bin/activate)
+pip install uv
+uv pip install torch torchaudio --torch-backend=auto
+uv pip install -r tools/requirements-dev.txt
+python -m pytest tests                                   (no GPU needed)
+python main.py
+```
+Never run `uv run` without `--no-sync`: it can replace the CUDA build of PyTorch with the CPU one.
+
+## Online installer
+`installer/VoxprintMovieDubber.iss` (Inno Setup 6) compiles into `installer\Output\VoxprintMovieDubber-Setup.exe` (about 2 MB):
+```
+ISCC installer\VoxprintMovieDubber.iss
+```
+The installer contains the program's own files only. During setup `installer/install-runtime.ps1` downloads `uv` and installs the
+runtime: Python 3.14 and PyTorch 2.11.0+cu130 pinned by `dubber/infra/runtime_lock.json` (the Audiobook Builder lock schema;
+the sibling main lock is still 3.11/cu128 and is not copied). There is no torchaudio wheel for torch 2.14.1 on the cu130
+index, so the pin follows the newest official pair: torch 2.11.0+cu130 and torchaudio 2.11.0+cu130. torchcodec is 0.17.0+cu130.
+`nvidia-cublas-cu12` and `nvidia-cudnn-cu12` supply the CUDA 12 libraries CTranslate2 needs. The dependencies come from
+`requirements.txt` and the pins in `installer/runtime-constraints.txt`. The runtime lives in
+`%LOCALAPPDATA%\Voxprint\shared\runtimes\py3.14-torch2.11-cu130` (see [SHARED-RESOURCES.md](SHARED-RESOURCES.md)). A folder
+for that version is reused. A different Python or torch line gets its own directory, and a shared runtime is never upgraded
+in place. `<install folder>\runtime` is a junction to its `env`. `shared\manifest.json` counts the programs using each
+resource. The last setup step asks VOXPrint MDL (`voxprint-mdl enqueue`, then `status --wait`) to download the AI models into the shared models folder. `/SKIPMODELS=1`
+skips that download and is only for CI.
+
+## Full (offline) installer
+The full installer carries everything the online one downloads, so setup needs no internet (only the optional AI model download does):
+```
+powershell -File installer\make-full-payload.ps1 -Out build\payload -Requirements requirements.txt `
+    -Constraints installer\runtime-constraints.txt -Lock dubber\infra\runtime_lock.json -Python <python 3.14> -Flavor cu130
+ISCC /DFull installer\VoxprintMovieDubber.iss
+```
+`make-full-payload.ps1` puts into `build\payload`: `uv.exe`, the python-build-standalone archive this uv installs for Python 3.14,
+every wheel of the runtime (`pip wheel` with the same pins as the online setup, including torch 2.11.0+cu130, torchaudio and
+torchcodec) and the LGPL ffmpeg archive. The result is `VoxprintMovieDubber-Full-Setup.exe` plus `VoxprintMovieDubber-Full-Setup-N.bin`
+parts, each below 2 GB (the GitHub release asset limit); keep all of them in one folder. During setup `install-runtime.ps1 -Payload`
+installs the same runtime key as the online setup from those files, so both installers share one runtime folder.
+The AI models are not bundled; setup downloads them into the shared models folder. `/SKIPMODELS=1` skips that download and is only for CI.
+
+Setup switches: `/TORCH=auto|cu130` (PyTorch flavor). `/TORCH=cpu` installs the CPU build and is only for the CI smoke run on a GPU-less runner; a user install stops instead of offering that build. `/SKIPGPUGATE=1` (full installer only) installs its cu130 runtime without the GPU check and is likewise only for CI. `/SKIPMODELS=1` skips the model download and is only for CI. `/VERYSILENT /SUPPRESSMSGBOXES /DIR=<folder>`. cu130 needs NVIDIA driver branch 580 or newer; the hardware gate already requires branch 600.
+
+The setup stops, and installs nothing, when no NVIDIA GPU has compute capability 8.9 or higher (GeForce RTX 40 / Ada or newer) or the driver branch is below 600. The window does the same check with PyTorch before it opens (`VOXPRINT_SKIP_GPU_GATE=1` skips that check for tests and CI).
+The program is installed in `C:\Program Files\VOXPrint AI Suite\Movie Dubber`. `voxprint-movie-dubber.exe` opens the window and `voxprint-movie-dubber-cli.exe` is the console launcher (the same entry point as the headless CLI). The setup puts its shortcuts into the Start menu folder "VOXPrint AI Suite", adds an Apps & features entry
+and a full uninstaller. The same AppId is kept, so Windows treats a new setup as an upgrade of the old `C:\Program Files\VoxprintMovieDubber` install: that folder and this app's shortcuts in the old Start menu group "Voxprint" are removed, and user data is kept. Setup writes the per-machine discovery key `HKLM\Software\VOXPrint\MovieDubber` with `InstallPath`, `Exe` and `CliExe` (full paths of `voxprint-movie-dubber.exe` and `voxprint-movie-dubber-cli.exe`), `Version`, `Build` (the number from `BUILD.json`, or the CI stamp when one was present at compile time), `IpcName` (empty) and `ProtocolVersion` (DWORD 0). It also writes App Paths for both executables: the default value is the full path and `Path` is the install directory. An upgrade deletes a dev build's `HKLM\Software\VOXPrint AI Suite\Apps\movie-dubber` key. Uninstall removes `MovieDubber` and both App Paths keys, and removes `Software\VOXPrint` only when that parent is empty. TODO: voxprint-common 0.3.0 `suite.registry` will own this key. The uninstaller never touches the Audiobook Builder. It drops this program's references in
+`shared\manifest.json` and deletes a shared runtime or ffmpeg build only when no program still references it.
+Projects, logs and reports are removed only when you answer Yes (default: keep).
+
+Shared settings: `%LOCALAPPDATA%\Voxprint\state\suite.json` (schema 1: `ui_language`, `theme`, `models_dir`, `gpu`), read and written by
+both programs (`voxprint_common.suite_settings`).
+
+## Version and codename
+
+`BUILD.json` at the repository root is the only copy of the build offset and the codename. `dubber/appinfo.py` reads it. `APP_VERSION` in that module is the version string (`1.0.0-rc`). The build number is not stored as a constant.
+
+`dubber/appinfo.py` asks `voxprint_common.buildinfo` for the number. On the Build installers workflow that number is `GITHUB_RUN_NUMBER` plus `offset`. The workflow writes it, with the codename, into `build_info.json`. The installed program reads the stamp, so it does not need the git checkout. A missing recorded build is `dev`, never 0. `VOXPRINT_BUILD=<digits>` forces that number.
+
+The offset was chosen from the Build installers workflow: run_number 17 on 2026-10-10 (workflow run 38057799983). The next run is 18, and 18 + 983 = 1001.
+
+The window, About, `--version`, the installer and the GitHub release title show `VOXPrint AI Movie Dubber 1.0.0 RC · build N "Codename"`. The version line itself is `1.0.0 RC · build N "Codename"`. The splash uses the library label, which has no middle dot. A codename is one Biblical Hebrew word in ASCII transliteration. It describes the state of that build (readiness, a milestone), not a theme of the product. It is shown only when it is not empty, in quotes. The codename of this line is Bochan.
+
+Headless commands for other programs are documented in [CLI.md](CLI.md).
+
+## GitHub Actions
+`.github/workflows/build-installer.yml` builds both installers on free `windows-latest` runners (a matrix
+of `online` and `full`), installs each silently (online with the CPU build of PyTorch, full with its own cu130 runtime and no
+downloads), runs the installed program and the tests, uninstalls it and uploads the installers as artifacts. The workflow runs
+on a manual dispatch or a `v*` tag. To build installers on a PR, add the build-installers label or push to build/<name>.
+Adding that label starts the build; later pushes to the same pull request build again while the label is still there.
+A push to `build/<name>` builds that branch. Fork pull requests use the `pull_request` event, so they do not receive secrets.
+A `v*` tag then publishes both on one pre-release; the release job runs only on tags. It checks every `.sha256` file and
+appends a table of file names, sizes and SHA-256 to the release notes (`docs/release-notes/<tag>.md`).

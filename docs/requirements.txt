@@ -1,0 +1,12 @@
+# Documentation site (MkDocs). Pinned so a docs build does not float.
+# numpy and PySide6 are imported while the API reference is generated.
+mkdocs==1.6.1
+mkdocs-material==9.7.7
+mkdocs-autorefs==1.4.4
+mkdocstrings==1.0.7
+mkdocstrings-python==2.0.9
+mkdocs-gen-files==0.6.1
+griffelib==2.3.2
+pymdown-extensions==12.2
+numpy==2.4.4
+PySide6==6.12.0

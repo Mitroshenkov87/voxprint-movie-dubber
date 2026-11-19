@@ -1,0 +1,9 @@
+# Dependency update PRs for GitHub Actions. Pip pins stay in requirements.txt and the runtime lock;
+# those updates are reviewed by hand because the models are verified against specific builds.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2

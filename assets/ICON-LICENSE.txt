@@ -1,0 +1,24 @@
+Voxprint AI Movie Dubber icon and splash - original artwork
+===========================================================
+
+The application icon and the start-up splash are original artwork made for
+this project by Aleksandr Mitroshenkov. They are not third-party material.
+
+Icon
+----
+assets/voxprint-dubber.png is the square icon (1024 px): a sound wave inside
+a film frame with perforations, lavender to blue-violet, on the same dark navy
+rounded tile as the Voxprint Audiobook Builder icon. The 16/24/32 px images
+show the sound wave alone so they stay readable. assets/voxprint-dubber.ico
+(window, taskbar, Start menu, uninstall entry) and
+assets/voxprint-dubber-setup.ico (the installer) hold 16, 24, 32, 48, 64,
+128 and 256 px. installer/linux/voxprint-dubber-256.png is the same mark at
+256 px. All of them are drawn by tools/make_icon.py.
+
+Splash
+------
+assets/splash.jpg (1024 x 1024) is the icon tile on the author's painterly
+evening field (the Voxprint Audiobook Builder splash artwork,
+tools/branding/splash-art.jpg), graded towards a violet dusk. Rebuild with
+    python tools/make_icon.py --splash-art tools/branding/splash-art.jpg
+ui/splash.py loads this filename.

@@ -1,0 +1,45 @@
+# Voxprint AI Movie Dubber - runtime dependencies (everything except torch).
+# torch and torchaudio are installed separately so that the matching CUDA build is picked:
+#     uv pip install torch torchaudio --torch-backend=auto
+
+# Shared suite library. voxprint-common 0.2.5 (Yitro) with the ui extra.
+# installer/fetch_common_wheel.py still vendors the v0.2.5 wheel for the offline
+# installer. A networked pip install follows this pin.
+voxprint-common[ui] @ git+https://github.com/Mitroshenkov87/voxprint-common@8a94b531cb4f3526425a80a86a1e64624b5de606
+
+PySide6>=6.7
+psutil>=5.9
+numpy>=1.26
+scipy>=1.11
+soundfile>=0.12
+librosa>=0.10
+
+# TTS: faster-qwen3-tts (MIT, CUDA Graphs) pulls qwen-tts-hf and transformers 5.x.
+# NOTE: this is a different transformers line than the Audiobook Builder (4.57); keep the two apps in separate environments.
+faster-qwen3-tts>=0.5.3
+transformers>=5.15.1,<6
+huggingface_hub>=1.32.0,<2
+accelerate==1.12.0
+# voices from the shared Voxprint voice library are LoRA adapters (made by the Audiobook Builder)
+peft>=0.18
+
+# the other pipeline stages
+silero-vad>=5.1
+faster-whisper>=1.1
+# CTranslate2 is built for CUDA 12. The cu130 PyTorch wheel does not ship cublas64_12.dll or cuDNN 9.
+nvidia-cublas-cu12==12.9.2.10; sys_platform == "win32"
+nvidia-cudnn-cu12==9.27.0.42; sys_platform == "win32"
+sentencepiece>=0.2
+safetensors>=0.4
+einops
+imageio-ffmpeg>=0.5
+# time stretching of dub lines (Signalsmith Stretch, MIT)
+python-stretch>=0.3
+
+# diarization for the multi-voice mode. The weights are the ungated mirrors in dubber/models.py.
+# Checked: resolves with torch 2.11.0 / torchaudio 2.11 / transformers 5.19 without changing them.
+pyannote.audio>=4.0
+
+# Transitive floor. setuptools 78.1.0 is PYSEC-2025-49 / CVE-2025-47273 (high: path traversal in PackageIndex.download).
+# 78.1.1 fixes that release. The program does not call that downloader; the floor keeps it out of the installed runtime.
+setuptools>=78.1.1
