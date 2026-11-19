@@ -403,7 +403,7 @@ jobs:
           foreach ($l in $logs) { if (Test-Path $l) { Copy-Item $l ci-logs } }
 
       - name: Upload the installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.kind == 'full' && 'VoxprintMovieDubber-Full-Setup' || 'VoxprintMovieDubber-Setup' }}
           path: |
@@ -416,7 +416,7 @@ jobs:
 
       - name: Upload the diagnostics report and logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ci-report-and-logs-${{ matrix.kind }}
           path: |
